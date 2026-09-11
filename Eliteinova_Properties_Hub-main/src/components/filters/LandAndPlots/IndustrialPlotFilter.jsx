@@ -1,0 +1,913 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { 
+  X, ChevronDown, Building, MapPin, IndianRupee, Ruler, Shield, 
+  Phone, FileText, RefreshCw, DollarSign, Calendar, Zap, 
+  Square, Home, Bus, CheckCircle, TrendingUp, Clock, Award,
+  FileCheck, Landmark, Trees, Fence, Camera, Lock, Droplet,
+  Wifi, Coffee, Dumbbell, Car, Sparkles, Sun, Moon, Play,
+  Crown, Home as HomeIcon, Hotel, Factory, Warehouse, Truck,
+  Power, Droplets, Gauge, HardHat, AlertTriangle, Scale,
+  Globe, Network, Key, RotateCw, Battery, Wind, Ruler as RulerIcon,
+  Receipt, GitBranch, MapPin as MapPinIcon
+} from 'lucide-react';
+
+// Custom Square Icon
+const SquareIcon = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor"/>
+  </svg>
+);
+
+// Custom Date Picker - Compact
+const CustomDatePicker = ({ label, value, onChange }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(value || '');
+  const [viewYear, setViewYear] = useState(new Date().getFullYear());
+  const [viewMonth, setViewMonth] = useState(new Date().getMonth());
+  const pickerRef = useRef(null);
+
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const days = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (pickerRef.current && !pickerRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+  const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
+
+  const handleDateSelect = (day) => {
+    const newDate = new Date(viewYear, viewMonth, day);
+    const formattedDate = newDate.toISOString().split('T')[0];
+    setSelectedDate(formattedDate);
+    onChange(formattedDate);
+    setIsOpen(false);
+  };
+
+  const renderCalendar = () => {
+    const daysInMonth = getDaysInMonth(viewYear, viewMonth);
+    const firstDay = getFirstDayOfMonth(viewYear, viewMonth);
+    const today = new Date();
+    const calendarDays = [];
+
+    for (let i = 0; i < firstDay; i++) {
+      calendarDays.push(<div key={`empty-${i}`} className="h-6 w-6"></div>);
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      const isToday = d === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
+      const isSelected = selectedDate === `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      calendarDays.push(
+        <button
+          key={d}
+          type="button"
+          onClick={() => handleDateSelect(d)}
+          className={`h-6 w-6 rounded text-xs font-medium transition-all duration-200 ${
+            isSelected ? 'bg-teal-500 text-white' : 
+            isToday ? 'bg-teal-100 text-teal-700 border border-teal-300' : 
+            'text-gray-700 hover:bg-teal-100 hover:text-teal-700'
+          }`}
+        >
+          {d}
+        </button>
+      );
+    }
+    return calendarDays;
+  };
+
+  return (
+    <div className="relative" ref={pickerRef}>
+      <label className="text-xs text-teal-800 font-semibold block mb-1">{label}</label>
+      <div className="relative">
+        <input
+          type="text"
+          value={selectedDate}
+          onFocus={() => setIsOpen(true)}
+          readOnly
+          placeholder="Select Date"
+          className="w-full px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 cursor-pointer"
+        />
+        <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-teal-500 pointer-events-none" />
+      </div>
+      {isOpen && (
+        <div className="absolute z-50 mt-1 bg-white rounded-lg shadow-xl border border-teal-200 overflow-hidden" style={{ width: '240px' }}>
+          <div className="bg-gradient-to-r from-teal-500 to-emerald-500 px-3 py-1.5 flex items-center justify-between">
+            <button type="button" onClick={() => {
+              if (viewMonth === 0) { setViewMonth(11); setViewYear(viewYear - 1); }
+              else { setViewMonth(viewMonth - 1); }
+            }} className="p-0.5 rounded hover:bg-white/20 text-white transition-colors">
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M15 18l-6-6 6-6" strokeLinecap="round"/></svg>
+            </button>
+            <span className="text-white font-semibold text-xs">{months[viewMonth]} {viewYear}</span>
+            <button type="button" onClick={() => {
+              if (viewMonth === 11) { setViewMonth(0); setViewYear(viewYear + 1); }
+              else { setViewMonth(viewMonth + 1); }
+            }} className="p-0.5 rounded hover:bg-white/20 text-white transition-colors">
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 18l6-6-6-6" strokeLinecap="round"/></svg>
+            </button>
+          </div>
+          <div className="p-2">
+            <div className="grid grid-cols-7 gap-0.5 mb-1">
+              {days.map(day => <div key={day} className="h-6 w-6 flex items-center justify-center text-[10px] font-semibold text-teal-600">{day}</div>)}
+            </div>
+            <div className="grid grid-cols-7 gap-0.5">{renderCalendar()}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Custom Select Component
+const CustomSelect = ({ label, options, value, onChange, placeholder }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (selectRef.current && !selectRef.current.contains(event.target)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selectedOption = options.find(opt => opt.value === value);
+
+  return (
+    <div className="relative" ref={selectRef}>
+      <label className="text-xs text-teal-800 font-semibold block mb-1">{label}</label>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-2 py-1.5 rounded border border-teal-300 bg-white text-xs text-left flex justify-between items-center focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 hover:bg-teal-50 transition-all duration-200"
+      >
+        <span className={selectedOption ? 'text-gray-700' : 'text-gray-400'}>
+          {selectedOption ? selectedOption.label : placeholder || `Select ${label}`}
+        </span>
+        <ChevronDown className={`w-3 h-3 text-teal-500 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      {isOpen && (
+        <div className="absolute z-50 mt-1 w-full bg-white rounded-lg shadow-xl border border-teal-200 max-h-40 overflow-y-auto">
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => { onChange(opt.value); setIsOpen(false); }}
+              className={`w-full px-2 py-1.5 text-xs text-left transition-all duration-150 ${
+                value === opt.value 
+                  ? 'bg-teal-500 text-white' 
+                  : 'text-gray-700 hover:bg-teal-500 hover:text-white'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Plot Area Unit Select
+const PlotAreaUnitSelect = ({ value, onChange }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectRef = useRef(null);
+  const units = [
+    { value: 'sqft', label: 'Sq.ft' },
+    { value: 'cents', label: 'Cents' },
+    { value: 'acres', label: 'Acres' },
+  ];
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (selectRef.current && !selectRef.current.contains(event.target)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selectedUnit = units.find(unit => unit.value === value);
+
+  return (
+    <div className="relative" ref={selectRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs flex items-center justify-between gap-1 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 hover:bg-teal-50 transition-all duration-200"
+      >
+        <span className="text-gray-700">{selectedUnit ? selectedUnit.label : 'Unit'}</span>
+        <ChevronDown className={`w-3 h-3 text-teal-500 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      {isOpen && (
+        <div className="absolute z-50 mt-1 right-0 bg-white rounded-lg shadow-xl border border-teal-200 overflow-hidden">
+          {units.map((unit) => (
+            <button
+              key={unit.value}
+              type="button"
+              onClick={() => { onChange(unit.value); setIsOpen(false); }}
+              className={`w-full px-2 py-1.5 text-xs text-left whitespace-nowrap transition-all duration-150 ${
+                value === unit.value 
+                  ? 'bg-teal-500 text-white' 
+                  : 'text-gray-700 hover:bg-teal-500 hover:text-white'
+              }`}
+            >
+              {unit.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Yes/No Radio Group Component
+const YesNoRadioGroup = ({ label, name, value, onChange }) => (
+  <div className="bg-white rounded-md p-2 border border-teal-200">
+    <label className="text-xs text-teal-800 font-semibold block mb-1.5">
+      {label}
+    </label>
+    <div className="flex gap-3">
+      <label className="flex items-center gap-1.5 cursor-pointer group">
+        <input
+          type="radio"
+          name={name}
+          value="Yes"
+          checked={value === 'Yes'}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-3.5 h-3.5 border border-teal-400 checked:bg-teal-500 checked:border-teal-500 accent-teal-500"
+        />
+        <span className="text-xs text-gray-700 font-medium group-hover:text-teal-500">Yes</span>
+      </label>
+      <label className="flex items-center gap-1.5 cursor-pointer group">
+        <input
+          type="radio"
+          name={name}
+          value="No"
+          checked={value === 'No'}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-3.5 h-3.5 border border-teal-400 checked:bg-teal-500 checked:border-teal-500 accent-teal-500"
+        />
+        <span className="text-xs text-gray-700 font-medium group-hover:text-teal-500">No</span>
+      </label>
+    </div>
+  </div>
+);
+
+// Regular Radio Group
+const RadioGroup = ({ label, name, options, value, onChange, className = "" }) => (
+  <div className={className}>
+    {label && <label className="text-xs text-teal-800 font-semibold block mb-1">{label}</label>}
+    <div className="flex flex-wrap gap-3">
+      {options.map(option => (
+        <label key={option.value} className="flex items-center gap-1.5 cursor-pointer group">
+          <input
+            type="radio"
+            name={name}
+            value={option.value}
+            checked={value === option.value}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-3.5 h-3.5 border border-teal-300 checked:bg-teal-500 checked:border-teal-500 accent-teal-500"
+          />
+          <span className="text-xs text-gray-700 group-hover:text-teal-500">{option.label}</span>
+        </label>
+      ))}
+    </div>
+  </div>
+);
+
+// Checkbox Group Component - Fixed with proper 2-column grid
+const CheckboxGroup = ({ label, options, values, onChange, columns = 2 }) => {
+  const getGridClasses = () => {
+    if (columns === 2) return "grid grid-cols-1 md:grid-cols-2 gap-1.5";
+    if (columns === 3) return "grid grid-cols-1 md:grid-cols-3 gap-1.5";
+    if (columns === 4) return "grid grid-cols-1 md:grid-cols-4 gap-1.5";
+    return "grid grid-cols-1 gap-1.5";
+  };
+
+  return (
+    <div>
+      {label && <label className="text-xs text-teal-800 font-semibold block mb-1.5">{label}</label>}
+      <div className={getGridClasses()}>
+        {options.map(option => (
+          <label key={option} className="flex items-center gap-1.5 cursor-pointer group p-1 rounded hover:bg-teal-50 transition-colors">
+            <input
+              type="checkbox"
+              checked={values.includes(option)}
+              onChange={(e) => {
+                if (e.target.checked) onChange([...values, option]);
+                else onChange(values.filter(v => v !== option));
+              }}
+              className="w-3.5 h-3.5 rounded border border-teal-400 checked:bg-teal-500 checked:border-teal-500 accent-teal-500"
+            />
+            <span className="text-xs text-gray-700 group-hover:text-teal-500">{option}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const IndustrialPlotFilter = ({ activeTab = 'Buy', onFilterChange, onClose, onTabChange }) => {
+  const [currentTab, setCurrentTab] = useState(activeTab);
+  const [activeMainSection, setActiveMainSection] = useState('basic');
+  
+  const [filters, setFilters] = useState({
+    // Basic Details
+    listingType: [],
+    // Location Details
+    city: '', taluk: '', locality: '', landmark: '', pincode: '', industrialZone: '',
+    mainRoadAccess: '', HighwayConnectivity: '', nearbyConnectivity: '', highwayConnectivity: '', nearbyTransportAccess: '',
+    // Rent Details
+    minRent: '', maxRent: '', rentPerUnit: '', securityDeposit: '', advanceAmount: '',
+    rentNegotiable: '', maintenanceCharges: '', propertyTaxIncluded: '', leaseDurationPreferred: '',
+    // Sell Price Details
+    minSellPrice: '', maxSellPrice: '', pricePerSqft: '', sellPriceNegotiable: '', propertyTax: '',
+    registrationChargesIncluded: '',
+    // Buy Budget Details
+    minBudget: '', maxBudget: '', preferredPricePerUnit: '', loanRequired: '', priceNegotiable: '',
+    registrationChargesPreferred: '',
+    // Lease Details
+    minLeaseAmount: '', maxLeaseAmount: '', monthlyYearlyLease: '', securityAdvanceAmount: '',
+    leaseDuration: '', leaseNegotiable: '', maintenanceIncluded: '', propertyTaxIncludedLease: '',
+    // Plot Details
+    plotArea: '', plotAreaUnit: 'sqft', plotLength: '', plotWidth: '', facing: '',
+    roadWidth: '', cornerPlot: '', boundaryFencing: '', levelledLand: '',waterLoggingFree: '',
+    minRoadWidthRequired: '', facingPreference: '', boundaryPreferred: '', levelledLandPreferred: '',
+     waterLoggingFreePreferred: '',
+    // Industrial Suitability
+    industrialSuitability: [],
+    // Infrastructure & Utilities
+    infrastructureUtilities: [],
+    // Amenities
+    amenities: [],
+    // Approval & Legal Details
+    dtcpApproved: '', cmdaApproved: '', sipcotApproved: '', pollutionClearance: '',
+    industrialLicenseEligible: '', environmentalClearance: '', industrialApprovalAvailable: '',
+    encumbranceFree: '', pattaAvailable: '', loanEligible: '', landSurveyCompleted: '',
+    titleDeedVerified: '', leaseAgreementAvailable: '', rentalAgreementAvailable: '',
+    // Availability
+    readyForRent: '', immediatePossession: '', vacantPlotAvailable: '', preLeasedProperty: '',
+    longTermLease: '', shortTermLease: '', readyToRegister: '', readyToOccupy: '',
+    operationalIndustrialSite: '',
+    // Nearby Access
+    nearbyAccess: [],
+    // Contact
+    contactOwner: false, contactAgent: false, contactBuilder: false, contactDeveloper: false,
+    preferredContactTime: ''
+  });
+
+  // Options Arrays
+  const facingOptions = [
+    { value: 'North', label: 'North' },
+    { value: 'South', label: 'South' },
+    { value: 'East', label: 'East' },
+    { value: 'West', label: 'West' }
+  ];
+
+ 
+
+  const leaseDurationOptions = [
+    { value: '1', label: '1 Year' },
+    { value: '3', label: '3 Years' },
+    { value: '5', label: '5 Years' },
+    { value: '9', label: '9 Years' },
+    { value: '10+', label: '10+ Years' }
+  ];
+
+  const contactTimeOptions = [
+    { value: 'Morning', label: 'Morning (9 AM - 12 PM)' },
+    { value: 'Afternoon', label: 'Afternoon (12 PM - 4 PM)' },
+    { value: 'Evening', label: 'Evening (4 PM - 7 PM)' },
+    { value: 'Any', label: 'Any Time' }
+  ];
+
+  const industrialSuitabilityOptions = [
+    'Warehouse Setup', 'Factory Construction', 'Manufacturing Unit', 'Logistics Hub',
+    'Godown Setup', 'Automobile Industry', 'Textile Industry', 'Food Processing Unit',
+    'Chemical Industry', 'Cold Storage Setup', 'MSME Industry', 'Heavy Industry', 
+    'Light Industry', 'Engineering Industry', 'Packaging Industry'
+  ];
+
+  const infrastructureUtilitiesOptions = [
+    'Electricity Connection Available', '3-Phase Power Supply', 'Water Connection Available',
+    'Borewell Facility', 'Drainage / Sewage Connection', 'Internet / Fiber Connectivity',
+    'Street Lights Available', 'Internal Roads Available', 'Truck / Container Access',
+    'Heavy Vehicle Access', 'Transformer Nearby'
+  ];
+
+  const amenitiesOptions = [
+    'Gated Industrial Park', 'Security Available', 'CCTV Surveillance', 
+    'Parking Space Available', 'Fire Safety System', 'Common Washroom Facility',
+    'Office Space Available', 'Staff Accommodation', 'Internal Roads', 
+    'Common Utilities Available', 'Security / Watchman'
+  ];
+
+  const nearbyOptions = [
+    'Highway Access', 'Railway Connectivity', 'Airport Nearby', 'Seaport Nearby',
+    'Bus Transport Access', 'Container Yard Nearby', 'Industrial Hub Nearby',
+    'Bus Route Access', 'Industrial Corridor Access'
+  ];
+
+  const listingTypeOptions = ['Owner', 'Agent', 'Builder', 'Developer'];
+
+  const mainSections = [
+    { id: 'basic', label: '📍 Basic', icon: <Home className="w-3.5 h-3.5" /> },
+    { id: 'price', label: currentTab === 'Rent' ? '💰 Rent' : currentTab === 'Buy' ? '💰 Budget' : currentTab === 'Sell' ? '💰 Price' : '💰 Lease', icon: <IndianRupee className="w-3.5 h-3.5" /> },
+    { id: 'plot', label: '📐 Plot', icon: <SquareIcon className="w-3.5 h-3.5" /> },
+    { id: 'suitability', label: '🏭 Suitability', icon: <Factory className="w-3.5 h-3.5" /> },
+    { id: 'infrastructure', label: '⚡ Utilities', icon: <Zap className="w-3.5 h-3.5" /> },
+    { id: 'amenities', label: '🎯 Amenities', icon: <Sparkles className="w-3.5 h-3.5" /> },
+    { id: 'legal', label: '⚖️ Legal', icon: <Shield className="w-3.5 h-3.5" /> },
+    { id: 'availability', label: '📅 Available', icon: <Calendar className="w-3.5 h-3.5" /> },
+    { id: 'nearby', label: '🚌 Nearby', icon: <Bus className="w-3.5 h-3.5" /> },
+    { id: 'contact', label: '📞 Contact', icon: <Phone className="w-3.5 h-3.5" /> }
+  ];
+
+  const tabs = [
+    { id: 'Buy', label: 'Buy', icon: <DollarSign className="w-3 h-3" /> },
+    { id: 'Rent', label: 'Rent', icon: <IndianRupee className="w-3 h-3" /> },
+    // { id: 'Sell', label: 'Sell', icon: <TrendingUp className="w-3 h-3" /> }, // Commented out
+    { id: 'Lease', label: 'Lease', icon: <FileText className="w-3 h-3" /> }
+  ];
+
+  // Animation styles
+  const animationStyle = `
+    @keyframes slowRotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .slow-rotate {
+      animation: slowRotate 4s linear infinite;
+    }
+  `;
+
+  const handleTabClick = (tabId) => {
+    setCurrentTab(tabId);
+    setActiveMainSection('basic');
+    if (onTabChange) onTabChange(tabId);
+  };
+
+  const handleInputChange = (field, value) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleCheckboxChange = (field, checked) => {
+    setFilters(prev => ({ ...prev, [field]: checked }));
+  };
+
+  const handleRadioChange = (field, value) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
+  };
+
+  const applyFilters = () => {
+    const filtersToSend = { ...filters, purpose: currentTab, propertyType: 'Industrial Plot' };
+    if (onFilterChange) onFilterChange(filtersToSend);
+    if (onClose) onClose();
+  };
+
+  const clearAllFilters = () => {
+    setFilters({
+      listingType: [],
+      city: '', taluk: '', locality: '', landmark: '', pincode: '', industrialZone: '',
+      mainRoadAccess: '', HighwayConnectivity: '', nearbyConnectivity: '', highwayConnectivity: '', nearbyTransportAccess: '',
+      minRent: '', maxRent: '', rentPerUnit: '', securityDeposit: '', advanceAmount: '',
+      rentNegotiable: '', maintenanceCharges: '', propertyTaxIncluded: '', leaseDurationPreferred: '',
+      minSellPrice: '', maxSellPrice: '', pricePerSqft: '', sellPriceNegotiable: '', propertyTax: '',
+      registrationChargesIncluded: '',
+      minBudget: '', maxBudget: '', preferredPricePerUnit: '', loanRequired: '', priceNegotiable: '',
+      registrationChargesPreferred: '',
+      minLeaseAmount: '', maxLeaseAmount: '', monthlyYearlyLease: '', securityAdvanceAmount: '',
+      leaseDuration: '', leaseNegotiable: '', maintenanceIncluded: '', propertyTaxIncludedLease: '',
+      plotArea: '', plotAreaUnit: 'sqft', plotLength: '', plotWidth: '', facing: '',
+      roadWidth: '', cornerPlot: '', boundaryFencing: '', levelledLand: '', waterLoggingFree: '',
+      minRoadWidthRequired: '', facingPreference: '', boundaryPreferred: '', levelledLandPreferred: '',
+      waterLoggingFreePreferred: '',
+      industrialSuitability: [],
+      infrastructureUtilities: [],
+      amenities: [],
+      dtcpApproved: '', cmdaApproved: '', sipcotApproved: '', pollutionClearance: '',
+      industrialLicenseEligible: '', environmentalClearance: '', industrialApprovalAvailable: '',
+      encumbranceFree: '', pattaAvailable: '', loanEligible: '', landSurveyCompleted: '',
+      titleDeedVerified: '', leaseAgreementAvailable: '', rentalAgreementAvailable: '',
+      readyForRent: '', immediatePossession: '', vacantPlotAvailable: '', preLeasedProperty: '',
+      longTermLease: '', shortTermLease: '', readyToRegister: '', readyToOccupy: '',
+      operationalIndustrialSite: '',
+      nearbyAccess: [],
+      contactOwner: false, contactAgent: false, contactBuilder: false, contactDeveloper: false,
+      preferredContactTime: ''
+    });
+  };
+
+  const SectionNav = () => (
+    <div className="flex flex-wrap gap-1 p-1.5 bg-teal-50/80 rounded-lg sticky top-0 z-20 border border-teal-200">
+      {mainSections.map((section) => (
+        <button
+          key={section.id}
+          onClick={() => setActiveMainSection(section.id)}
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all duration-200 whitespace-nowrap ${
+            activeMainSection === section.id
+              ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white shadow-sm'
+              : 'bg-white text-teal-700 hover:bg-teal-100 border border-teal-200'
+          }`}
+        >
+          {section.icon}
+          <span>{section.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+
+  const renderBasicSection = () => (
+    <div className="space-y-3">
+      <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+        <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><Home className="w-3.5 h-3.5" /> Basic Details</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-teal-800 font-semibold block mb-1">Property Type</label>
+            <input type="text" value="Industrial Plot" disabled className="w-full px-2 py-1.5 rounded border border-teal-300 bg-gray-50 text-xs text-gray-600" />
+          </div>
+          <div>
+            <label className="text-xs text-teal-800 font-semibold block mb-1">Purpose</label>
+            <input type="text" value={currentTab} disabled className="w-full px-2 py-1.5 rounded border border-teal-300 bg-gray-50 text-xs text-gray-600" />
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-xs text-teal-800 font-semibold block mb-1.5">Listing Type</label>
+            <div className="flex gap-4 flex-wrap">
+              {listingTypeOptions.map(type => (
+                <label key={type} className="flex items-center gap-1.5 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={filters.listingType.includes(type)}
+                    onChange={(e) => {
+                      const newList = e.target.checked ? [...filters.listingType, type] : filters.listingType.filter(t => t !== type);
+                      handleInputChange('listingType', newList);
+                    }}
+                    className="w-3.5 h-3.5 rounded border border-teal-400 checked:bg-teal-500 checked:border-teal-500 accent-teal-500"
+                  />
+                  <span className="text-xs text-gray-700 font-medium group-hover:text-teal-500">{type}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+        <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><MapPin className="w-3.5 h-3.5" /> Location Details</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <input type="text" placeholder="City / Town / Village" className="w-full px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.city} onChange={(e) => handleInputChange('city', e.target.value)} />
+          <input type="text" placeholder="Taluk / District" className="w-full px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.taluk} onChange={(e) => handleInputChange('taluk', e.target.value)} />
+          <input type="text" placeholder="Area / Locality" className="w-full px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.locality} onChange={(e) => handleInputChange('locality', e.target.value)} />
+          <input type="text" placeholder="Industrial Zone / SIPCOT / SEZ / MIDC / GIDC / Industrial Corridor" className="w-full px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.industrialZone} onChange={(e) => handleInputChange('industrialZone', e.target.value)} />
+          <input type="text" placeholder="Landmark" className="w-full px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.landmark} onChange={(e) => handleInputChange('landmark', e.target.value)} />
+          <input type="text" placeholder="PIN Code" className="w-full px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.pincode} onChange={(e) => handleInputChange('pincode', e.target.value)} />
+          <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-2">
+            <YesNoRadioGroup label="Main Road Access" name="mainRoadAccess" value={filters.mainRoadAccess} onChange={(val) => handleRadioChange('mainRoadAccess', val)} />
+            <YesNoRadioGroup label="Highway Connectivity" name="Highway Connectivity" value={filters.HighwayConnectivity} onChange={(val) => handleRadioChange('HighwayConnectivity', val)} />
+            <input type="text" placeholder="Nearby Connectivity / Transport Access" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.nearbyConnectivity} onChange={(e) => handleInputChange('nearbyConnectivity', e.target.value)} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPriceSection = () => {
+    if (currentTab === 'Rent') {
+      return (
+        <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+          <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><IndianRupee className="w-3.5 h-3.5" /> Rent Details</h3>
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2">
+                <input type="number" placeholder="Min Monthly Rent (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.minRent} onChange={(e) => handleInputChange('minRent', e.target.value)} />
+                <input type="number" placeholder="Max Monthly Rent (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.maxRent} onChange={(e) => handleInputChange('maxRent', e.target.value)} />
+              </div>
+              <input type="text" placeholder="Rent Per Sq.ft / Acre / Cent" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.rentPerUnit} onChange={(e) => handleInputChange('rentPerUnit', e.target.value)} />
+              <input type="number" placeholder="Security Deposit (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.securityDeposit} onChange={(e) => handleInputChange('securityDeposit', e.target.value)} />
+              <input type="number" placeholder="Advance Amount (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.advanceAmount} onChange={(e) => handleInputChange('advanceAmount', e.target.value)} />
+              <input type="text" placeholder="Maintenance Charges" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.maintenanceCharges} onChange={(e) => handleInputChange('maintenanceCharges', e.target.value)} />
+              <CustomSelect label="Lease Duration Preferred" options={leaseDurationOptions} value={filters.leaseDurationPreferred} onChange={(val) => handleInputChange('leaseDurationPreferred', val)} placeholder="Select Duration" />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <YesNoRadioGroup label="Property Tax Included" name="propertyTaxIncluded" value={filters.propertyTaxIncluded} onChange={(val) => handleRadioChange('propertyTaxIncluded', val)} />
+              <YesNoRadioGroup label="Rent Negotiable" name="rentNegotiable" value={filters.rentNegotiable} onChange={(val) => handleRadioChange('rentNegotiable', val)} />
+            </div>
+          </div>
+        </div>
+      );
+    } else if (currentTab === 'Buy') {
+      return (
+        <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+          <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><DollarSign className="w-3.5 h-3.5" /> Budget Details</h3>
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2">
+                <input type="number" placeholder="Min Budget (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.minBudget} onChange={(e) => handleInputChange('minBudget', e.target.value)} />
+                <input type="number" placeholder="Max Budget (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.maxBudget} onChange={(e) => handleInputChange('maxBudget', e.target.value)} />
+              </div>
+              <input type="number" placeholder="Preferred Price Per Sq.ft / Acre / Cent (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.preferredPricePerUnit} onChange={(e) => handleInputChange('preferredPricePerUnit', e.target.value)} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <YesNoRadioGroup label="Loan Required" name="loanRequired" value={filters.loanRequired} onChange={(val) => handleRadioChange('loanRequired', val)} />
+              <YesNoRadioGroup label="Price Negotiable" name="priceNegotiable" value={filters.priceNegotiable} onChange={(val) => handleRadioChange('priceNegotiable', val)} />
+              <YesNoRadioGroup label="Registration Charges Included Preferred" name="registrationChargesPreferred" value={filters.registrationChargesPreferred} onChange={(val) => handleRadioChange('registrationChargesPreferred', val)} />
+            </div>
+          </div>
+        </div>
+      );
+    } else if (currentTab === 'Sell') {
+      return (
+        <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+          <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><TrendingUp className="w-3.5 h-3.5" /> Price Details</h3>
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2">
+                <input type="number" placeholder="Min Selling Price (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.minSellPrice} onChange={(e) => handleInputChange('minSellPrice', e.target.value)} />
+                <input type="number" placeholder="Max Selling Price (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.maxSellPrice} onChange={(e) => handleInputChange('maxSellPrice', e.target.value)} />
+              </div>
+              <input type="number" placeholder="Price Per Sq.ft / Acre / Cent (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.pricePerSqft} onChange={(e) => handleInputChange('pricePerSqft', e.target.value)} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <YesNoRadioGroup label="Price Negotiable" name="sellPriceNegotiable" value={filters.sellPriceNegotiable} onChange={(val) => handleRadioChange('sellPriceNegotiable', val)} />
+              <input type="text" placeholder="Maintenance Charges (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.maintenanceCharges} onChange={(e) => handleInputChange('maintenanceCharges', e.target.value)} />
+              <input type="text" placeholder="Property Tax (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.propertyTax} onChange={(e) => handleInputChange('propertyTax', e.target.value)} />
+              <YesNoRadioGroup label="Registration Charges Included" name="registrationChargesIncluded" value={filters.registrationChargesIncluded} onChange={(val) => handleRadioChange('registrationChargesIncluded', val)} />
+            </div>
+          </div>
+        </div>
+      );
+    } else {
+      return (
+        <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+          <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><FileText className="w-3.5 h-3.5" /> Lease Details</h3>
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2">
+                <input type="number" placeholder="Min Lease Amount (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.minLeaseAmount} onChange={(e) => handleInputChange('minLeaseAmount', e.target.value)} />
+                <input type="number" placeholder="Max Lease Amount (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.maxLeaseAmount} onChange={(e) => handleInputChange('maxLeaseAmount', e.target.value)} />
+              </div>
+              <CustomSelect
+                  label=""
+                  options={[
+                    { value: 'Monthly', label: 'Monthly' },
+                    { value: 'Yearly', label: 'Yearly' },
+                  ]}
+                  value={filters.monthlyYearlyLease}
+                  onChange={(val) => handleInputChange('monthlyYearlyLease', val)}
+                  placeholder="Monthly / Yearly Lease Amount"
+                />
+              <input type="number" placeholder="Security Deposit / Advance Amount (₹)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.securityAdvanceAmount} onChange={(e) => handleInputChange('securityAdvanceAmount', e.target.value)} />
+              <input type="text" placeholder="Price Per Sq.ft / Acre / Cent" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.pricePerSqft} onChange={(e) => handleInputChange('pricePerSqft', e.target.value)} />
+            </div>
+            <CustomSelect label="Lease Duration" options={leaseDurationOptions} value={filters.leaseDuration} onChange={(val) => handleInputChange('leaseDuration', val)} placeholder="Select Duration" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <YesNoRadioGroup label="Maintenance Charges Included" name="maintenanceIncluded" value={filters.maintenanceIncluded} onChange={(val) => handleRadioChange('maintenanceIncluded', val)} />
+              <YesNoRadioGroup label="Property Tax Included" name="propertyTaxIncludedLease" value={filters.propertyTaxIncludedLease} onChange={(val) => handleRadioChange('propertyTaxIncludedLease', val)} />
+              <YesNoRadioGroup label="Lease Negotiable" name="leaseNegotiable" value={filters.leaseNegotiable} onChange={(val) => handleRadioChange('leaseNegotiable', val)} />
+            </div>
+          </div>
+        </div>
+      );
+    }
+  };
+
+  const renderPlotSection = () => (
+    <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+      <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><SquareIcon className="w-3.5 h-3.5" /> Plot Details</h3>
+      <div className="space-y-2">
+        <div className="grid grid-cols-4 gap-2 items-end">
+          <input type="text" placeholder="Plot Area" className="col-span-1 px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.plotArea} onChange={(e) => handleInputChange('plotArea', e.target.value)} />
+          <PlotAreaUnitSelect value={filters.plotAreaUnit} onChange={(val) => handleInputChange('plotAreaUnit', val)} />
+          <input type="text" placeholder="Length (ft)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.plotLength} onChange={(e) => handleInputChange('plotLength', e.target.value)} />
+          <input type="text" placeholder="Width (ft)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.plotWidth} onChange={(e) => handleInputChange('plotWidth', e.target.value)} />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <CustomSelect label="Facing" options={facingOptions} value={filters.facing} onChange={(val) => handleInputChange('facing', val)} placeholder="Select Facing" />
+          <input type="text" placeholder="Road Width Facing Property (ft)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.roadWidth} onChange={(e) => handleInputChange('roadWidth', e.target.value)} />
+          <YesNoRadioGroup label="Corner Plot" name="cornerPlot" value={filters.cornerPlot} onChange={(val) => handleRadioChange('cornerPlot', val)} />
+          <YesNoRadioGroup label="Boundary / Fencing Available" name="boundaryFencing" value={filters.boundaryFencing} onChange={(val) => handleRadioChange('boundaryFencing', val)} />
+          <YesNoRadioGroup label="Levelled Land" name="levelledLand" value={filters.levelledLand} onChange={(val) => handleRadioChange('levelledLand', val)} />
+         
+          <YesNoRadioGroup label="Water Logging Free" name="waterLoggingFree" value={filters.waterLoggingFree} onChange={(val) => handleRadioChange('waterLoggingFree', val)} />
+          {currentTab === 'Buy' && (
+            <>
+              <input type="text" placeholder="Minimum Road Width Required (ft)" className="px-2 py-1.5 rounded border border-teal-300 bg-white text-xs focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500" value={filters.minRoadWidthRequired} onChange={(e) => handleInputChange('minRoadWidthRequired', e.target.value)} />
+              <CustomSelect label="Facing Preference" options={facingOptions} value={filters.facingPreference} onChange={(val) => handleInputChange('facingPreference', val)} placeholder="Select Facing Preference" />
+              <YesNoRadioGroup label="Boundary / Fencing Preferred" name="boundaryPreferred" value={filters.boundaryPreferred} onChange={(val) => handleRadioChange('boundaryPreferred', val)} />
+              <YesNoRadioGroup label="Levelled Land Preferred" name="levelledLandPreferred" value={filters.levelledLandPreferred} onChange={(val) => handleRadioChange('levelledLandPreferred', val)} />
+             
+              <YesNoRadioGroup label="Water Logging Free Preferred" name="waterLoggingFreePreferred" value={filters.waterLoggingFreePreferred} onChange={(val) => handleRadioChange('waterLoggingFreePreferred', val)} />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderSuitabilitySection = () => (
+    <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+      <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><Factory className="w-3.5 h-3.5" /> Industrial Suitability</h3>
+      <CheckboxGroup options={industrialSuitabilityOptions} values={filters.industrialSuitability} onChange={(val) => handleInputChange('industrialSuitability', val)} columns={2} />
+    </div>
+  );
+
+  const renderInfrastructureSection = () => (
+    <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+      <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><Zap className="w-3.5 h-3.5" /> Infrastructure & Utilities</h3>
+      <CheckboxGroup options={infrastructureUtilitiesOptions} values={filters.infrastructureUtilities} onChange={(val) => handleInputChange('infrastructureUtilities', val)} columns={2} />
+    </div>
+  );
+
+  const renderAmenitiesSection = () => (
+    <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+      <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><Sparkles className="w-3.5 h-3.5" /> Amenities</h3>
+      <CheckboxGroup options={amenitiesOptions} values={filters.amenities} onChange={(val) => handleInputChange('amenities', val)} columns={2} />
+    </div>
+  );
+
+  const renderLegalSection = () => (
+    <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+      <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><Shield className="w-3.5 h-3.5" /> Approval & Legal Details</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <YesNoRadioGroup label="DTCP Approved" name="dtcpApproved" value={filters.dtcpApproved} onChange={(val) => handleRadioChange('dtcpApproved', val)} />
+        <YesNoRadioGroup label="CMDA Approved" name="cmdaApproved" value={filters.cmdaApproved} onChange={(val) => handleRadioChange('cmdaApproved', val)} />
+        <YesNoRadioGroup label="SIPCOT Approved" name="sipcotApproved" value={filters.sipcotApproved} onChange={(val) => handleRadioChange('sipcotApproved', val)} />
+        <YesNoRadioGroup label="Pollution Clearance Available" name="pollutionClearance" value={filters.pollutionClearance} onChange={(val) => handleRadioChange('pollutionClearance', val)} />
+        <YesNoRadioGroup label="Industrial License Eligible" name="industrialLicenseEligible" value={filters.industrialLicenseEligible} onChange={(val) => handleRadioChange('industrialLicenseEligible', val)} />
+        <YesNoRadioGroup label="Environmental Clearance Available" name="environmentalClearance" value={filters.environmentalClearance} onChange={(val) => handleRadioChange('environmentalClearance', val)} />
+        <YesNoRadioGroup label="Industrial Approval Available" name="industrialApprovalAvailable" value={filters.industrialApprovalAvailable} onChange={(val) => handleRadioChange('industrialApprovalAvailable', val)} />
+        <YesNoRadioGroup label="Encumbrance Free" name="encumbranceFree" value={filters.encumbranceFree} onChange={(val) => handleRadioChange('encumbranceFree', val)} />
+        <YesNoRadioGroup label="Patta Available" name="pattaAvailable" value={filters.pattaAvailable} onChange={(val) => handleRadioChange('pattaAvailable', val)} />
+        {(currentTab === 'Buy' || currentTab === 'Sell') && (
+          <YesNoRadioGroup label="Loan Eligible" name="loanEligible" value={filters.loanEligible} onChange={(val) => handleRadioChange('loanEligible', val)} />
+        )}
+        <YesNoRadioGroup label="Land Survey Completed" name="landSurveyCompleted" value={filters.landSurveyCompleted} onChange={(val) => handleRadioChange('landSurveyCompleted', val)} />
+        <YesNoRadioGroup label="Title Deed Verified" name="titleDeedVerified" value={filters.titleDeedVerified} onChange={(val) => handleRadioChange('titleDeedVerified', val)} />
+        {currentTab === 'Rent' && (
+          <YesNoRadioGroup label="Rental Agreement Available" name="rentalAgreementAvailable" value={filters.rentalAgreementAvailable} onChange={(val) => handleRadioChange('rentalAgreementAvailable', val)} />
+        )}
+        {currentTab === 'Lease' && (
+          <YesNoRadioGroup label="Lease Agreement Available" name="leaseAgreementAvailable" value={filters.leaseAgreementAvailable} onChange={(val) => handleRadioChange('leaseAgreementAvailable', val)} />
+        )}
+      </div>
+    </div>
+  );
+
+  const renderAvailabilitySection = () => {
+    if (currentTab === 'Rent') {
+      return (
+        <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+          <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><Calendar className="w-3.5 h-3.5" /> Availability</h3>
+          <div className="space-y-2">
+            <YesNoRadioGroup label="Ready for Rent" name="readyForRent" value={filters.readyForRent} onChange={(val) => handleRadioChange('readyForRent', val)} />
+            <YesNoRadioGroup label="Immediate Possession" name="immediatePossession" value={filters.immediatePossession} onChange={(val) => handleRadioChange('immediatePossession', val)} />
+            <YesNoRadioGroup label="Vacant Plot Available" name="vacantPlotAvailable" value={filters.vacantPlotAvailable} onChange={(val) => handleRadioChange('vacantPlotAvailable', val)} />
+            <YesNoRadioGroup label="Pre-Leased Property" name="preLeasedProperty" value={filters.preLeasedProperty} onChange={(val) => handleRadioChange('preLeasedProperty', val)} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <YesNoRadioGroup label="Long-Term Lease Available" name="longTermLease" value={filters.longTermLease} onChange={(val) => handleRadioChange('longTermLease', val)} />
+              <YesNoRadioGroup label="Short-Term Lease Available" name="shortTermLease" value={filters.shortTermLease} onChange={(val) => handleRadioChange('shortTermLease', val)} />
+            </div>
+          </div>
+        </div>
+      );
+    } else if (currentTab === 'Lease') {
+      return (
+        <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+          <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><Calendar className="w-3.5 h-3.5" /> Availability</h3>
+          <div className="space-y-2">
+            <YesNoRadioGroup label="Ready to Occupy" name="readyToOccupy" value={filters.readyToOccupy} onChange={(val) => handleRadioChange('readyToOccupy', val)} />
+            <YesNoRadioGroup label="Immediate Possession" name="immediatePossession" value={filters.immediatePossession} onChange={(val) => handleRadioChange('immediatePossession', val)} />
+            <YesNoRadioGroup label="Vacant Plot Available" name="vacantPlotAvailable" value={filters.vacantPlotAvailable} onChange={(val) => handleRadioChange('vacantPlotAvailable', val)} />
+            <YesNoRadioGroup label="Operational Industrial Site Available" name="operationalIndustrialSite" value={filters.operationalIndustrialSite} onChange={(val) => handleRadioChange('operationalIndustrialSite', val)} />
+          </div>
+        </div>
+      );
+    } else if (currentTab === 'Sell') {
+      return (
+        <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+          <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><Calendar className="w-3.5 h-3.5" /> Availability</h3>
+          <div className="space-y-2">
+            <YesNoRadioGroup label="Ready to Register" name="readyToRegister" value={filters.readyToRegister} onChange={(val) => handleRadioChange('readyToRegister', val)} />
+            <YesNoRadioGroup label="Immediate Possession" name="immediatePossession" value={filters.immediatePossession} onChange={(val) => handleRadioChange('immediatePossession', val)} />
+            <YesNoRadioGroup label="Vacant Plot Available" name="vacantPlotAvailable" value={filters.vacantPlotAvailable} onChange={(val) => handleRadioChange('vacantPlotAvailable', val)} />
+            <YesNoRadioGroup label="Pre-Leased Industrial Property" name="preLeasedProperty" value={filters.preLeasedProperty} onChange={(val) => handleRadioChange('preLeasedProperty', val)} />
+          </div>
+        </div>
+      );
+    } else {
+      return (
+        <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+          <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><Calendar className="w-3.5 h-3.5" /> Availability Preference</h3>
+          <div className="space-y-2">
+            <YesNoRadioGroup label="Ready to Register" name="readyToRegister" value={filters.readyToRegister} onChange={(val) => handleRadioChange('readyToRegister', val)} />
+            <YesNoRadioGroup label="Immediate Possession" name="immediatePossession" value={filters.immediatePossession} onChange={(val) => handleRadioChange('immediatePossession', val)} />
+            <YesNoRadioGroup label="Vacant Plot Preferred" name="vacantPlotAvailable" value={filters.vacantPlotAvailable} onChange={(val) => handleRadioChange('vacantPlotAvailable', val)} />
+            <YesNoRadioGroup label="Pre-Leased Industrial Property Preferred" name="preLeasedProperty" value={filters.preLeasedProperty} onChange={(val) => handleRadioChange('preLeasedProperty', val)} />
+          </div>
+        </div>
+      );
+    }
+  };
+
+  const renderNearbySection = () => (
+    <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+      <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><Bus className="w-3.5 h-3.5" /> Nearby Access</h3>
+      <CheckboxGroup options={nearbyOptions} values={filters.nearbyAccess} onChange={(val) => handleInputChange('nearbyAccess', val)} columns={2} />
+    </div>
+  );
+
+  const renderContactSection = () => (
+    <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-lg p-3 border border-teal-200">
+      <h3 className="font-semibold text-teal-800 mb-2 flex items-center gap-1.5 text-sm"><Phone className="w-3.5 h-3.5" /> Contact Preference</h3>
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-3">
+          {listingTypeOptions.map(type => (
+            <label key={type} className="flex items-center gap-1.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={filters[`contact${type}`]}
+                onChange={(e) => handleCheckboxChange(`contact${type}`, e.target.checked)}
+                className="w-3.5 h-3.5 rounded border border-teal-400 checked:bg-teal-500 checked:border-teal-500 accent-teal-500"
+              />
+              <span className="text-xs text-gray-700 font-medium group-hover:text-teal-500">Contact {type}</span>
+            </label>
+          ))}
+        </div>
+        <CustomSelect label="Preferred Contact Time" options={contactTimeOptions} value={filters.preferredContactTime} onChange={(val) => handleInputChange('preferredContactTime', val)} placeholder="Select Time" />
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <style>{animationStyle}</style>
+      <div className="bg-white rounded-xl shadow-xl border border-teal-100 overflow-hidden flex flex-col" style={{ maxHeight: '85vh', width: '100%', maxWidth: '900px' }}>
+        <div className="sticky top-0 z-10 bg-white border-b border-teal-100">
+          <div className="flex justify-between items-center px-3 py-2 bg-gradient-to-r from-teal-600 to-emerald-700">
+            <div className="flex items-center gap-2">
+              <div className="p-0.5 bg-white/20 rounded">
+                <Crown className="w-4 h-4 text-white slow-rotate" />
+              </div>
+              <h3 className="text-white font-semibold text-sm">Filter Industrial Plot</h3>
+            </div>
+            {onClose && (
+              <button onClick={onClose} className="text-white/80 hover:text-white transition-all p-0.5" type="button">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          
+          <div className="flex border-b border-teal-100 bg-teal-50/50">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => handleTabClick(tab.id)}
+                type="button"
+                className={`flex-1 py-2 text-xs font-semibold transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer ${
+                  currentTab === tab.id ? 'text-teal-600 border-b-2 border-teal-500 bg-white shadow-sm' : 'text-teal-500 hover:text-teal-600 hover:bg-teal-50'
+                }`}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          <SectionNav />
+          <div className="p-3 space-y-3">
+            {activeMainSection === 'basic' && renderBasicSection()}
+            {activeMainSection === 'price' && renderPriceSection()}
+            {activeMainSection === 'plot' && renderPlotSection()}
+            {activeMainSection === 'suitability' && renderSuitabilitySection()}
+            {activeMainSection === 'infrastructure' && renderInfrastructureSection()}
+            {activeMainSection === 'amenities' && renderAmenitiesSection()}
+            {activeMainSection === 'legal' && renderLegalSection()}
+            {activeMainSection === 'availability' && renderAvailabilitySection()}
+            {activeMainSection === 'nearby' && renderNearbySection()}
+            {activeMainSection === 'contact' && renderContactSection()}
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 p-2 border-t border-teal-100 bg-gradient-to-r from-teal-50 to-emerald-50">
+          <div className="flex gap-2">
+            <button onClick={clearAllFilters} className="flex-1 px-3 py-1.5 rounded-lg border border-teal-400 text-teal-600 font-semibold text-xs hover:bg-teal-200 transition-all flex items-center justify-center gap-1.5" type="button">
+              <RefreshCw className="w-3 h-3" /> Reset
+            </button>
+            <button onClick={applyFilters} className="flex-1 px-3 py-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-emerald-700 text-white font-semibold text-xs hover:shadow-md transition-all flex items-center justify-center gap-1.5" type="button">
+              <CheckCircle className="w-3 h-3" /> Apply
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default IndustrialPlotFilter;

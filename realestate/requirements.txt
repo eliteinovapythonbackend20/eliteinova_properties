@@ -1,0 +1,49 @@
+# Core
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# Database
+sqlalchemy==2.0.36
+alembic==1.14.1
+asyncpg==0.30.0
+
+# Validation
+# pydantic==2.10.4
+pydantic-settings==2.6.1
+email-validator==2.2.0
+
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.0
+python-dotenv==1.0.1 
+
+# Images & Videos
+Pillow==11.0.0
+moviepy==1.0.3
+python-magic==0.4.27
+
+# Pagination
+fastapi-pagination==0.12.31
+
+# Utils
+python-dotenv==1.0.1
+
+
+
+google-cloud-storage==2.18.2
+
+
+google-auth==2.35.0
+google-resumable-media==2.7.2
+
+
+psycopg2-binary
+pydantic==2.10.6
+pydantic-core==2.27.2
+PyMuPDF==1.24.12
+cloudinary
+aiosmtplib
+
+razorpay
+setuptools

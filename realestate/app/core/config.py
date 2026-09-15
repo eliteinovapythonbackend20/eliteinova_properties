@@ -3,7 +3,7 @@ from typing import Optional, List, Union
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-current_profile = os.getenv("ENVIRONMENT", "development")
+current_profile = os.getenv("ENVIRONMENT", "")
 env_filename = f".env.{current_profile}"
 
 if not os.path.exists(env_filename):

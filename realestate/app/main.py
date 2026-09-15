@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     print("Database connections closed")
 
 app = FastAPI(
-    title="Real Estate API",
+    title="Eliteinova Property",
     description="Property Listing API",
     version="2.0.0",
     lifespan=lifespan,

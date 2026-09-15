@@ -15,7 +15,7 @@ elif db_url.startswith("postgresql://"):
 elif not db_url.startswith("postgresql+asyncpg://"):
     raise ValueError("DATABASE_URL must be a PostgreSQL connection string")
 
-# ssl_context = ssl.create_default_context()
+ssl_context = ssl.create_default_context()
 
 
 engine = create_async_engine(
@@ -23,7 +23,7 @@ engine = create_async_engine(
     echo=settings.DATABASE_ECHO,
     poolclass=NullPool, 
     pool_pre_ping=True,
-    # connect_args = {"ssl":ssl_context},
+    connect_args = {"ssl":ssl_context},
 )
 
 # Create async session factory

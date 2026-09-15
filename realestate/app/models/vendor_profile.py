@@ -19,6 +19,8 @@ class VendorProfile(Base):
     profile_picture = Column(Text, nullable=True)
     company_logo_url = Column(Text,nullable=True)
 
+    company_name = Column(String(255), nullable=True)
+
     address = Column(Text,nullable=True)
     city = Column(String, nullable=True)
     district = Column(String, nullable=True)
@@ -42,6 +44,8 @@ class VendorProfile(Base):
     youtube = Column(Text, nullable=True)
 
     agency_details = Column(JSONB,default={})
+
+    builder_details = Column(JSONB, default={})
 
     company_details = Column(JSONB, default={})
 

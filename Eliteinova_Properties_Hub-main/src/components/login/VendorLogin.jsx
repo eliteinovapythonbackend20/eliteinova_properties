@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { X, Building, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/authContext';
+import { useToast } from '../../hooks/useToast';
+import Toast from '../common/Toast';
 
 const VendorLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
 
@@ -15,6 +17,7 @@ const VendorLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const { toast, showToast } = useToast();
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -32,13 +35,20 @@ const VendorLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
 
     try {
       const res = await login(formData);
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      console.log('Vendor Login:', formData);
+      if (!res?.success) {
+        const message = res?.error?.message || 'Invalid credentials. Please try again.';
+        setError(message);
+        showToast(message, 'error');
+        return;
+      }
+      showToast('Login successful!', 'success');
       handleClose();
       navigate('/profile/owner')
       // navigate('/vendor-dashboard');
     } catch (err) {
-      setError('Invalid credentials. Please try again.');
+      const message = err?.message || 'Invalid credentials. Please try again.';
+      setError(message);
+      showToast(message, 'error');
     } finally {
       setLoading(false);
     }
@@ -273,6 +283,7 @@ const VendorLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
           animation: fade 0.25s ease-out forwards;
         }
       `}</style>
+      <Toast toast={toast} />
     </div>
   );
 };

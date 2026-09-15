@@ -20,11 +20,12 @@ export class LoginRequest {
 }
 
 export class RegisterRequest {
-  constructor({ email, password, fullName, phoneNumber, address, city, state, country, role }) {
+  constructor({ email, password, fullName, phoneNumber, address, city, state, country, role, companyName }) {
     this.email = email;
     this.password = password;
     this.fullName = fullName;
     this.phoneNumber = phoneNumber;
+    this.companyName = companyName || 'NA';
     this.address = address;
     this.city = city;
     this.state = state;
@@ -107,9 +108,13 @@ export class AuthError {
   }
 
   static fromResponse(error) {
+    // FastAPI's HTTPException body is {"detail": "..."}, not {"message": "..."} -
+    // check both so real backend errors (e.g. "Email already registered") reach
+    // the UI instead of always falling back to a generic message.
+    const data = error.response?.data;
     return new AuthError({
-      message: error.response?.data?.message || error.message || 'Authentication failed',
-      code: error.response?.data?.code || 'AUTH_ERROR',
+      message: data?.detail || data?.message || error.message || 'Authentication failed',
+      code: data?.code || 'AUTH_ERROR',
       status: error.response?.status || 500
     });
   }

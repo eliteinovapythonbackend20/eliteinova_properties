@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { X, User, Mail, Lock, Eye, EyeOff, ArrowRight, Phone, MapPin, CheckCircle, Home, Building, Globe } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/authContext';
+import { useToast } from '../../hooks/useToast';
+import Toast from '../common/Toast';
 
 const CustomerRegister = ({ isOpen, onClose, onSwitchToLogin }) => {
   const [showPassword, setShowPassword] = useState(false);
@@ -26,6 +28,7 @@ const CustomerRegister = ({ isOpen, onClose, onSwitchToLogin }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
+  const { toast, showToast } = useToast();
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -116,18 +119,26 @@ const CustomerRegister = ({ isOpen, onClose, onSwitchToLogin }) => {
 
       // ✅ Call register with the properly formatted data
       const response = await register(apiData);
-      
-      console.log('✅ Registration response:', response);
-      
+
+      if (!response?.success) {
+        const message = response?.error?.message || 'Registration failed. Please try again.';
+        setError(message);
+        showToast(message, 'error');
+        return;
+      }
+
+      showToast('Account created successfully!', 'success');
       setSuccess(true);
       setTimeout(() => {
         handleClose();
-        navigate('/dashboard');
+        navigate('/');
       }, 2000);
-      
+
     } catch (err) {
       console.error('❌ Registration error:', err);
-      setError(err.response?.data?.detail || 'Registration failed. Please try again.');
+      const message = err.response?.data?.detail || 'Registration failed. Please try again.';
+      setError(message);
+      showToast(message, 'error');
     } finally {
       setLoading(false);
     }
@@ -536,6 +547,7 @@ const CustomerRegister = ({ isOpen, onClose, onSwitchToLogin }) => {
           animation: fade 0.25s ease-out forwards;
         }
       `}</style>
+      <Toast toast={toast} />
     </div>
   );
 };

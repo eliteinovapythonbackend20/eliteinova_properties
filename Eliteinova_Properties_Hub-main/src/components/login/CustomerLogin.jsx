@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { X, User, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/authContext';
+import { useToast } from '../../hooks/useToast';
+import Toast from '../common/Toast';
 const CustomerLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
 
   const {login} = useAuth();
@@ -14,6 +16,7 @@ const CustomerLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const { toast, showToast } = useToast();
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -30,16 +33,21 @@ const CustomerLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
     setError('');
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      console.log('Customer Login:', formData);
-      
-      await login(formData);
+      const res = await login(formData);
+      if (!res?.success) {
+        const message = res?.error?.message || 'Invalid email or password. Please try again.';
+        setError(message);
+        showToast(message, 'error');
+        return;
+      }
 
+      showToast('Login successful!', 'success');
       onClose();
-      // Navigate to dashboard
-      navigate('/dashboard');
+      navigate('/');
     } catch (err) {
-      setError('Invalid email or password. Please try again.');
+      const message = err?.message || 'Invalid email or password. Please try again.';
+      setError(message);
+      showToast(message, 'error');
     } finally {
       setLoading(false);
     }
@@ -279,6 +287,7 @@ const CustomerLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
           animation: fade 0.25s ease-out forwards;
         }
       `}</style>
+      <Toast toast={toast} />
     </div>
   );
 };

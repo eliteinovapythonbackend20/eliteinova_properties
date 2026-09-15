@@ -845,25 +845,29 @@ class AuthService:
     
     async def login_user(self, login_data: UserLogin) -> Dict[str, Any]:
         user = await self.user_repository.get_user_by_email(login_data.email)
-        role = user.role
-        if role == "user":
-            customer = await self.user_repository.get_customer_by_user_id(user.user_id)
-        elif role == "vendor":
-            vendor = await self.vendor_repository.get_vendor_profile(user.user_id)
         if not user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-        
+
         if not user.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account deactivated")
-        
+
         if not Security.verify_password(login_data.password, user.password_hash):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-        
+
         await self.user_repository.update_last_login(user.id)
-        user_obj = {"name":customer.full_name or vendor.full_name,
-                    "phoneNumber":customer.phone_number or vendor.phone_number
-                    }
-        user = user.update(user_obj)
+
+        customer = None
+        vendor = None
+        if user.role == "user":
+            customer = await self.user_repository.get_customer_by_user_id(user.id)
+        elif user.role == "vendor":
+            vendor = await self.vendor_repository.get_vendor_profile(user.id)
+
+        # `name`/`phoneNumber` aren't real columns on User - attach them as plain
+        # attributes (same pattern as UserRepository.create_user) so _user_to_dict
+        # can read a display name/phone without crashing on a missing attribute.
+        user.name = (customer.full_name if customer else None) or (vendor.full_name if vendor else None)
+        user.phoneNumber = (customer.phone_number if customer else None) or (vendor.phone_number if vendor else None)
         userDto = self._user_to_dict(user)
         access_token = Security.create_access_token(data={
             "sub": user.email,

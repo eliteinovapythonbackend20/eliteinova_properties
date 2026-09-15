@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { X, User, Mail, Lock, Eye, EyeOff, ArrowRight, Phone, MapPin, CheckCircle, Building, Globe, Home, Store } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/authContext';
+import { useToast } from '../../hooks/useToast';
+import Toast from '../common/Toast';
 
 const VendorRegister = ({ isOpen, onClose, onSwitchToLogin }) => {
   const [showPassword, setShowPassword] = useState(false);
@@ -25,6 +27,7 @@ const VendorRegister = ({ isOpen, onClose, onSwitchToLogin }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
+  const { toast, showToast } = useToast();
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -104,16 +107,22 @@ const VendorRegister = ({ isOpen, onClose, onSwitchToLogin }) => {
 
     try {
       const res = await register(formData);
-      console.log(res?.data);
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      console.log('Vendor Registration Data:', formData);
+      if (!res?.success) {
+        const message = res?.error?.message || 'Registration failed. Please try again.';
+        setError(message);
+        showToast(message, 'error');
+        return;
+      }
+      showToast('Vendor account created successfully!', 'success');
       setSuccess(true);
       setTimeout(() => {
         handleClose();
-        navigate('/vendor-dashboard');
+        navigate('/');
       }, 2000);
     } catch (err) {
-      setError('Registration failed. Please try again.');
+      const message = err?.message || 'Registration failed. Please try again.';
+      setError(message);
+      showToast(message, 'error');
     } finally {
       setLoading(false);
     }
@@ -543,6 +552,7 @@ const VendorRegister = ({ isOpen, onClose, onSwitchToLogin }) => {
           animation: fade 0.25s ease-out forwards;
         }
       `}</style>
+      <Toast toast={toast} />
     </div>
   );
 };

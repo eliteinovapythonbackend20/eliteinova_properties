@@ -63,11 +63,16 @@ class UserRepository:
                 await self.db.refresh(vendor)
             
             await self.db.refresh(user)
-            user_obj = { "name":user_data.get("full_name"),
-                        "phoneNumber":user_data.get("phoneNumber")
-                    }
-            user = user.update(user_obj)
-            
+            # `name`/`phoneNumber` aren't real columns on User (they live on
+            # Customer/VendorProfile) - attach them as plain attributes so
+            # AuthService._user_to_dict can read a display name/phone without
+            # a second query. (Previously called a nonexistent `user.update()`,
+            # which raised AttributeError here - AFTER the commit above had
+            # already persisted the user/customer/vendor rows, so registration
+            # looked like it failed even though the DB write had succeeded.)
+            user.name = user_data.get("full_name")
+            user.phoneNumber = user_data.get("phone_number")
+
             return user
             
         except Exception as e:

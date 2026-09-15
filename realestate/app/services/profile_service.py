@@ -598,8 +598,13 @@ class ProfileService:
             # Media and documents
             'images': self.formatter.format_media(property_obj.media) if property_obj.media else [],
             'documents': self.formatter.format_documents(property_obj.documents) if property_obj.documents else [],
+
+            # Per-property contact person (owner_properties/agent_properties/
+            # builder_properties/property_management_properties) - profile-page
+            # views only, never the public card/list.
+            'contactPersonDetails': self._get_profile_data(property_obj),
         }
-        
+
         property_data = self.formatter.strip_none_values(property_data)
         
         return property_data
@@ -639,42 +644,166 @@ class ProfileService:
         return profile
 
     def _get_profile_data(self, property_obj) -> Optional[Dict[str, Any]]:
+        """Build 'contactPersonDetails' for a vendor's OWN property view (profile
+        pages only - never the public card/list, which stays contact-free).
+
+        This is per-PROPERTY data (owner_properties/agent_properties/
+        builder_properties/property_management_properties - whatever was filled
+        in on that property's own posting form), NOT the vendor's persistent
+        vendor_profile row. The two are intentionally different: vendor_profile
+        drives the profile page's own header/"easy navigation" summary and is
+        editable independently; this drives the per-property contact block, which
+        can legitimately differ per listing (e.g. a property management company
+        naming a different on-site contact for one specific property).
+
+        Normalizes the four role-specific formatters into one shape carrying the
+        union of their fields, so the frontend can render one block without
+        per-role branching, while still keeping every role-specific field
+        (agency/company name, RERA, GST, experience, service area, socials, ...)
+        that format_owner_details/format_agent_details/format_builder_details/
+        format_property_management_details (app/core/response_utils.py) already
+        produce - nothing from those is dropped, only renamed onto shared keys
+        where the concept overlaps (fullName -> name, mobileNumber -> mobile,
+        emailAddress -> emailId, agencyName -> companyName).
+        """
         if not property_obj or not property_obj.posted_by:
             return None
 
         posted_by = property_obj.posted_by
 
-        base_profile = {
-            'postedAs': posted_by,
-            'propertyId': property_obj.id,
-            'propertyTitle': property_obj.property_title,
-            'propertyAddress': property_obj.address,
-            'city': property_obj.city,
-            'state': property_obj.state,
-            'pincode': property_obj.pin_code,
-        }
-
         if posted_by == 'OWNER':
-            owner_details = self.formatter.format_owner_details(property_obj)
-            if owner_details:
-                return {**base_profile, **owner_details}
+            raw = self.formatter.format_owner_details(property_obj)
+            if not raw:
+                return None
+            return {
+                'name': raw.get('fullName'),
+                'mobile': raw.get('mobileNumber'),
+                'emailId': raw.get('emailAddress'),
+                'profilePhotoUrl': raw.get('profilePhotoUrl'),
+                'dateOfBirth': raw.get('dateOfBirth'),
+                'gender': raw.get('gender'),
+                'aadhaarNumber': raw.get('aadhaarNumber'),
+                'panNumber': raw.get('panNumber'),
+                'addressLine1': raw.get('addressLine1'),
+                'addressLine2': raw.get('addressLine2'),
+                'city': raw.get('city'),
+                'state': raw.get('state'),
+                'pincode': raw.get('pincode'),
+                'preferredContactMethod': raw.get('preferredContactMethod'),
+                'preferredContactTime': raw.get('preferredContactTime'),
+                'additionalNote': raw.get('additionalNote'),
+                'bankName': raw.get('bankName'),
+                'accountHolderName': raw.get('accountHolderName'),
+                'accountNumber': raw.get('accountNumber'),
+                'ifscCode': raw.get('ifscCode'),
+                'upiId': raw.get('upiId'),
+            }
 
         elif posted_by == 'AGENT':
-            agent_details = self.formatter.format_agent_details(property_obj)
-            if agent_details:
-                return {**base_profile, **agent_details}
+            raw = self.formatter.format_agent_details(property_obj)
+            if not raw:
+                return None
+            return {
+                'name': raw.get('fullName'),
+                'mobile': raw.get('mobileNumber'),
+                'emailId': raw.get('emailId'),
+                'profilePhotoUrl': raw.get('profilePhotoUrl'),
+                'dateOfBirth': raw.get('dateOfBirth'),
+                'gender': raw.get('gender'),
+                'companyLogo': raw.get('companyLogo'),
+                'companyName': raw.get('agencyName'),
+                'officeAddress': raw.get('officeAddress'),
+                'reraRegistrationNumber': raw.get('reraRegistrationNumber'),
+                'gstNumber': raw.get('gstNumber'),
+                'experience': raw.get('experience'),
+                'activeListing': raw.get('activeListing'),
+                'serviceArea': raw.get('serviceArea'),
+                'bankName': raw.get('bankName'),
+                'accountHolderName': raw.get('accountHolderName'),
+                'accountNumber': raw.get('accountNumber'),
+                'ifscCode': raw.get('ifscCode'),
+                'upiId': raw.get('upiId'),
+            }
 
         elif posted_by == 'BUILDER':
-            builder_details = self.formatter.format_builder_details(property_obj)
-            if builder_details:
-                return {**base_profile, **builder_details}
+            raw = self.formatter.format_builder_details(property_obj)
+            if not raw:
+                return None
+            return {
+                'name': raw.get('fullName'),
+                'designation': raw.get('designation'),
+                'mobile': raw.get('mobileNumber'),
+                'whatsappNumber': raw.get('whatsappNumber'),
+                'emailId': raw.get('emailId'),
+                'profilePhotoUrl': raw.get('profilePhotoUrl'),
+                'companyLogo': raw.get('companyLogo'),
+                'companyName': raw.get('companyName'),
+                'companyRegNumber': raw.get('companyRegNumber'),
+                'companyWebsite': raw.get('companyWebsite'),
+                'companyProfile': raw.get('companyProfile'),
+                'officeAddress': raw.get('officeAddress'),
+                'city': raw.get('city'),
+                'district': raw.get('district'),
+                'state': raw.get('state'),
+                'pincode': raw.get('pincode'),
+                'landmark': raw.get('landmark'),
+                'website': raw.get('website'),
+                'facebook': raw.get('facebook'),
+                'instagram': raw.get('instagram'),
+                'linkedin': raw.get('linkedin'),
+                'youtube': raw.get('youtube'),
+                'reraRegistrationNumber': raw.get('reraRegistrationNumber'),
+                'gstNumber': raw.get('gstNumber'),
+                'experience': raw.get('experience'),
+                'aadhaarNumber': raw.get('aadhaarNumber'),
+                'panNumber': raw.get('panNumber'),
+                'bankName': raw.get('bankName'),
+                'accountHolderName': raw.get('accountHolderName'),
+                'accountNumber': raw.get('accountNumber'),
+                'ifscCode': raw.get('ifscCode'),
+                'upiId': raw.get('upiId'),
+            }
 
         elif posted_by == 'PROPERTY_MANAGEMENT':
-            pm_details = self.formatter.format_property_management_details(property_obj)
-            if pm_details:
-                return {**base_profile, **pm_details}
+            raw = self.formatter.format_property_management_details(property_obj)
+            if not raw:
+                return None
+            return {
+                'name': raw.get('fullName'),
+                'designation': raw.get('designation'),
+                'mobile': raw.get('mobileNumber'),
+                'whatsappNumber': raw.get('whatsappNumber'),
+                'emailId': raw.get('emailId'),
+                'profilePhotoUrl': raw.get('profilePhotoUrl'),
+                'companyLogo': raw.get('companyLogo'),
+                'companyName': raw.get('companyName'),
+                'companyRegNumber': raw.get('companyRegNumber'),
+                'companyWebsite': raw.get('companyWebsite'),
+                'companyProfile': raw.get('companyDescription'),
+                'officeAddress': raw.get('officeAddress'),
+                'city': raw.get('city'),
+                'district': raw.get('district'),
+                'state': raw.get('state'),
+                'pincode': raw.get('pincode'),
+                'landmark': raw.get('landmark'),
+                'website': raw.get('website'),
+                'facebook': raw.get('facebook'),
+                'instagram': raw.get('instagram'),
+                'linkedin': raw.get('linkedin'),
+                'youtube': raw.get('youtube'),
+                'reraRegistrationNumber': raw.get('reraRegistrationNumber'),
+                'gstNumber': raw.get('gstNumber'),
+                'experience': raw.get('experience'),
+                'aadhaarNumber': raw.get('aadhaarNumber'),
+                'panNumber': raw.get('panNumber'),
+                'bankName': raw.get('bankName'),
+                'accountHolderName': raw.get('accountHolderName'),
+                'accountNumber': raw.get('accountNumber'),
+                'ifscCode': raw.get('ifscCode'),
+                'upiId': raw.get('upiId'),
+            }
 
-        return base_profile
+        return None
 
 
     async def get_vendor_profile(self, user_id: str) -> Dict[str, Any]:

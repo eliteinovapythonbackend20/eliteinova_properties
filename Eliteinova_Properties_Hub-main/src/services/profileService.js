@@ -517,10 +517,14 @@ export const mapPropertyToFrontend = (backendProperty) => {
     .map(img => img.fileUrl || img)
     .filter(Boolean);
   
-  // Get contactPerson details from owner_properties
+  // Get contactPerson details for THIS property - from whichever role-specific
+  // table it was posted through (owner_properties/agent_properties/
+  // builder_properties/property_management_properties). Backend normalizes all
+  // four into one shape (ProfileService._get_profile_data) - profile pages only,
+  // never the public card/list.
   const contactPerson = backendProperty.contactPersonDetails || {};
-  
-  // Get documents
+
+  // Get documents linked to this property (property_document table)
   const documents = backendProperty.documents || [];
   
   return {
@@ -571,22 +575,45 @@ export const mapPropertyToFrontend = (backendProperty) => {
     views: backendProperty.views || 0,
     inquiries: backendProperty.inquiries || 0,
     
-    // contactPerson/Contact details for this specific property
+    // Contact person for THIS property - name/mobile/email/etc always present
+    // (whichever role posted it); companyName/rera/gst/experience/serviceArea/
+    // socials only present for AGENT/BUILDER/PROPERTY_MANAGEMENT; dateOfBirth/
+    // gender/preferredContactMethod/preferredContactTime/additionalNote only
+    // for OWNER. See ProfileService._get_profile_data on the backend.
     contactPersonDetails: {
-      ownerName: contactPerson.ownerName || '',
+      name: contactPerson.name || '',
       mobile: contactPerson.mobile || '',
       emailId: contactPerson.emailId || '',
       profilePhotoUrl: contactPerson.profilePhotoUrl || '',
-      addressLine1: contactPerson.addressLine1 || '',
-      addressLine2: contactPerson.addressLine2 || '',
-      ownerCity: contactPerson.ownerCity || '',
-      ownerDistrict: contactPerson.ownerDistrict || '',
-      ownerState: contactPerson.ownerState || '',
-      ownerPinCode: contactPerson.ownerPinCode || '',
+      designation: contactPerson.designation || '',
+      whatsappNumber: contactPerson.whatsappNumber || '',
       dateOfBirth: contactPerson.dateOfBirth || '',
       gender: contactPerson.gender || '',
       aadhaarNumber: contactPerson.aadhaarNumber || '',
       panNumber: contactPerson.panNumber || '',
+      addressLine1: contactPerson.addressLine1 || '',
+      addressLine2: contactPerson.addressLine2 || '',
+      officeAddress: contactPerson.officeAddress || '',
+      city: contactPerson.city || '',
+      district: contactPerson.district || '',
+      state: contactPerson.state || '',
+      pincode: contactPerson.pincode || '',
+      landmark: contactPerson.landmark || '',
+      companyName: contactPerson.companyName || '',
+      companyLogo: contactPerson.companyLogo || '',
+      companyRegNumber: contactPerson.companyRegNumber || '',
+      companyWebsite: contactPerson.companyWebsite || '',
+      companyProfile: contactPerson.companyProfile || '',
+      reraRegistrationNumber: contactPerson.reraRegistrationNumber || '',
+      gstNumber: contactPerson.gstNumber || '',
+      experience: contactPerson.experience || '',
+      activeListing: contactPerson.activeListing || '',
+      serviceArea: contactPerson.serviceArea || [],
+      website: contactPerson.website || '',
+      facebook: contactPerson.facebook || '',
+      instagram: contactPerson.instagram || '',
+      linkedin: contactPerson.linkedin || '',
+      youtube: contactPerson.youtube || '',
       bankName: contactPerson.bankName || '',
       accountHolderName: contactPerson.accountHolderName || '',
       accountNumber: contactPerson.accountNumber || '',
@@ -596,16 +623,14 @@ export const mapPropertyToFrontend = (backendProperty) => {
       preferredContactTime: contactPerson.preferredContactTime || '',
       additionalNote: contactPerson.additionalNote || '',
     },
-    
-    // Documents for this property
+
+    // Documents linked to this property (sale deed, floor plan, aadhaar, PAN, etc.)
     documents: documents.map(doc => ({
       id: doc.id,
       name: doc.fileName || doc.name || 'Document',
       url: doc.fileUrl || doc.url,
       type: doc.documentType || 'other',
-      isPropertyDocument: doc.is_propertydocument || false,
-      propertyId: doc.property_id || null,
-      size: doc.fileSize || 0,
+      sizeKb: doc.fileSizeKb || 0,
     }))
   };
 };

@@ -1,7 +1,3 @@
-// src/hooks/useToast.js
-// Extracted from the toast state/logic duplicated across the admin dashboard
-// (e.g. AgentsRegistration.jsx) into one reusable hook. Pair with
-// <Toast toast={toast} /> (src/components/common/Toast.jsx) to render it.
 import { useCallback, useRef, useState } from 'react';
 
 export const useToast = () => {

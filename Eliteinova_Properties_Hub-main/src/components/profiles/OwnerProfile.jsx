@@ -2001,6 +2001,70 @@ const handleToggleStatus = async (property) => {
               </div>
             )}
 
+            {property.contactPersonDetails && (property.contactPersonDetails.name || property.contactPersonDetails.mobile) && (
+              <div>
+                <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-1 sm:mb-1.5">Contact Person</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2">
+                  {property.contactPersonDetails.name && (
+                    <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+                      <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><User className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
+                      <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Name</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.name}</p></div>
+                    </div>
+                  )}
+                  {property.contactPersonDetails.mobile && (
+                    <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+                      <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
+                      <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Mobile</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.mobile}</p></div>
+                    </div>
+                  )}
+                  {property.contactPersonDetails.emailId && (
+                    <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+                      <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><Mail className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
+                      <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Email</p><p className="text-[10px] sm:text-xs font-bold text-gray-800 truncate">{property.contactPersonDetails.emailId}</p></div>
+                    </div>
+                  )}
+                  {property.contactPersonDetails.companyName && (
+                    <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+                      <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><Building className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
+                      <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Company</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.companyName}</p></div>
+                    </div>
+                  )}
+                  {property.contactPersonDetails.reraRegistrationNumber && (
+                    <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+                      <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><FileCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
+                      <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">RERA No.</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.reraRegistrationNumber}</p></div>
+                    </div>
+                  )}
+                  {property.contactPersonDetails.experience && (
+                    <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+                      <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><Award className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
+                      <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Experience</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.experience} yrs</p></div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {property.documents && property.documents.length > 0 && (
+              <div>
+                <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-1 sm:mb-1.5">Documents</h3>
+                <div className="flex flex-wrap gap-1 sm:gap-1.5">
+                  {property.documents.map((doc, index) => (
+                    <a
+                      key={doc.id || index}
+                      href={doc.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 bg-[#00695C]/10 text-[#00695C] rounded-lg text-[9px] sm:text-[10px] font-bold hover:bg-[#00695C]/20 transition-colors"
+                    >
+                      <FileText className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                      {doc.name}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {images.length > 0 && (
               <div>
                 <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-1.5 sm:mb-2">All Property Images</h3>

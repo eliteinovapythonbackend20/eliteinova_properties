@@ -143,7 +143,7 @@ export default function RentBuilderApartForm({ isOpen, onClose }) {
     website: "", facebook: "", instagram: "", linkedin: "", youtube: "",
     
     // Documents (Step 8)
-    companyLogoDoc: null, companyLogoPreview: null, companyBrochure: null, projectBrochures: [], companyRegCertDoc: null, reraCertDoc: null, gstCertDoc: null, panCardDoc: null, authIdProof: null, officeAddressProof: null,
+    companyLogoDoc: null, companyBrochure: null, projectBrochures: [], companyRegCertDoc: null, reraCertDoc: null, gstCertDoc: null, panCardDoc: null, authIdProof: null, officeAddressProof: null,
     propertyImages: [], propertyVideo: null, coverImage: null, coverImagePreview: null, floorPlan: null,
     
     // Declaration (Step 9)

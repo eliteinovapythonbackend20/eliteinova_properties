@@ -1018,7 +1018,6 @@ class PropertyRepository:
         self,
         user_id: str,
         posted_by: str,
-        property_id: str,
         update_data: Dict[str, Any],
     ):
         detail_obj = await self.get_latest_vendor_detail(user_id, posted_by)

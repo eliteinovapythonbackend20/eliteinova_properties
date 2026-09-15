@@ -311,6 +311,29 @@ FILE_MAPPINGS = {
         'is_document': True,
         'is_profile': False
     },
+
+    # ============================================
+    # GENERIC BUCKETS (category matches, no is_profile split)
+    # → What the live create/update property endpoint actually sends:
+    #   images / video / documents. Per-item vendor-vs-property and doc-type
+    #   routing for 'documents' is resolved in FileExtractionService using the
+    #   parallel `document_types` list, not this static mapping.
+    # ============================================
+    'images': {
+        'category': 'images',
+        'is_document': False,
+        'is_profile': False
+    },
+    'video': {
+        'category': 'video',
+        'is_document': False,
+        'is_profile': False
+    },
+    'documents': {
+        'category': 'documents',
+        'is_document': True,
+        'is_profile': False
+    },
 }
 
 # ============================================
@@ -428,4 +451,14 @@ VENDOR_PROFILE_IMAGE_TO_DB_COLUMN = {
     'passportPhoto': 'profile_photo_url',
     'agencyLogo': 'agency_logo_url',
     'companyLogo': 'company_logo_url',
+}
+
+# Snake_case doc-type values that belong to the vendor (KYC/company docs), derived
+# from FILE_MAPPINGS itself so there's one source of truth. Used to split the
+# generic 'documents' bucket per-item into vendor_documents vs property_documents.
+VENDOR_DOCUMENT_TYPES = {
+    DOC_TYPE_MAPPING[field] for field, mapping in FILE_MAPPINGS.items()
+    if mapping.get('category') == 'documents'
+    and mapping.get('is_profile') is True
+    and field in DOC_TYPE_MAPPING
 }

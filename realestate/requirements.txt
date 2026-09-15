@@ -47,3 +47,5 @@ aiosmtplib
 
 razorpay
 setuptools
+
+Jinja2

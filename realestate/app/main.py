@@ -5,7 +5,6 @@ from app.core.config import settings
 from app.core.database import engine, Base
 from app.api import admin_controller, auth_controller, filter_controller, profile_controller, property_controller
 from app.middleware.auth_middleware import AuthMiddleware
-from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
 
 from app.api import payment_controller
 from app.api import admin_dashboard_controller

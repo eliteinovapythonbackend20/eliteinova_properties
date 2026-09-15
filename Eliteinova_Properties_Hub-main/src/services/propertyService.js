@@ -2,17 +2,29 @@
 import axiosInstance from '../api/axiosInstance';
 
 // The backend expects genuine multipart/form-data: a `property_data` part holding
-// the JSON-encoded scalar fields, plus separate `images` / `video` / `documents`
-// file parts. Forms build a single plain object (scalars + File objects mixed) -
-// this splits that object into the shape the API actually accepts.
-// NOTE: file field NAMES (coverImage, aadhaarCard, saleDeed, ...) are not yet
-// preserved per-type on the backend - see FileExtractionService/file_mappings.py.
-// They currently all collapse into the generic images/video/documents buckets.
+// the JSON-encoded scalar fields, plus `images` / `video` / `documents` file parts
+// and a `document_types` part. Forms build a single plain object (scalars + File
+// objects mixed) - this splits that object into the shape the API accepts.
+//
+// - `images`: cover image first (position 0 = primary on the backend), then the
+//   rest, in whatever order the form supplied them.
+// - `documents`: vendor KYC docs (aadhaar, pan, ...) and property docs (sale deed,
+//   floor plan, ownership doc, ...) mixed together - `document_types` carries the
+//   original field key per file, same order, so the backend can tell them apart
+//   and tag each row's real document type (see file_mappings.py DOC_TYPE_MAPPING).
 const buildPropertyFormData = (formData) => {
   const payload = {};
   const images = [];
   const documents = [];
+  const documentTypes = [];
+  let coverImage = null;
   let video = null;
+
+  const isDocumentKey = (key) => {
+    const k = key.toLowerCase();
+    return ['card', 'deed', 'certificate', 'doc', 'license', 'proof', 'brochure', 'agreement', 'receipt', 'plan', 'chitta']
+      .some((needle) => k.includes(needle));
+  };
 
   Object.entries(formData || {}).forEach(([key, value]) => {
     if (value === undefined || value === null) return;
@@ -20,10 +32,13 @@ const buildPropertyFormData = (formData) => {
     if (typeof File !== 'undefined' && value instanceof File) {
       if (key.toLowerCase().includes('video')) {
         video = value;
-      } else if (value.type?.startsWith('image/') && !key.toLowerCase().includes('card') && !key.toLowerCase().includes('deed') && !key.toLowerCase().includes('certificate') && !key.toLowerCase().includes('doc')) {
+      } else if (key.toLowerCase() === 'coverimage') {
+        coverImage = value;
+      } else if (value.type?.startsWith('image/') && !isDocumentKey(key)) {
         images.push(value);
       } else {
         documents.push(value);
+        documentTypes.push(key);
       }
       return;
     }
@@ -32,7 +47,10 @@ const buildPropertyFormData = (formData) => {
       if (key.toLowerCase().includes('image')) {
         images.push(...value);
       } else {
-        documents.push(...value);
+        value.forEach((file) => {
+          documents.push(file);
+          documentTypes.push(key);
+        });
       }
       return;
     }
@@ -42,8 +60,10 @@ const buildPropertyFormData = (formData) => {
 
   const body = new FormData();
   body.append('property_data', JSON.stringify(payload));
-  images.forEach((file) => body.append('images', file));
+  const orderedImages = coverImage ? [coverImage, ...images] : images;
+  orderedImages.forEach((file) => body.append('images', file));
   documents.forEach((file) => body.append('documents', file));
+  if (documentTypes.length) body.append('document_types', documentTypes.join(','));
   if (video) body.append('video', video);
   return body;
 };

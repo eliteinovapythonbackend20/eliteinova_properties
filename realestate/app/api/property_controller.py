@@ -89,10 +89,17 @@ async def create_property(
     images: Optional[List[UploadFile]] = File(None),
     video: Optional[UploadFile] = File(None),
     documents: Optional[List[UploadFile]] = File(None),
+    document_types: Optional[str] = Form(None),
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: PropertyService = Depends(get_property_service)
 ):
-    """Create a new property with multipart data"""
+    """Create a new property with multipart data
+
+    - **images**: cover image first, then additional property images (position 0 = primary)
+    - **documents**: mix of vendor KYC docs and property docs
+    - **document_types**: comma-separated type per file in `documents`, same order
+      (e.g. 'aadhaarCard,saleDeed,floorPlan' or already-canonical 'aadhaar_card,sale_deed,floor_plan')
+    """
     try:
         data = json.loads(property_data)
     except json.JSONDecodeError as e:
@@ -100,7 +107,7 @@ async def create_property(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid JSON in property_data: {str(e)}"
         )
-    
+
     data['user_id'] = current_user.get("user_id")
     if images:
         data['images'] = images
@@ -108,7 +115,9 @@ async def create_property(
         data['video'] = video
     if documents:
         data['documents'] = documents
-    
+    if document_types:
+        data['document_types'] = [t.strip() for t in document_types.split(',') if t.strip()]
+
     extraction_service = FileExtractionService()
     separated_files, cleaned_data, file_metadata = extraction_service.extract_and_separate_files(data)
     
@@ -165,6 +174,7 @@ async def update_property(
     images: Optional[List[UploadFile]] = File(None),
     video: Optional[UploadFile] = File(None),
     documents: Optional[List[UploadFile]] = File(None),
+    document_types: Optional[str] = Form(None),
     current_user: Dict[str, Any] = Depends(require_authenticated),
     service: PropertyService = Depends(get_property_service)
 ):
@@ -176,7 +186,7 @@ async def update_property(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid JSON: {str(e)}"
         )
-    
+
     data['user_id'] = current_user.get("user_id")
     if images:
         data['images'] = images
@@ -184,7 +194,9 @@ async def update_property(
         data['video'] = video
     if documents:
         data['documents'] = documents
-    
+    if document_types:
+        data['document_types'] = [t.strip() for t in document_types.split(',') if t.strip()]
+
     extraction_service = FileExtractionService()
     separated_files, cleaned_data, file_metadata = extraction_service.extract_and_separate_files(data)
     

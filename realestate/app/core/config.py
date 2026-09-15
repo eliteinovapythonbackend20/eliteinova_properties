@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Eliteinova Property"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
-    ENVIRONMENT: str = "development" 
+    ENVIRONMENT: str = ""
     
     # Database
     DATABASE_URL: str = ""

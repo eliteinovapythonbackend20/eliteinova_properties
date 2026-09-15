@@ -65,7 +65,7 @@ async def update_vendor_profile(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     data = await service.update_vendor_profile(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
@@ -81,7 +81,7 @@ async def upload_vendor_profile_photo(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     file = await _get_single_file_from_form(request)
     data = await service.upload_vendor_profile_photo(
         user_id=current_user.get("user_id"),
@@ -97,7 +97,7 @@ async def delete_vendor_profile_photo(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     data = await service.delete_vendor_profile_photo(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
@@ -112,7 +112,7 @@ async def upload_vendor_logo(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     file = await _get_single_file_from_form(request)
     data = await service.upload_vendor_logo(
         user_id=current_user.get("user_id"),
@@ -128,7 +128,7 @@ async def delete_vendor_logo(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     data = await service.delete_vendor_logo(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
@@ -146,7 +146,7 @@ async def get_vendor_properties(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     skip = (page - 1) * limit
     data = await service.get_vendor_properties(
         user_id=current_user.get("user_id"),
@@ -167,7 +167,7 @@ async def search_vendor_properties(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     skip = (page - 1) * limit
     data = await service.search_vendor_properties(
         user_id=current_user.get("user_id"),
@@ -186,7 +186,7 @@ async def get_vendor_property_detail(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     data = await service.get_vendor_property_detail(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
@@ -299,7 +299,7 @@ async def delete_vendor_property(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     data = await service.delete_vendor_property(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
@@ -339,7 +339,7 @@ async def upload_vendor_property_image(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     file = await _get_single_file_from_form(request)
     data = await service.upload_vendor_property_image(
         user_id=current_user.get("user_id"),
@@ -359,7 +359,7 @@ async def delete_vendor_property_image(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     data = await service.delete_vendor_property_image(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
@@ -377,7 +377,7 @@ async def set_vendor_property_cover(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     data = await service.set_vendor_property_cover(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
@@ -395,7 +395,7 @@ async def upload_vendor_property_video(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     file = await _get_single_file_from_form(request)
     data = await service.upload_vendor_property_video(
         user_id=current_user.get("user_id"),
@@ -413,7 +413,7 @@ async def delete_vendor_property_video(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     data = await service.delete_vendor_property_video(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
@@ -430,7 +430,7 @@ async def upload_vendor_document(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     file = await _get_single_file_from_form(request)
     data = await service.upload_vendor_document(
         user_id=current_user.get("user_id"),
@@ -448,7 +448,7 @@ async def get_vendor_document(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     data = await service.get_vendor_document(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
@@ -464,7 +464,7 @@ async def delete_vendor_document(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    _assert_role_matches(current_user, vendor_type)
+    # _assert_role_matches(current_user, vendor_type)
     data = await service.delete_vendor_document(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,

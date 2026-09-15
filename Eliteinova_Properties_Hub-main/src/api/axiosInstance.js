@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { storage } from '../utils/storage';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://eliteinova-properties-backend.vercel.app' || 'http://localhost:8000';
 const VERSION = '/api/v1';
 
 export const AUTH_EVENTS = {

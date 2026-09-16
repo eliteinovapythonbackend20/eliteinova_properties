@@ -20,5 +20,8 @@ class Customer(Base):
     district = Column(String, nullable=True)
     country = Column(String, nullable=True)
 
-    customer_requirement = Column(JSONB, default=[]) 
+    customer_requirement = Column(JSONB, default=[])
+    customer_wishlist = Column(JSONB, default=[])
+    customer_property_viewed = Column(JSONB, default=[])
+    customer_saved_properties = Column(JSONB, default=[])
 

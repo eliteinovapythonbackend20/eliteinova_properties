@@ -814,15 +814,18 @@ class ProfileService:
     async def update_vendor_profile(
         self, user_id: str, vendor_type: str, update_data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        posted_by = self.resolve_vendor_type(vendor_type)
-        detail_obj = await self.repository.update_vendor_detail(user_id, posted_by, update_data)
-        if not detail_obj:
+        # Validates vendor_type even though VendorProfile itself is keyed only
+        # by user_id (one profile row per user) - keeps the 400 on an unknown
+        # vendor_type and the 404 message below meaningful.
+        self.resolve_vendor_type(vendor_type)
+        profile_obj = await self.vendor_profile_repository.update_vendor_profile(user_id, update_data)
+        if not profile_obj:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"No {vendor_type} profile found. Post a property as {vendor_type} to create one.",
             )
         await self.repository.commit()
-        return self.formatter.strip_none_values(self._model_to_dict(detail_obj))
+        return self.formatter.strip_none_values(self._to_profile_response(profile_obj))
 
     async def upload_vendor_profile_photo(
         self, user_id: str, vendor_type: str, file: UploadFile

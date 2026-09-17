@@ -61,6 +61,7 @@ class VendorProfile(Base):
     agency_details = Column(MutableDict.as_mutable(JSONB), default=dict, nullable=False)      # AGENT
     builder_details = Column(MutableDict.as_mutable(JSONB), default=dict, nullable=False)      # BUILDER
     pm_details = Column(MutableDict.as_mutable(JSONB), default=dict, nullable=False)           # PROPERTY_MANAGEMENT
+    owner_details = Column(MutableDict.as_mutable(JSONB), default=dict, nullable=False)         # OWNER
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -8,6 +8,7 @@ from app.models.property import PostedBy, PropertyStatus
 from app.core.response_utils import PropertyFormatter
 from app.services.file_service import FileService
 from app.repositories.profile_repository import VendorProfileRepository
+from app.schemas.vendor_profile_details import ROLE_EXTRA_COLUMN, ROLE_EXTRA_SCHEMA
 
 
 VENDOR_TYPE_MAP: Dict[str, PostedBy] = {
@@ -249,7 +250,7 @@ class ProfileService:
         return property_data
         
 
-    def _to_profile_response(self, vendorprofile):
+    def _to_profile_response(self, vendorprofile, posted_by: Optional[str] = None):
         profile = {
             "id":vendorprofile.id,
             "userId":vendorprofile.user_id,
@@ -259,6 +260,7 @@ class ProfileService:
             "gender":vendorprofile.gender,
             "profilePhotoUrl":vendorprofile.profile_picture,
             "companyLogoUrl":vendorprofile.company_logo_url,
+            "companyName":vendorprofile.company_name,
             "address":vendorprofile.address,
             "city":vendorprofile.city,
             "district":vendorprofile.district,
@@ -266,6 +268,7 @@ class ProfileService:
             "country":vendorprofile.country,
             "pincode":vendorprofile.pincode,
             "aadharNumber":vendorprofile.aadhar_number,
+            "aadhaarNumber":vendorprofile.aadhar_number,
             "panNumber":vendorprofile.pan_number,
             "bankName":vendorprofile.bank_name,
             "accountHolderName":vendorprofile.account_holder_name,
@@ -277,10 +280,26 @@ class ProfileService:
             "instagram":vendorprofile.instagram,
             "linkedIn":vendorprofile.linkedin,
             "youtube":vendorprofile.youtube,
+            "preferredContactMethod":vendorprofile.preferred_contact_method,
+            "preferredContactTime":vendorprofile.preferred_contact_time,
             "agencyDetails":vendorprofile.agency_details,
             "builderDetails":vendorprofile.builder_details,
             "pmDetails":vendorprofile.pm_details,
+            "ownerDetails":getattr(vendorprofile, "owner_details", None),
         }
+
+        # Flatten the role-specific JSONB blob into the same top-level
+        # camelCase keys the profile-edit forms read (they don't know about
+        # agencyDetails/builderDetails/pmDetails/ownerDetails nesting) - the
+        # inverse of VendorProfileRepository.update_vendor_profile's split.
+        extra_schema = ROLE_EXTRA_SCHEMA.get(posted_by)
+        extra_column = ROLE_EXTRA_COLUMN.get(posted_by)
+        if extra_schema and extra_column:
+            raw_extra = getattr(vendorprofile, extra_column, None) or {}
+            for field_name, field in extra_schema.model_fields.items():
+                if field.alias:
+                    profile[field.alias] = raw_extra.get(field_name)
+
         return profile
 
     def _get_profile_data(self, property_obj) -> Optional[Dict[str, Any]]:
@@ -446,9 +465,10 @@ class ProfileService:
         return None
 
 
-    async def get_vendor_profile(self, user_id: str) -> Dict[str, Any]:
+    async def get_vendor_profile(self, user_id: str, vendor_type: Optional[str] = None) -> Dict[str, Any]:
+        posted_by = self.resolve_vendor_type(vendor_type).value if vendor_type else None
         profile = await self.vendor_profile_repository.get_vendor_profile(user_id)
-        profile = self._to_profile_response(profile)
+        profile = self._to_profile_response(profile, posted_by)
         return self.formatter.strip_none_values(profile)
 
     async def update_vendor_profile(
@@ -467,7 +487,7 @@ class ProfileService:
                 detail=f"No {vendor_type} profile found. Post a property as {vendor_type} to create one.",
             )
         await self.vendor_profile_repository.commit()
-        return self.formatter.strip_none_values(self._to_profile_response(profile_obj))
+        return self.formatter.strip_none_values(self._to_profile_response(profile_obj, posted_by.value))
 
     async def upload_vendor_profile_photo(
         self, user_id: str, vendor_type: str, file: UploadFile

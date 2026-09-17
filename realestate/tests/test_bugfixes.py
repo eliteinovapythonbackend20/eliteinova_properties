@@ -489,3 +489,134 @@ def test_format_property_list_skips_falsy_rows():
     result = service.format_property_list(["prop-a", None], total_count=1, skip=0, limit=20)
 
     assert result["data"] == [{"id": "prop-a"}]
+
+
+# ---------------------------------------------------------------------------
+# Bug: Owner profile edit silently lost data. `preferredMethods`/`preferredTimes`
+# had no entry in VendorProfileRepository._FIELD_ALIASES (they didn't match the
+# real `preferred_contact_method`/`preferred_contact_time` columns after generic
+# camelCase->snake_case conversion), and `dateOfBirth`/`additionalNotes` had no
+# storage at all - unlike Agent/Builder/Property-Management, Owner had no
+# ROLE_EXTRA_SCHEMA/ROLE_EXTRA_COLUMN entry to hold role-only fields in a JSONB
+# blob. Both are now fixed (profile_repository._FIELD_ALIASES, and
+# app.schemas.vendor_profile_details.OwnerProfileExtra / vendor_profile.owner_details).
+# ---------------------------------------------------------------------------
+
+class _FakeAsyncDb:
+    def __init__(self):
+        self.flushed = False
+        self.refreshed = False
+
+    async def flush(self):
+        self.flushed = True
+
+    async def refresh(self, obj):
+        self.refreshed = True
+
+    async def execute(self, *args, **kwargs):
+        raise AssertionError("get_vendor_profile should be monkeypatched, not hit the DB")
+
+
+@pytest.mark.asyncio
+async def test_owner_profile_update_writes_preferred_contact_columns():
+    from app.models.vendor_profile import VendorProfile
+    from app.repositories.profile_repository import VendorProfileRepository
+
+    profile = VendorProfile()
+    profile.owner_details = {}
+
+    repo = VendorProfileRepository.__new__(VendorProfileRepository)
+    repo.db = _FakeAsyncDb()
+    repo.get_vendor_profile = lambda user_id: _async_return(profile)
+
+    updated = await repo.update_vendor_profile(
+        "EP1", "OWNER",
+        {"preferredMethods": ["phone", "email"], "preferredTimes": ["morning"]},
+    )
+
+    assert updated.preferred_contact_method == ["phone", "email"]
+    assert updated.preferred_contact_time == ["morning"]
+
+
+@pytest.mark.asyncio
+async def test_owner_profile_update_writes_date_of_birth_and_notes_to_owner_details():
+    from app.models.vendor_profile import VendorProfile
+    from app.repositories.profile_repository import VendorProfileRepository
+
+    profile = VendorProfile()
+    profile.owner_details = {}
+
+    repo = VendorProfileRepository.__new__(VendorProfileRepository)
+    repo.db = _FakeAsyncDb()
+    repo.get_vendor_profile = lambda user_id: _async_return(profile)
+
+    updated = await repo.update_vendor_profile(
+        "EP1", "OWNER",
+        {"dateOfBirth": "15-06-1985", "additionalNotes": "Call after 6pm"},
+    )
+
+    assert updated.owner_details == {"date_of_birth": "15-06-1985", "additional_note": "Call after 6pm"}
+
+
+async def _async_return(value):
+    return value
+
+
+def test_to_profile_response_flattens_owner_details_for_owner_role():
+    from app.services.profile_service import ProfileService
+
+    class _Profile:
+        id = 1
+        user_id = "EP1"
+        full_name = "Jane Owner"
+        phone_number = "9999999999"
+        whatsapp_number = None
+        gender = "female"
+        profile_picture = None
+        company_logo_url = None
+        company_name = None
+        address = city = district = state = country = pincode = None
+        aadhar_number = "1234"
+        pan_number = None
+        bank_name = account_holder_name = account_number = ifsc_code = upi_id = None
+        website = facebook = instagram = linkedin = youtube = None
+        preferred_contact_method = ["phone"]
+        preferred_contact_time = ["morning"]
+        agency_details = {}
+        builder_details = {}
+        pm_details = {}
+        owner_details = {"date_of_birth": "15-06-1985", "additional_note": "Call after 6pm"}
+
+    service = ProfileService.__new__(ProfileService)
+    result = service._to_profile_response(_Profile(), "OWNER")
+
+    assert result["dateOfBirth"] == "15-06-1985"
+    assert result["additionalNotes"] == "Call after 6pm"
+    assert result["aadhaarNumber"] == "1234"
+    assert result["preferredContactMethod"] == ["phone"]
+
+
+def test_to_profile_response_flattens_agency_details_for_agent_role():
+    from app.services.profile_service import ProfileService
+
+    class _Profile:
+        id = 1
+        user_id = "EP1"
+        full_name = "John Agent"
+        phone_number = whatsapp_number = gender = None
+        profile_picture = company_logo_url = company_name = None
+        address = city = district = state = country = pincode = None
+        aadhar_number = pan_number = None
+        bank_name = account_holder_name = account_number = ifsc_code = upi_id = None
+        website = facebook = instagram = linkedin = youtube = None
+        preferred_contact_method = preferred_contact_time = None
+        agency_details = {"rera_registration_number": "RERA123", "gst_number": "GST456"}
+        builder_details = {}
+        pm_details = {}
+        owner_details = {}
+
+    service = ProfileService.__new__(ProfileService)
+    result = service._to_profile_response(_Profile(), "AGENT")
+
+    assert result["reraRegistrationNumber"] == "RERA123"
+    assert result["gstNumber"] == "GST456"

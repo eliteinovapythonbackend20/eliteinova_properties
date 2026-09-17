@@ -241,10 +241,10 @@ class PropertyService:
         
         formatted_properties = []
         for prop in properties:
-            formatted = await self._to_response(prop)
+            formatted = self._to_card(prop)
             if formatted:
                 formatted_properties.append(formatted)
-        
+
         return {
             'data': formatted_properties,
             'pagination': {

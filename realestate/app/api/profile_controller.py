@@ -32,7 +32,7 @@ async def get_vendor_profile(
     property_service: PropertyService = Depends(get_property_service),
 ):
     user_id = current_user.get("user_id")
-    profile  = await service.get_vendor_profile(user_id)
+    profile  = await service.get_vendor_profile(user_id, vendor_type.value)
     email = current_user.get("user").email
     user = {"emailAddress":email}
     profile.update(user)

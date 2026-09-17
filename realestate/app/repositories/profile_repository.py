@@ -31,6 +31,8 @@ _FIELD_ALIASES = {
     "facebookPage": "facebook",
     "youtubeChannel": "youtube",
     "linkedIn": "linkedin",
+    "preferredMethods": "preferred_contact_method",
+    "preferredTimes": "preferred_contact_time",
     # Photo/logo upload endpoints call update_vendor_profile with
     # already-snake_case keys named after the per-property detail columns
     # they used to write to - VendorProfile stores both under one shared

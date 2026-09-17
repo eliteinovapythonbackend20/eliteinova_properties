@@ -1130,7 +1130,7 @@ const BuilderProfile = () => {
         officeDistrict: profileData.district || '',
         officeState: profileData.state || '',
         officePinCode: profileData.pincode || '',
-        officeLandmark: profileData.landmark || '',
+        officeLandmark: profileData.officeLandmark || profileData.landmark || '',
 
         // Identity & Business Verification
         aadhaarNumber: profileData.aadhaarNumber || '',

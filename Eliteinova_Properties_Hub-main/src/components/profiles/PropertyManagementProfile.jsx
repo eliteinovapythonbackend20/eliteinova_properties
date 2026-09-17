@@ -1042,7 +1042,7 @@ const PropertyManagementProfile = () => {
         officeDistrict: profileData.district || '',
         officeState: profileData.state || '',
         officePinCode: profileData.pincode || '',
-        officeLandmark: profileData.landmark || '',
+        officeLandmark: profileData.officeLandmark || profileData.landmark || '',
 
         // Identity & Business Verification
         aadhaarNumber: profileData.aadhaarNumber || '',
@@ -1176,7 +1176,7 @@ const PropertyManagementProfile = () => {
         district: editForm.officeDistrict,
         state: editForm.officeState,
         pincode: editForm.officePinCode,
-        landmark: editForm.officeLandmark,
+        officeLandmark: editForm.officeLandmark,
         aadhaarNumber: editForm.aadhaarNumber,
         panNumber: editForm.panNumber,
         accountHolderName: editForm.accountHolderName,

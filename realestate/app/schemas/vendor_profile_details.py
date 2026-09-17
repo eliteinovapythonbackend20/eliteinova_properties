@@ -91,13 +91,22 @@ class PropertyManagementProfileExtra(_RoleProfileExtra):
             return None
 
 
+class OwnerProfileExtra(_RoleProfileExtra):
+    # Owner-only fields with no shared VendorProfile column of their own
+    # (unlike gender/address/bank details, which every role shares).
+    date_of_birth: Optional[str] = Field(None, alias="dateOfBirth")
+    additional_note: Optional[str] = Field(None, alias="additionalNotes")
+
+
 ROLE_EXTRA_SCHEMA = {
+    "OWNER": OwnerProfileExtra,
     "AGENT": AgentProfileExtra,
     "BUILDER": BuilderProfileExtra,
     "PROPERTY_MANAGEMENT": PropertyManagementProfileExtra,
 }
 
 ROLE_EXTRA_COLUMN = {
+    "OWNER": "owner_details",
     "AGENT": "agency_details",
     "BUILDER": "builder_details",
     "PROPERTY_MANAGEMENT": "pm_details",

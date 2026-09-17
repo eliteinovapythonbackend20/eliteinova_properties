@@ -56,7 +56,6 @@ class Security:
         new_access_token = Security.create_access_token(data={
             "sub": user.get("email"),
             "user_id": user.get("user_id"),
-            "vendor_types":user.get("vendor_types") or [],
             "role": user.get("role")
         })
         return {"accessToken": new_access_token, "token_type": "bearer"}

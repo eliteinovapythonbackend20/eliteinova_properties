@@ -4,14 +4,13 @@ import json
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, UploadFile, status, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.repositories.property_repository import PropertyRepository
-from app.services.profile_service import ProfileService, get_profile_service
+from app.services.profile_service import ProfileService, VENDOR_TYPE_MAP
+from app.services.property_service import PropertyService
+from app.schemas.property_error import PropertyError
 from app.core.response_utils import strip_none_values
 from app.core.file_mappings import DOC_TYPE_MAPPING, FILE_MAPPINGS, PRIMARY_IMAGE_FIELDS
-from app.api.dependencies import require_authenticated, require_vendor
+from app.api.dependencies import require_authenticated, require_vendor, get_property_service, get_profile_service
 from app.models.property import PropertyStatus
 from app.services.field_mapping_service import FieldMappingService
 from app.services.file_extraction_service import FileExtractionService
@@ -25,37 +24,25 @@ class VendorType(str, Enum):
     PROPERTY_MANAGEMENT = "property-management"
 
 
-def _assert_role_matches(current_user: Dict[str, Any], vendor_type: VendorType) -> None:
-   
-    vendor_types = current_user.get("vendor_types") or []
-    
-    normalized_roles = {
-        str(role).strip().lower().replace("_", "-") for role in vendor_types
-    }
-
-    if vendor_type.value not in normalized_roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"This account is not registered as a '{vendor_type.value}' vendor.",
-        )
-
-
-
 @router.get("/{vendor_type}")
 async def get_vendor_profile(
     vendor_type: VendorType,
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
-    vendor_type = vendor_type
     user_id = current_user.get("user_id")
     profile  = await service.get_vendor_profile(user_id)
     email = current_user.get("user").email
     user = {"emailAddress":email}
     profile.update(user)
-    properties = await service.get_vendor_properties(user_id, vendor_type)
-    return strip_none_values({"success": True, "profile": profile, "properties":properties})
+
+    posted_by = service.resolve_vendor_type(vendor_type.value)
+    properties, total_count = await property_service.get_properties_by_user_and_role(
+        user_id=user_id, posted_by=posted_by
+    )
+    properties_payload = service.format_property_list(properties, total_count, skip=0, limit=20)
+    return strip_none_values({"success": True, "profile": profile, "properties": properties_payload})
 
 
 @router.put("/{vendor_type}")
@@ -65,7 +52,6 @@ async def update_vendor_profile(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
     data = await service.update_vendor_profile(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
@@ -81,7 +67,6 @@ async def upload_vendor_profile_photo(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
     file = await _get_single_file_from_form(request)
     data = await service.upload_vendor_profile_photo(
         user_id=current_user.get("user_id"),
@@ -97,7 +82,6 @@ async def delete_vendor_profile_photo(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
     data = await service.delete_vendor_profile_photo(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
@@ -112,7 +96,6 @@ async def upload_vendor_logo(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
     file = await _get_single_file_from_form(request)
     data = await service.upload_vendor_logo(
         user_id=current_user.get("user_id"),
@@ -128,7 +111,6 @@ async def delete_vendor_logo(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
     data = await service.delete_vendor_logo(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
@@ -145,16 +127,14 @@ async def get_vendor_properties(
     status_filter: Optional[str] = Query(None, alias="status"),
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
     skip = (page - 1) * limit
-    data = await service.get_vendor_properties(
-        user_id=current_user.get("user_id"),
-        vendor_type=vendor_type.value,
-        skip=skip,
-        limit=limit,
-        status=status_filter,
+    posted_by = service.resolve_vendor_type(vendor_type.value)
+    properties, total_count = await property_service.get_properties_by_user_and_role(
+        user_id=current_user.get("user_id"), posted_by=posted_by, skip=skip, limit=limit, status=status_filter
     )
+    data = service.format_property_list(properties, total_count, skip=skip, limit=limit)
     return strip_none_values(data)
 
 
@@ -166,16 +146,14 @@ async def search_vendor_properties(
     limit: int = Query(20, ge=1, le=100),
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
     skip = (page - 1) * limit
-    data = await service.search_vendor_properties(
-        user_id=current_user.get("user_id"),
-        vendor_type=vendor_type.value,
-        keyword=q,
-        skip=skip,
-        limit=limit,
+    posted_by = service.resolve_vendor_type(vendor_type.value)
+    properties, total_count = await property_service.search_user_properties(
+        user_id=current_user.get("user_id"), posted_by=posted_by, keyword=q, skip=skip, limit=limit
     )
+    data = service.format_property_list(properties, total_count, skip=skip, limit=limit)
     return strip_none_values(data)
 
 
@@ -185,13 +163,13 @@ async def get_vendor_property_detail(
     property_id: str,
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
-    data = await service.get_vendor_property_detail(
-        user_id=current_user.get("user_id"),
-        vendor_type=vendor_type.value,
-        property_id=property_id,
-    )
+    posted_by = service.resolve_vendor_type(vendor_type.value)
+    prop = await property_service.get_property_raw(property_id)
+    service.assert_owns_property(prop, current_user.get("user_id"), posted_by)
+    full_prop = await property_service.get_property_with_relations_raw(property_id)
+    data = service.to_response(full_prop)
     return strip_none_values({"success": True, "data": data})
 
 
@@ -203,7 +181,6 @@ async def get_vendor_property_detail(
 #     current_user: Dict[str, Any] = Depends(require_vendor),
 #     service: ProfileService = Depends(get_profile_service),
 # ):
-#     # _assert_role_matches(current_user, vendor_type)
 #     data = await service.update_vendor_property(
 #         user_id=current_user.get("user_id"),
 #         vendor_type=vendor_type.value,
@@ -221,6 +198,7 @@ async def update_vendor_property(
     request: Request,
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
     content_type = request.headers.get("content-type", "").lower()
     data = None
@@ -278,18 +256,29 @@ async def update_vendor_property(
 
     mapped_data = FieldMappingService().map_frontend_to_db_fields(cleaned_data)
 
-    result = await service.update_vendor_property_with_files(
-        user_id=current_user.get("user_id"),
-        vendor_type=vendor_type.value,
-        property_id=property_id,
-        update_data=mapped_data,
-        separated_files=separated_files,
-        file_metadata=file_metadata,
-    )
-    
+    posted_by = service.resolve_vendor_type(vendor_type.value)
+    prop = await property_service.get_property_raw(property_id)
+    service.assert_owns_property(prop, current_user.get("user_id"), posted_by)
+
+    try:
+        await property_service.update_property(
+            property_id=property_id,
+            update_data=mapped_data,
+            separated_files=separated_files,
+            file_metadata=file_metadata,
+            user_id=current_user.get("user_id"),
+        )
+    except PropertyError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update property: {str(e)}"
+        )
+
+    updated_property = await property_service.get_property_with_relations_raw(property_id)
+    result = service.to_response(updated_property)
     return strip_none_values({"success": True, "data": result, "message": "Property updated successfully"})
-
-
 
 
 @router.delete("/{vendor_type}/properties/{property_id}")
@@ -298,17 +287,20 @@ async def delete_vendor_property(
     property_id: str,
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
-    data = await service.delete_vendor_property(
-        user_id=current_user.get("user_id"),
-        vendor_type=vendor_type.value,
-        property_id=property_id,
-    )
-    return strip_none_values({"success": True, "data": data, "message": "Property deleted successfully"})
+    posted_by = service.resolve_vendor_type(vendor_type.value)
+    prop = await property_service.get_property_raw(property_id)
+    service.assert_owns_property(prop, current_user.get("user_id"), posted_by)
+
+    try:
+        await property_service.delete_property(property_id=property_id, user_id=current_user.get("user_id"))
+    except PropertyError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+
+    return strip_none_values({"success": True, "data": {"deleted": True}, "message": "Property deleted successfully"})
 
 
-# In profile_controller.py
 @router.patch("/{vendor_type}/properties/{property_id}/status")
 async def update_vendor_property_status(
     vendor_type: VendorType,
@@ -316,18 +308,19 @@ async def update_vendor_property_status(
     new_status: str = Body(..., embed=True, alias="status"),
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
     status_upper = new_status.upper()
-    
+
     if status_upper not in ["ACTIVE", "INACTIVE"]:
         raise HTTPException(400, f"Invalid status: {new_status}. Allowed: ACTIVE, INACTIVE")
-    
-    data = await service.update_vendor_property_status(
-        user_id=current_user.get("user_id"),
-        vendor_type=vendor_type.value,
-        property_id=property_id,
-        new_status=status_upper,
-    )
+
+    posted_by = service.resolve_vendor_type(vendor_type.value)
+    prop = await property_service.get_property_raw(property_id)
+    service.assert_owns_property(prop, current_user.get("user_id"), posted_by)
+
+    updated = await property_service.update_property_status(property_id, status_upper)
+    data = {"id": updated.id, "propertyStatus": updated.status}
     return strip_none_values({"success": True, "data": data, "message": "Status updated successfully"})
 
 @router.post("/{vendor_type}/properties/{property_id}/images")
@@ -338,15 +331,15 @@ async def upload_vendor_property_image(
     order: int = Query(0, ge=0),
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
+    posted_by = service.resolve_vendor_type(vendor_type.value)
+    prop = await property_service.get_property_raw(property_id)
+    service.assert_owns_property(prop, current_user.get("user_id"), posted_by)
+
     file = await _get_single_file_from_form(request)
-    data = await service.upload_vendor_property_image(
-        user_id=current_user.get("user_id"),
-        vendor_type=vendor_type.value,
-        property_id=property_id,
-        file=file,
-        order=order,
+    data = await property_service.add_property_image_raw(
+        property_id=property_id, file=file, user_id=current_user.get("user_id"), is_primary=(order == 0)
     )
     return strip_none_values({"success": True, "data": data, "message": "Image uploaded successfully"})
 
@@ -358,15 +351,16 @@ async def delete_vendor_property_image(
     image_index: int,
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
-    data = await service.delete_vendor_property_image(
-        user_id=current_user.get("user_id"),
-        vendor_type=vendor_type.value,
-        property_id=property_id,
-        image_index=image_index,
-    )
-    return strip_none_values({"success": True, "data": data, "message": "Image deleted successfully"})
+    posted_by = service.resolve_vendor_type(vendor_type.value)
+    prop = await property_service.get_property_raw(property_id)
+    service.assert_owns_property(prop, current_user.get("user_id"), posted_by)
+
+    deleted = await property_service.delete_property_image_by_order(property_id, image_index)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found at that index")
+    return strip_none_values({"success": True, "data": {"deleted": True}, "message": "Image deleted successfully"})
 
 
 @router.post("/{vendor_type}/properties/{property_id}/cover")
@@ -376,14 +370,16 @@ async def set_vendor_property_cover(
     media_id: int = Body(..., embed=True),
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
-    data = await service.set_vendor_property_cover(
-        user_id=current_user.get("user_id"),
-        vendor_type=vendor_type.value,
-        property_id=property_id,
-        media_id=media_id,
-    )
+    posted_by = service.resolve_vendor_type(vendor_type.value)
+    prop = await property_service.get_property_raw(property_id)
+    service.assert_owns_property(prop, current_user.get("user_id"), posted_by)
+
+    media = await property_service.set_property_cover_raw(property_id, media_id)
+    if not media:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found on this property")
+    data = {"id": media.id, "file_url": media.file_url, "is_primary": media.is_primary}
     return strip_none_values({"success": True, "data": data, "message": "Cover image updated"})
 
 
@@ -394,14 +390,15 @@ async def upload_vendor_property_video(
     request: Request,
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
+    posted_by = service.resolve_vendor_type(vendor_type.value)
+    prop = await property_service.get_property_raw(property_id)
+    service.assert_owns_property(prop, current_user.get("user_id"), posted_by)
+
     file = await _get_single_file_from_form(request)
-    data = await service.upload_vendor_property_video(
-        user_id=current_user.get("user_id"),
-        vendor_type=vendor_type.value,
-        property_id=property_id,
-        file=file,
+    data = await property_service.add_property_video_raw(
+        property_id=property_id, file=file, user_id=current_user.get("user_id")
     )
     return strip_none_values({"success": True, "data": data, "message": "Video uploaded successfully"})
 
@@ -412,14 +409,14 @@ async def delete_vendor_property_video(
     property_id: str,
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
-    data = await service.delete_vendor_property_video(
-        user_id=current_user.get("user_id"),
-        vendor_type=vendor_type.value,
-        property_id=property_id,
-    )
-    return strip_none_values({"success": True, "data": data, "message": "Video deleted successfully"})
+    posted_by = service.resolve_vendor_type(vendor_type.value)
+    prop = await property_service.get_property_raw(property_id)
+    service.assert_owns_property(prop, current_user.get("user_id"), posted_by)
+
+    await property_service.delete_property_video_raw(property_id)
+    return strip_none_values({"success": True, "data": {"deleted": True}, "message": "Video deleted successfully"})
 
 
 @router.post("/{vendor_type}/documents/{doc_type}")
@@ -429,15 +426,14 @@ async def upload_vendor_document(
     request: Request,
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
+    service.resolve_vendor_type(vendor_type.value)  # validates vendor_type
     file = await _get_single_file_from_form(request)
-    data = await service.upload_vendor_document(
-        user_id=current_user.get("user_id"),
-        vendor_type=vendor_type.value,
-        doc_type=doc_type,
-        file=file,
+    doc_obj = await property_service.upload_vendor_document_raw(
+        user_id=current_user.get("user_id"), doc_type=doc_type, file=file
     )
+    data = service.model_to_dict(doc_obj)
     return strip_none_values({"success": True, "data": data, "message": f"{doc_type} uploaded successfully"})
 
 
@@ -447,13 +443,13 @@ async def get_vendor_document(
     doc_type: str,
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
-    data = await service.get_vendor_document(
-        user_id=current_user.get("user_id"),
-        vendor_type=vendor_type.value,
-        doc_type=doc_type,
-    )
+    service.resolve_vendor_type(vendor_type.value)
+    doc_obj = await property_service.get_vendor_document_raw(current_user.get("user_id"), doc_type)
+    if not doc_obj:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No '{doc_type}' document found")
+    data = service.model_to_dict(doc_obj)
     return strip_none_values({"success": True, "data": data})
 
 
@@ -463,14 +459,13 @@ async def delete_vendor_document(
     doc_type: str,
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
-    # _assert_role_matches(current_user, vendor_type)
-    data = await service.delete_vendor_document(
-        user_id=current_user.get("user_id"),
-        vendor_type=vendor_type.value,
-        doc_type=doc_type,
-    )
-    return strip_none_values({"success": True, "data": data, "message": f"{doc_type} deleted successfully"})
+    service.resolve_vendor_type(vendor_type.value)
+    deleted = await property_service.delete_vendor_document_raw(current_user.get("user_id"), doc_type)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No '{doc_type}' document found")
+    return strip_none_values({"success": True, "data": {"deleted": deleted}, "message": f"{doc_type} deleted successfully"})
 
 
 async def _get_single_file_from_form(request: Request) -> UploadFile:
@@ -536,17 +531,17 @@ async def upload_profile_file(
     setattr(file, 'category', category)
     setattr(file, 'is_document', is_document)
 
-    is_primary = field in PRIMARY_IMAGE_FIELDS
-
-    result = await service.upload_single_file(
-        file=file,
-        field=field,
-        category=category,
-        is_document=is_document,
-        is_primary=is_primary,
-        property_id=None,
-        user_id=current_user.get("user_id"),
-    )
+    try:
+        result = await service.upload_and_get_file_metadata(
+            file=file, field=field, category=category, user_id=current_user.get("user_id")
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload file: {str(e)}"
+        )
 
     return strip_none_values({
         'success': True,
@@ -559,7 +554,8 @@ async def upload_profile_file(
 async def upload_file(
     request: Request,
     current_user: Dict[str, Any] = Depends(require_vendor),
-    service: ProfileService = Depends(get_profile_service)
+    service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
     form = await request.form()
 
@@ -599,15 +595,30 @@ async def upload_file(
 
     is_primary = field in PRIMARY_IMAGE_FIELDS
 
-    result = await service.upload_single_file(
-        file=file,
-        field=field,
-        category=category,
-        is_document=is_document,
-        is_primary=is_primary,
-        property_id=property_id,
-        user_id=current_user.get("user_id"),
-    )
+    try:
+        upload_result = await service.upload_and_get_file_metadata(
+            file=file, field=field, category=category, user_id=current_user.get("user_id")
+        )
+        if property_id and upload_result:
+            result = await property_service.attach_uploaded_file_raw(
+                property_id=property_id,
+                user_id=current_user.get("user_id"),
+                field=field,
+                category=category,
+                is_primary=is_primary,
+                upload_result=upload_result,
+                file=file,
+            )
+        else:
+            result = upload_result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload file: {str(e)}"
+        )
+
     return strip_none_values({
         'success': True,
         'data': result,
@@ -618,9 +629,16 @@ async def upload_file(
 @router.get("/profile-files")
 async def get_profile_files(
     current_user: Dict[str, Any] = Depends(require_vendor),
-    service: ProfileService = Depends(get_profile_service)
+    service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
-    files = await service.get_user_profile_files(current_user.get("user_id"))
+    user_id = current_user.get("user_id")
+    files: Dict[str, Any] = {}
+    for role_key, posted_by in VENDOR_TYPE_MAP.items():
+        detail_obj = await property_service.get_latest_vendor_detail_raw(user_id, posted_by)
+        formatted = service.format_profile_files_for_role(posted_by, detail_obj)
+        if formatted:
+            files[role_key] = formatted
     return strip_none_values({
         'success': True,
         'data': files
@@ -631,11 +649,14 @@ async def get_profile_files(
 async def delete_profile_file(
     file_path: str,
     current_user: Dict[str, Any] = Depends(require_vendor),
-    service: ProfileService = Depends(get_profile_service)
+    service: ProfileService = Depends(get_profile_service),
+    property_service: PropertyService = Depends(get_property_service),
 ):
+    vendor_documents = await property_service.get_vendor_documents(current_user.get("user_id"))
     await service.delete_profile_file(
         file_path=file_path,
-        user_id=current_user.get("user_id")
+        user_id=current_user.get("user_id"),
+        vendor_documents=vendor_documents,
     )
     return strip_none_values({
         'success': True,

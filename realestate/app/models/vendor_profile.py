@@ -1,27 +1,36 @@
-
-from sqlalchemy import Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.mutable import MutableDict
 
 from app.core.database import Base
 
 
 class VendorProfile(Base):
+    """The vendor's persistent 'easy navigation' profile - one row per vendor
+    user, editable independently of any property they've posted. Fields
+    shared by all four vendor roles (Owner/Agent/Builder/Property Management)
+    are real columns; each role's few extra fields (RERA/GST numbers,
+    experience, ongoing projects, ...) live in that role's typed JSONB blob
+    (see app.schemas.vendor_profile_details) rather than a wide table of
+    columns only one role ever fills in.
+    """
+
     __tablename__ = "vendor_profile"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String(20), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(20), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
 
     full_name = Column(String(255), nullable=False)
     phone_number = Column(String(20), nullable=True)
-    whatsapp_number = Column(String(20),nullable=True)
+    whatsapp_number = Column(String(20), nullable=True)
     gender = Column(String(20), nullable=True)
 
     profile_picture = Column(Text, nullable=True)
-    company_logo_url = Column(Text,nullable=True)
+    company_logo_url = Column(Text, nullable=True)
 
     company_name = Column(String(255), nullable=True)
 
-    address = Column(Text,nullable=True)
+    address = Column(Text, nullable=True)
     city = Column(String, nullable=True)
     district = Column(String, nullable=True)
     state = Column(String, nullable=True)
@@ -43,10 +52,15 @@ class VendorProfile(Base):
     linkedin = Column(Text, nullable=True)
     youtube = Column(Text, nullable=True)
 
-    agency_details = Column(JSONB,default={})
+    preferred_contact_method = Column(JSONB, default=[])  # "phone", "whatsapp", "email"
+    preferred_contact_time = Column(JSONB, default=[])    # "morning", "afternoon", "evening"
 
-    builder_details = Column(JSONB, default={})
+    # Role-specific extras, validated against app.schemas.vendor_profile_details
+    # before being written (see ProfileService.update_vendor_profile) - never
+    # written to raw from the request body.
+    agency_details = Column(MutableDict.as_mutable(JSONB), default=dict, nullable=False)      # AGENT
+    builder_details = Column(MutableDict.as_mutable(JSONB), default=dict, nullable=False)      # BUILDER
+    pm_details = Column(MutableDict.as_mutable(JSONB), default=dict, nullable=False)           # PROPERTY_MANAGEMENT
 
-    company_details = Column(JSONB, default={})
-
-
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -269,7 +269,20 @@ class FieldMappingService:
     ARRAY_FIELDS = [
         'preferred_contact_method', 'amenities', 'tenant_type',
         'service_area', 'interior_features', 'appliance_included',
-        'room_type', 'sharing_type', 'selected_feature'
+        'room_type', 'sharing_type', 'selected_feature', 'nearby_places'
+    ]
+
+    # Yes/No columns (String(5) on BaseProperty storing the literal "Yes"/"No").
+    # Filters compare these case-insensitively (FilterService._YESNO_FIELDS),
+    # but only against the words "yes"/"no" - a raw JS boolean or "true"/"false"
+    # must be normalized to that word here, or it silently becomes unfilterable.
+    YES_NO_FIELDS = [
+        'parking', 'pet_friendly', 'terrace', 'balcony', 'garden_space',
+        'immediate_move_in', 'maintenance_included', 'title_deed_verify',
+        'underconstruction', 'immediate_possession', 'rera_approved',
+        'loan_eligible', 'loan_outstanding', 'corner_unit', 'smoking_allowed',
+        'renewable_option', 'ready_to_buy', 'electricity_available',
+        'utilities_included', 'alcohol_allowed', 'food_included', 'kitchen_access'
     ]
     
     # Date fields
@@ -358,16 +371,30 @@ class FieldMappingService:
             return value.upper() if isinstance(value, str) else value
         
         # Special handling for yes/no string fields
-        if field in ['parking', 'pet_friendly', 'terrace', 'balcony', 'garden_space',
-                     'immediate_move_in', 'maintenance_included', 'title_deed_verify',
-                     'underconstruction', 'immediate_possession', 'rera_approved',
-                     'loan_eligible', 'loan_outstanding', 'corner_unit', 'smoking_allowed',
-                     'renewable_option', 'ready_to_buy', 'electricity_available',
-                     'utilities_included', 'alcohol_allowed', 'food_included']:
-            return value if isinstance(value, str) else str(value)
-        
+        if field in self.YES_NO_FIELDS:
+            return self._convert_yes_no(value)
+
         return value
-    
+
+    def _convert_yes_no(self, value: Any) -> Optional[str]:
+        """Normalize to the literal "Yes"/"No" FilterService's _YESNO_FIELDS
+        comparison expects. Without this, a raw JS boolean (`True`) or a
+        lowercase/word variant ("true") became the string "True" - which
+        `func.lower(column) == str(value).lower()` on the filter side can
+        never match against "yes"/"no", silently making that property
+        unfilterable on this field with no error anywhere in the stack.
+        """
+        if isinstance(value, bool):
+            return "Yes" if value else "No"
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in ("true", "yes", "1", "y"):
+                return "Yes"
+            if normalized in ("false", "no", "0", "n"):
+                return "No"
+            return value  # unrecognized word - leave as-is rather than guess
+        return "Yes" if value else "No"
+
     def _convert_date(self, value: Any) -> Optional[date]:
         """Convert to date object"""
         if value is None:

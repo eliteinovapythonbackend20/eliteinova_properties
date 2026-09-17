@@ -1,20 +1,13 @@
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_user_optional
-from app.core.database import get_db
+from app.api.dependencies import get_current_user_optional, get_filter_service
 from app.core.response_utils import strip_none_values
-from app.repositories.property_repository import PropertyRepository
 from app.schemas.property_filter import PropertyFilter
 from app.services.filter_service import FilterService
 
 router = APIRouter()
-
-
-async def get_filter_service(db: AsyncSession = Depends(get_db)) -> FilterService:
-    return FilterService(PropertyRepository(db))
 
 
 @router.post("/search", status_code=status.HTTP_200_OK)

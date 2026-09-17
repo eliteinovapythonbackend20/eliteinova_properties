@@ -14,6 +14,7 @@ class UserCreate(BaseModel):
     company_name: Optional[str] = Field(None, alias="companyName")
     address: Optional[str] = None
     city: Optional[str] = None
+    district: Optional[str] = None
     state: Optional[str] = None
     country: Optional[str] = None
     role: UserRole = UserRole.USER

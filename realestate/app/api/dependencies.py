@@ -7,6 +7,10 @@ from app.core.database import get_db
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.repositories.profile_repository import VendorProfileRepository
+from app.repositories.property_repository import PropertyRepository
+from app.services.property_service import PropertyService
+from app.services.profile_service import ProfileService
+from app.services.filter_service import FilterService
 
 security = HTTPBearer(auto_error=False)
 
@@ -14,6 +18,15 @@ security = HTTPBearer(auto_error=False)
 
 async def get_auth_service(db: AsyncSession = Depends(get_db)) -> AuthService:
     return AuthService(UserRepository(db),VendorProfileRepository(db))
+
+async def get_property_service(db: AsyncSession = Depends(get_db)) -> PropertyService:
+    return PropertyService(repository=PropertyRepository(db))
+
+async def get_profile_service(db: AsyncSession = Depends(get_db)) -> ProfileService:
+    return ProfileService(profile_repository=VendorProfileRepository(db))
+
+async def get_filter_service(db: AsyncSession = Depends(get_db)) -> FilterService:
+    return FilterService(PropertyRepository(db))
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),

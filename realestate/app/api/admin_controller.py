@@ -6,9 +6,8 @@ from sqlalchemy import func
 
 
 from app.core.response_utils import strip_none_values
-from app.services.profile_service import get_property_service
 from app.services.property_service import PropertyService
-from app.api.dependencies import require_admin
+from app.api.dependencies import require_admin, get_property_service
 from app.core.database import get_db
 from app.models.property_payments import PaymentStatus, PaymentTransaction
 from app.services.pricing_service import PricingService

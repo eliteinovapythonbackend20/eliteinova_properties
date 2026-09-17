@@ -416,18 +416,26 @@ class PropertyRepository:
             self.db.add(pm_detail)
 
     async def create_property_media(self, media_data: Dict[str, Any]) -> PropertyMedia:
-        """Save media file metadata to database"""
+        """Save media file metadata to database.
+
+        Flush-only, not commit - callers (e.g. PropertyService.create_property)
+        create several of these in a loop and rely on ONE trailing commit for
+        atomicity. Committing per-row here meant image 1-of-5 was already
+        permanently saved even if image 3-of-5 then failed and the whole
+        create_property call raised - a partial property/media set survived
+        an operation the API reported as a total failure.
+        """
         media_obj = PropertyMedia(**media_data)
         self.db.add(media_obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(media_obj)
         return media_obj
 
     async def create_property_document(self, doc_data: Dict[str, Any]) -> PropertyDocument:
-        """Save document metadata to database"""
+        """Save document metadata to database. Flush-only - see create_property_media."""
         doc_obj = PropertyDocument(**doc_data)
         self.db.add(doc_obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(doc_obj)
         return doc_obj
 
@@ -1014,13 +1022,30 @@ class PropertyRepository:
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
+    async def get_vendor_detail_for_property(self, property_id: str, posted_by: PostedBy, user_id: str):
+        """This exact listing's vendor-detail row - distinct from
+        get_latest_vendor_detail (user+role scoped, ignores which property)."""
+        model = VENDOR_MODEL_MAP[posted_by]
+        query = select(model).where(model.property_id == property_id, model.user_id == user_id)
+        result = await self.db.execute(query)
+        return result.scalar_one_or_none()
+
     async def update_vendor_detail(
         self,
         user_id: str,
         posted_by: str,
         update_data: Dict[str, Any],
+        property_id: Optional[str] = None,
     ):
-        detail_obj = await self.get_latest_vendor_detail(user_id, posted_by)
+        if property_id is not None:
+            model = VENDOR_MODEL_MAP[posted_by]
+            result = await self.db.execute(
+                select(model).where(model.property_id == property_id, model.user_id == user_id)
+            )
+            detail_obj = result.scalar_one_or_none()
+        else:
+            detail_obj = await self.get_latest_vendor_detail(user_id, posted_by)
+
         if not detail_obj:
             return None
 
@@ -1049,6 +1074,18 @@ class PropertyRepository:
         )
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
+
+    async def get_vendor_documents(self, user_id: str) -> List[PropertyDocument]:
+        """All of this user's profile-level documents (not tied to any one
+        property) - used to verify ownership before a delete-by-path call."""
+        query = select(PropertyDocument).where(
+            and_(
+                PropertyDocument.user_id == user_id,
+                PropertyDocument.property_id.is_(None),
+            )
+        )
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
 
     async def upsert_vendor_document(
         self,
@@ -1331,14 +1368,17 @@ class PropertyRepository:
         self,
         user_id: str,
         db_column: str,
-        image_url: Optional[str]
+        image_url: Optional[str],
+        property_id: str,
     ) -> None:
-        """Update vendor profile image across all vendor tables"""
+        """Update the poster-photo column on this one property's vendor-detail
+        row. Scoped by property_id (not just user_id) - a vendor with
+        multiple listings can have a different photo per listing."""
         for model in VENDOR_MODEL_MAP.values():
             if hasattr(model, db_column):
                 await self.db.execute(
                     update(model)
-                    .where(model.user_id == user_id)
+                    .where(model.user_id == user_id, model.property_id == property_id)
                     .values({db_column: image_url})
                 )
         await self.db.flush()

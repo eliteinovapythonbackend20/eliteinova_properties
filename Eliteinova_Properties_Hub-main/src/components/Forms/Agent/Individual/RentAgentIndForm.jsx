@@ -306,6 +306,8 @@ export default function RentAgentIndForm({ isOpen, onClose }) {
     // Property Details (Step 2) - Updated with validation fields
     propertyTitle: "", propertyType: "", propertyArea: "", propertyLandmark: "", propertyCity: "", pincode: "", state: "", district: "",
     builtUpArea: "", carpetArea: "", bedrooms: "", bathrooms: "", furnishingStatus: "", parking: "", parkingCount: "",
+    // Property Category & Posted By
+    propertyCategory: "individual", postedBy: "agent",
     // Pricing & Amenities (Step 3)
     listingPurpose: "rent", expectedPrice: "", budgetRange: { min: "", max: "" }, priceType: "", maintenance: "", availableFrom: "", selectedAmenities: [], otherAmenities: "",
     securityDeposit: "",
@@ -427,8 +429,11 @@ export default function RentAgentIndForm({ isOpen, onClose }) {
   const handleDocumentUpload = (docType, e, maxSize = 5) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.type !== 'application/pdf') {
-        alert(`${docType} must be a PDF file`);
+      // logo / photo uploads are images (the input says JPG/PNG); everything else is a PDF document
+      const isImageUpload = /logo|photo/i.test(docType);
+      const validTypes = isImageUpload ? ['image/jpeg', 'image/jpg', 'image/png'] : ['application/pdf'];
+      if (!validTypes.includes(file.type)) {
+        alert(isImageUpload ? `${docType} must be a JPG or PNG image` : `${docType} must be a PDF file`);
         return;
       }
       if (file.size > maxSize * 1024 * 1024) {

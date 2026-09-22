@@ -97,7 +97,7 @@ class FilterService:
 
     # ------------------------------------------------------------------
     def _build_query(self, filters: PropertyFilter):
-        query = select(Property).where(Property.status == PUBLIC_STATUS)
+        query = select(Property).where(func.upper(Property.status) == PUBLIC_STATUS.upper())
         query = query.options(
             selectinload(Property.media),
             joinedload(Property.user),

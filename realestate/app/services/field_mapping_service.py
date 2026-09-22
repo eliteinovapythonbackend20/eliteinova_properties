@@ -2,6 +2,8 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, date
 from decimal import Decimal
 
+from app.schemas.property_filter import bhk_token_to_int
+
 class FieldMappingService:
     """Service for mapping frontend fields to database fields"""
     
@@ -34,6 +36,7 @@ class FieldMappingService:
         'gstNumber': 'gst_number',
         'activeListings': 'active_listing',
         'serviceAreas': 'service_area',
+        'serviceArea': 'service_area',
         'yearsExperience': 'experience',
         'agentDateOfBirth': 'date_of_birth',
         'agentGender': 'gender',
@@ -55,7 +58,7 @@ class FieldMappingService:
         'builderReraNumber': 'rera_registration_number',
         'builderGstNumber': 'gst_number',
         'builderExperience': 'experience',
-        'builderAadhaar': 'aadhar_number',
+        'builderAadhaar': 'aadhaar_number',
         'builderPan': 'pan_number',
         'companyName': 'company_name',
         'companyRegNumber': 'company_reg_number',
@@ -82,10 +85,12 @@ class FieldMappingService:
         'pmReraNumber': 'rera_registration_number',
         'pmGstNumber': 'gst_number',
         'pmExperience': 'experience',
-        'pmAadhaar': 'aadhar_number',
+        'pmAadhaar': 'aadhaar_number',
         'pmPan': 'pan_number',
         'pmCompanyName': 'company_name',
         'pmCompanyRegNumber': 'company_reg_number',
+        'pmBusinessRegNumber': 'company_reg_number',
+        'pmYearsOfExperience': 'experience',
         'pmCompanyWebsite': 'company_website',
         'pmCompanyDescription': 'company_description',
         'pmOfficeAddress': 'office_address',
@@ -137,6 +142,7 @@ class FieldMappingService:
         'parkingCapacity': 'parking_capacity',
         'petFriendly': 'pet_friendly',
         'selectedAmenities': 'amenities',
+        'otherAmenities': 'amenities',
         'availableFrom': 'available_from',
         'rentalDuration': 'minimum_duration',
         'immediateMoveIn': 'immediate_move_in',
@@ -159,6 +165,7 @@ class FieldMappingService:
         'floorNumber': 'floor_number',
         'totalFloors': 'total_floors',
         'propertyAge': 'property_age',
+        'propertyAgeRange': 'property_age_range',
         'cornerUnit': 'corner_unit',
         'facingDirection': 'facing_direction',
         'maintenanceIncluded': 'maintenance_included',
@@ -245,6 +252,7 @@ class FieldMappingService:
         'rentalDuration': 'minimum_duration',
         'selectedFeatures': 'selected_feature',
         'appliancesIncluded': 'appliance_included',
+        'otherAppliances': 'appliance_included',
         'footfall': 'estimated_footfall',
         'readyToMove': 'ready_to_buy',
         'occupancyDetails': 'tenant_type',
@@ -256,8 +264,48 @@ class FieldMappingService:
         'authMobile': 'mobile',
         'authEmail': 'email',
         'authWhatsapp': 'whatsapp_number',
+
+        # ---- keys some form families use for values that DO have a column ----
+        # These inputs used to be dropped silently (e.g. a Rent PM Apartment
+        # listing was saved with no price, so its card showed "Rs 0"). Each one
+        # is a straight rename onto the column the same value lives in for the
+        # other form families.
+        'rent': 'expected_price',
+        'rentAmount': 'expected_price',
+        'monthlyRent': 'expected_price',
+        'leaseAmount': 'expected_price',
+        'saleAmount': 'expected_price',
+        'securityDepositAmount': 'security_deposit',
+        'refundableDeposit': 'security_deposit',
+        'saleNegotiable': 'price_negotiable',
+        'negotiable': 'price_negotiable',
+        'pincode': 'pin_code',
+        'leaseDuration': 'minimum_duration',
+        'rentDuration': 'minimum_duration',
+        'rentFrequency': 'rental_frequency',
+        'leaseRenewalOption': 'renewable_option',
+        'rentRenewalOption': 'renewable_option',
+        'leaseRenewal': 'renewable_option',
+        'immediateOccupancy': 'immediate_possession',
+        'underConstruction': 'underconstruction',
+        'titleDeedVerified': 'title_deed_verify',
+        'furnishedStatus': 'furnishing_status',
+        'parkingCount': 'parking_capacity',
+        'powerLoad': 'power_load_capacity',
+        'leasePetFriendly': 'pet_friendly',
+        'occupancyType': 'tenant_type',
+        'nearbyAccess': 'nearby_places',
     }
-    
+
+    # The Builder / Property Management detail tables name a column differently from
+    # BaseProperty (pincode vs pin_code), yet the same form key feeds both. Mirror the
+    # value onto the detail-table name as well - without it that NOT NULL column gets
+    # None and the whole create fails with a 500. (aadhaar_number is now the same
+    # name on every role table, so it needs no alias any more.)
+    DETAIL_TABLE_ALIASES = {
+        'officePinCode': 'pincode',
+    }
+
     # Default values for missing fields
     DEFAULTS = {
         'property_condition': 'Good',
@@ -315,6 +363,7 @@ class FieldMappingService:
         'leaseBudget': ('price_min', 'price_max'),
         'plotSize': ('land_area_min', 'land_area_max'),
         'landAreaRange': ('land_area_min', 'land_area_max'),
+        'expectedPriceRange': ('price_min', 'price_max'),
     }
 
     def map_frontend_to_db_fields(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -331,9 +380,30 @@ class FieldMappingService:
                 if value.get('max') not in (None, ''):
                     mapped_data[max_field] = self._convert_float(value.get('max'))
                 continue
+            # Text where the column is a number: "1-3 Years" / "New Construction" for property age,
+            # "Attached" for a hostel's bathrooms. Squeezing those through the integer conversion
+            # turned "1-3 Years" into 13 and dropped the rest, so they go to their own text columns.
+            if key == 'propertyAge' and isinstance(value, str) and value.strip() and not value.strip().isdigit():
+                mapped_data['property_age_range'] = value.strip()
+                continue
+            if key == 'bathrooms' and isinstance(value, str) and value.strip() and not any(ch.isdigit() for ch in value):
+                mapped_data.setdefault('bathroom_type', value.strip())
+                continue
             if key in self.FIELD_MAPPING:
                 db_field = self.FIELD_MAPPING[key]
-                mapped_data[db_field] = self._convert_value(db_field, value)
+                converted = self._convert_value(db_field, value)
+                previous = mapped_data.get(db_field)
+                if db_field in self.ARRAY_FIELDS and isinstance(converted, list) and isinstance(previous, list):
+                    converted = previous + [item for item in converted if item not in previous]
+                # two form fields feeding price_negotiable (priceType + a negotiable toggle): if either
+                # says negotiable the price is negotiable, whatever order they arrive in
+                if db_field == 'price_negotiable' and mapped_data.get(db_field) == 'Negotiable':
+                    converted = 'Negotiable'
+                mapped_data[db_field] = converted
+                alias = self.DETAIL_TABLE_ALIASES.get(key)
+                if alias:
+                    # setdefault: an explicit builderPincode/pmAadhaar-style key wins
+                    mapped_data.setdefault(alias, value)
             else:
                 # Pass through unmapped fields
                 mapped_data[key] = value
@@ -358,6 +428,14 @@ class FieldMappingService:
         if field in self.ARRAY_FIELDS:
             return self._convert_array(value)
         
+        # negotiable: yes / true -> "Negotiable", no / false / "fixed" -> "Fixed Price"
+        if field == 'price_negotiable':
+            return self._convert_negotiable(value)
+
+        # bedrooms: "Studio" -> 0, "2 BHK" -> 2 (a digits-only conversion turns "Studio" into NULL)
+        if field == 'bedrooms':
+            return bhk_token_to_int(value)
+
         # Handle integer fields
         if field in self.INTEGER_FIELDS:
             return self._convert_integer(value)
@@ -372,9 +450,30 @@ class FieldMappingService:
         
         # Special handling for yes/no string fields
         if field in self.YES_NO_FIELDS:
-            return self._convert_yes_no(value)
+            converted = self._convert_yes_no(value)
+            # renewable_option is varchar(5) (Yes/No). Hostel lease forms send words such as
+            # "Automatic" / "Fixed Term" for the same key; those cannot be stored in that column
+            # and would fail the whole INSERT, so keep only a real Yes/No there.
+            if field == 'renewable_option' and converted not in ('Yes', 'No'):
+                return None
+            return converted
 
         return value
+
+    def _convert_negotiable(self, value: Any) -> Any:
+        """price_negotiable holds a word ("Negotiable" / "Fixed Price"), not a yes/no flag."""
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return 'Negotiable' if value else 'Fixed Price'
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in ('yes', 'true', 'y', '1', 'negotiable'):
+                return 'Negotiable'
+            if normalized in ('no', 'false', 'n', '0', 'fixed', 'fixed price'):
+                return 'Fixed Price'
+            return value
+        return 'Negotiable' if value else 'Fixed Price'
 
     def _convert_yes_no(self, value: Any) -> Optional[str]:
         """Normalize to the literal "Yes"/"No" FilterService's _YESNO_FIELDS

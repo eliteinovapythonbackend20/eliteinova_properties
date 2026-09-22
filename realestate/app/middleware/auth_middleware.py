@@ -116,9 +116,24 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         "code": "INVALID_TOKEN_FORMAT"
                     }
                 )
-            
-            scheme, token = auth_header.split()
-            
+
+            # Narrowly scoped: a ValueError here means "Bearer <token>" was
+            # malformed. It must NOT wrap call_next() below - a ValueError
+            # subclass raised deep in the actual route (e.g.
+            # UnicodeEncodeError from a stray print()) would otherwise be
+            # misreported as an auth failure instead of surfacing as the
+            # real bug it is.
+            try:
+                scheme, token = auth_header.split()
+            except ValueError:
+                return create_error_response(
+                    status.HTTP_401_UNAUTHORIZED,
+                    {
+                        "detail": "Invalid token format",
+                        "code": "INVALID_TOKEN_FORMAT"
+                    }
+                )
+
             if scheme.lower() != "bearer":
                 return create_error_response(
                     status.HTTP_401_UNAUTHORIZED,
@@ -216,14 +231,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
             
             return response
             
-        except ValueError as e:
-            return create_error_response(
-                status.HTTP_401_UNAUTHORIZED,
-                {
-                    "detail": "Invalid token format",
-                    "code": "INVALID_TOKEN_FORMAT"
-                }
-            )
         except Exception as e:
             print(f"Unexpected error in AuthMiddleware: {e}")
             import traceback

@@ -314,7 +314,7 @@ async def test_validate_upload_rejects_oversized_image():
     from fastapi import HTTPException
 
     service = FileService.__new__(FileService)
-    big_file = _FakeUploadFile(b"x" * (3 * 1024 * 1024), "image/jpeg")
+    big_file = _FakeUploadFile(b"x" * (11 * 1024 * 1024), "image/jpeg")
 
     with pytest.raises(HTTPException) as exc_info:
         await service._validate_upload(big_file, "image")

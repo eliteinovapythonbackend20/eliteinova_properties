@@ -145,14 +145,15 @@ export default function LeasePMApartForm({ isOpen, onClose }) {
     // Identity & Business Verification (Step 3)
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, pmBusinessRegCert: null, pmGstCert: null, pmReraCert: null, officeAddressProof: null,
     
+    // Property Category & Posted By
+    propertyCategory: "apartment", postedBy: "property_management", listingPurpose: "lease",
     // Property Details (Step 4)
-    propertyType: "Apartment",
+    propertyType: "",
     area: "", landmark: "", nearbyConnectivity: "",
     builtUpArea: "", carpetArea: "",
     bedrooms: "", bathrooms: "", floorNumber: "", totalFloors: "",
     facingDirection: "", balcony: "", propertyAge: "", cornerUnit: "",
-    furnishing: "", modularKitchen: "no", wardrobes: "no", airConditioning: "no",
-    utilityArea: "no", smartHomeFeatures: "no", appliancesIncluded: "",
+    furnishing: "", interiorFeatures: [], appliancesIncluded: [], otherAppliances: "",
     nearbyPlaces: [],
     
     // Pricing & Amenities (Step 5)
@@ -530,8 +531,11 @@ export default function LeasePMApartForm({ isOpen, onClose }) {
   const handleDocumentUpload = (docType, e, maxSize = 5) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.type !== 'application/pdf') {
-        alert(`${docType} must be a PDF file`);
+      // logo / photo uploads are images (the input says JPG/PNG); everything else is a PDF document
+      const isImageUpload = /logo|photo/i.test(docType);
+      const validTypes = isImageUpload ? ['image/jpeg', 'image/jpg', 'image/png'] : ['application/pdf'];
+      if (!validTypes.includes(file.type)) {
+        alert(isImageUpload ? `${docType} must be a JPG or PNG image` : `${docType} must be a PDF file`);
         return;
       }
       if (file.size > maxSize * 1024 * 1024) {
@@ -611,6 +615,19 @@ export default function LeasePMApartForm({ isOpen, onClose }) {
   const removeCustomAmenity = (amenity) => {
     setCustomAmenitiesList(customAmenitiesList.filter(a => a !== amenity));
     updateForm("selectedAmenities", formData.selectedAmenities.filter(a => a !== amenity));
+  };
+
+  const addAppliance = () => {
+    const newAppliance = formData.otherAppliances.trim();
+    const current = formData.appliancesIncluded || [];
+    if (newAppliance && !current.some(a => a.toLowerCase() === newAppliance.toLowerCase())) {
+      updateForm("appliancesIncluded", [...current, newAppliance]);
+      updateForm("otherAppliances", "");
+    }
+  };
+
+  const removeAppliance = (appliance) => {
+    updateForm("appliancesIncluded", (formData.appliancesIncluded || []).filter(a => a !== appliance));
   };
 
   const toggleArrayItem = (field, value) => {
@@ -749,6 +766,8 @@ export default function LeasePMApartForm({ isOpen, onClose }) {
               customAmenitiesList={customAmenitiesList}
               addCustomAmenity={addCustomAmenity}
               removeCustomAmenity={removeCustomAmenity}
+              addAppliance={addAppliance}
+              removeAppliance={removeAppliance}
               yesNoOptions={yesNoOptions}
               handleCoverImageUpload={handleCoverImageUpload}
               handleFloorPlanUpload={handleFloorPlanUpload}
@@ -865,6 +884,8 @@ export default function LeasePMApartForm({ isOpen, onClose }) {
               customAmenitiesList={customAmenitiesList}
               addCustomAmenity={addCustomAmenity}
               removeCustomAmenity={removeCustomAmenity}
+              addAppliance={addAppliance}
+              removeAppliance={removeAppliance}
               yesNoOptions={yesNoOptions}
               handleCoverImageUpload={handleCoverImageUpload}
               handleFloorPlanUpload={handleFloorPlanUpload}
@@ -939,7 +960,7 @@ function MobContentLeasePMApart({
   imagePreviews, handleImageUpload, removeImage, 
   handleVideoUpload, videoPreview, removeVideo, 
   handleDocumentUpload, toggleApartmentAmenity,
-  customAmenitiesList, addCustomAmenity, removeCustomAmenity, 
+  customAmenitiesList, addCustomAmenity, removeCustomAmenity, addAppliance, removeAppliance, 
   yesNoOptions, handleCoverImageUpload, handleFloorPlanUpload, 
   coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, 
   handleAuthPhotoUpload, authPhotoPreview, removeAuthPhoto,
@@ -1334,19 +1355,27 @@ function MobContentLeasePMApart({
       </Field>
       <Field label="Interior Features">
         <div className="grid grid-cols-2 gap-1">
-          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => {
-            const key = feature.toLowerCase().replace(/ /g, '');
-            return (
-              <label key={feature} className="flex items-center gap-1 text-[9px] cursor-pointer">
-                <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData[key] === "yes"} onChange={() => updateForm(key, formData[key] === "yes" ? "no" : "yes")} />
-                {feature}
-              </label>
-            );
-          })}
+          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => (
+            <label key={feature} className="flex items-center gap-1 text-[9px] cursor-pointer">
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={(formData.interiorFeatures || []).includes(feature)} onChange={() => toggleArrayItem("interiorFeatures", feature)} />
+              {feature}
+            </label>
+          ))}
         </div>
       </Field>
       <Field label="Appliances Included">
-        <input className={inp} placeholder="e.g., Refrigerator, AC, Washing Machine, Microwave" value={formData.appliancesIncluded} onChange={(e) => updateForm("appliancesIncluded", e.target.value)} />
+        <div className="flex gap-1">
+          <input className={`${inp} flex-1`} placeholder="e.g., Refrigerator, AC, Washing Machine, Microwave" value={formData.otherAppliances} onChange={(e) => updateForm("otherAppliances", e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addAppliance()} />
+          <button onClick={addAppliance} className="px-2 py-1 text-[11px] bg-[#00695C] text-white rounded-lg">Add</button>
+        </div>
+        <div className="flex flex-wrap gap-1 mt-1">
+          {(formData.appliancesIncluded || []).map(a => (
+            <span key={a} className="px-1.5 py-0.5 text-[10px] bg-[#00695C] text-white rounded-full border border-[#00695C] flex items-center gap-1">
+              {a}
+              <X className="w-2.5 h-2.5 cursor-pointer hover:text-red-200" onClick={() => removeAppliance(a)} />
+            </span>
+          ))}
+        </div>
       </Field>
     </>
   );
@@ -1853,7 +1882,7 @@ function DtContentLeasePMApart({
   imagePreviews, handleImageUpload, removeImage, 
   handleVideoUpload, videoPreview, removeVideo, 
   handleDocumentUpload, toggleApartmentAmenity,
-  customAmenitiesList, addCustomAmenity, removeCustomAmenity, 
+  customAmenitiesList, addCustomAmenity, removeCustomAmenity, addAppliance, removeAppliance, 
   yesNoOptions, handleCoverImageUpload, handleFloorPlanUpload, 
   coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, 
   handleAuthPhotoUpload, authPhotoPreview, removeAuthPhoto,
@@ -2248,19 +2277,27 @@ function DtContentLeasePMApart({
       </FieldDt>
       <FieldDt label="Interior Features">
         <div className="grid grid-cols-2 gap-2">
-          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => {
-            const key = feature.toLowerCase().replace(/ /g, '');
-            return (
-              <label key={feature} className="flex items-center gap-2 text-[13px] cursor-pointer">
-                <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData[key] === "yes"} onChange={() => updateForm(key, formData[key] === "yes" ? "no" : "yes")} />
-                {feature}
-              </label>
-            );
-          })}
+          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => (
+            <label key={feature} className="flex items-center gap-2 text-[13px] cursor-pointer">
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={(formData.interiorFeatures || []).includes(feature)} onChange={() => toggleArrayItem("interiorFeatures", feature)} />
+              {feature}
+            </label>
+          ))}
         </div>
       </FieldDt>
       <FieldDt label="Appliances Included">
-        <input className={inp} placeholder="e.g., Refrigerator, AC, Washing Machine, Microwave" value={formData.appliancesIncluded} onChange={(e) => updateForm("appliancesIncluded", e.target.value)} />
+        <div className="flex gap-2">
+          <input className={`${inp} flex-1`} placeholder="e.g., Refrigerator, AC, Washing Machine, Microwave" value={formData.otherAppliances} onChange={(e) => updateForm("otherAppliances", e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addAppliance()} />
+          <button onClick={addAppliance} className="px-3 py-1.5 text-[13px] bg-[#00695C] text-white rounded-lg hover:bg-[#004d42] transition-colors">Add</button>
+        </div>
+        <div className="flex flex-wrap gap-1.5 mt-1">
+          {(formData.appliancesIncluded || []).map(a => (
+            <span key={a} className="px-2.5 py-1.5 text-[13px] bg-[#00695C] text-white rounded-full border border-[#00695C] flex items-center gap-1">
+              {a}
+              <X className="w-3.5 h-3.5 cursor-pointer hover:text-red-200" onClick={() => removeAppliance(a)} />
+            </span>
+          ))}
+        </div>
       </FieldDt>
     </>
   );

@@ -77,7 +77,7 @@ export default function IndSellForm({ isOpen, onClose }) {
     propertyCategory: "individual",
     postedBy: "owner",
     // Pricing & Amenities (Step 3)
-    listingPurpose: "sale", expectedPrice: "", budgetRange: { min: "", max: "" }, priceType: "", maintenance: "",
+    listingPurpose: "sell", expectedPrice: "", budgetRange: { min: "", max: "" }, priceType: "", maintenance: "",
     availableFrom: "", selectedAmenities: [], otherAmenities: "",
     securityDeposit: "",
     // Sell Preferences (integrated in step 2)

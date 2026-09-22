@@ -80,7 +80,7 @@ export default function ComSellForm({ isOpen, onClose }) {
     propertyCategory: "commercial",
     postedBy: "owner",
     // Pricing & Amenities (Step 3)
-    listingPurpose: "sale", expectedPrice: "", budgetRange: { min: "", max: "" }, priceType: "", maintenance: "",
+    listingPurpose: "sell", expectedPrice: "", budgetRange: { min: "", max: "" }, priceType: "", maintenance: "",
     availableFrom: "", selectedAmenities: [], otherAmenities: "",
     // Commercial Sell Preferences (integrated in step 2)
     propertyAge: "",

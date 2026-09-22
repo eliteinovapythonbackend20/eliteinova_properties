@@ -6,9 +6,41 @@ Legacy / per-family payload shapes are folded into the canonical shape by the
 ``_fold_legacy_shapes`` validator so the frontend adapters have leeway.
 """
 
-from typing import List, Optional
+import re
+from typing import List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def parse_bhk_token(token: str) -> Optional[Tuple[int, bool]]:
+    """Parse one BHK/bathroom-count token into (count, is_open_ended).
+
+    Tokens come from the vendor-facing BHK pills as-is (e.g. "studio",
+    "2bhk", "4 BHK+", "4+") - case and whitespace vary, and "studio" has no
+    digit to extract at all, so it's matched by name as 0 rather than being
+    dropped. Returns None for anything with no recognizable count (e.g.
+    garbage/unrecognized input), so callers can ignore it instead of raising.
+    """
+    normalized = str(token).strip().lower()
+    if normalized == "studio":
+        return 0, False
+    nums = re.findall(r"\d+", normalized)
+    if not nums:
+        return None
+    return int(nums[0]), "+" in normalized
+
+
+def bhk_token_to_int(token) -> Optional[int]:
+    """Single-value counterpart of parse_bhk_token, for storing one BHK
+    pick (e.g. a property's own bedroom count at creation) as a plain int -
+    the open-ended "+" doesn't matter here, only the number itself does.
+    """
+    if token is None or token == "":
+        return None
+    if isinstance(token, int):
+        return token
+    parsed = parse_bhk_token(token)
+    return parsed[0] if parsed else None
 
 
 class RangeFilter(BaseModel):
@@ -242,16 +274,14 @@ class PropertyFilter(BaseModel):
 
     def bhk_ints(self, field: str):
         """Return (exact_ints, min_plus) for the bedrooms/bathrooms string list."""
-        import re
-
         raw = getattr(self, field) or []
         exact, plus = set(), set()
         for token in raw:
-            nums = re.findall(r"\d+", str(token))
-            if not nums:
+            parsed = parse_bhk_token(token)
+            if parsed is None:
                 continue
-            n = int(nums[0])
-            (plus if "+" in str(token) else exact).add(n)
+            n, is_plus = parsed
+            (plus if is_plus else exact).add(n)
         min_plus = min(plus) if plus else None
         if min_plus is not None:
             exact = {n for n in exact if n < min_plus}

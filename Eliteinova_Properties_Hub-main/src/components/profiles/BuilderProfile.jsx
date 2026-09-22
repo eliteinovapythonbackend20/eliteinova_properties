@@ -30,8 +30,11 @@ import {
   updateMyProfile,
   uploadProfilePhoto,
   deleteProfilePhoto,
+  uploadVendorLogo,
   uploadDocument,
   deleteDocument,
+  getVendorDocumentsByField,
+  getVendorDocumentViewUrl,
   updateVendorProperty,
   deleteVendorProperty,
   updateVendorPropertyStatus,
@@ -39,11 +42,18 @@ import {
   deletePropertyImage,
   uploadPropertyVideo,
   deletePropertyVideo,
+  addPropertyDocuments,
   mapPropertyToFrontend,
   mapPropertyToBackend,
   getDocumentContext
 } from '../../services/profileService';
+import { useToast } from '../../hooks/useToast';
+import Toast from '../common/Toast';
 
+// Self-contained "No Image" fallback - via.placeholder.com is an external
+// network call that can time out/be unreachable, leaving a blank box with
+// nothing rendered at all when a property has no photos.
+const NO_IMAGE_PLACEHOLDER = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="100%" height="100%" fill="#CCCCCC"/><text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" fill="#666666" font-family="Arial, sans-serif" font-size="20">No Image</text></svg>')}`;
 
 
 // ============ TOGGLE SWITCH COMPONENT ============
@@ -171,13 +181,13 @@ const DeleteConfirmModal = ({ title, message, onConfirm, onCancel }) => (
 );
 
 // ============ PROPERTY DETAILS MODAL ============
-const PropertyDetailsModal = ({ property, onClose, onAddImages, onRemoveImage, onToggleStatus, onEdit, onDelete }) => {
+const PropertyDetailsModal = ({ property, onClose, onAddImages, onRemoveImage, onRemoveCover, onToggleStatus, onEdit, onDelete }) => {
   if (!property) return null;
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const detailImageInputRef = useRef(null);
   const rawImages = property.images || [];
   const hasImages = rawImages.length > 0;
-  const images = hasImages ? rawImages : ['https://via.placeholder.com/400x300/CCCCCC/666666?text=No+Image'];
+  const images = hasImages ? rawImages : [NO_IMAGE_PLACEHOLDER];
 
   useEffect(() => {
     if (currentImageIndex >= images.length) setCurrentImageIndex(Math.max(0, images.length - 1));
@@ -208,9 +218,24 @@ const PropertyDetailsModal = ({ property, onClose, onAddImages, onRemoveImage, o
         </div>
 
         <div className="p-3 sm:p-4 overflow-y-auto flex-1 space-y-3 sm:space-y-4">
+          {/* <div>
+            <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Cover Image</p>
+            <div className="relative rounded-xl overflow-hidden bg-gray-100 h-32 sm:h-36">
+              <img src={property.coverImage || NO_IMAGE_PLACEHOLDER} alt={`${property.name} cover`} className="w-full h-full object-cover"
+                onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }} />
+              {property.coverImage && (
+                <button onClick={() => onRemoveCover(property.id)} title="Delete cover image"
+                  className="absolute bottom-1.5 sm:bottom-2 left-1.5 sm:left-2 flex items-center gap-1 bg-red-500/90 hover:bg-red-600 text-white text-[9px] sm:text-[10px] font-bold px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg shadow-lg transition-all duration-300 hover:scale-105">
+                  <Trash2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" /> Delete
+                </button>
+              )}
+            </div>
+          </div> */}
+
+          <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Property Photos</p>
           <div className="relative rounded-xl overflow-hidden bg-gray-100 h-48 sm:h-56 md:h-64">
             <img src={images[currentImageIndex]} alt={property.name} className="w-full h-full object-cover"
-              onError={(e) => { e.target.src = 'https://via.placeholder.com/400x300/CCCCCC/666666?text=No+Image'; }} />
+              onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }} />
             {images.length > 1 && (
               <>
                 <button onClick={prevImage} className="absolute left-1.5 sm:left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5 sm:p-2 transition-all duration-300">
@@ -248,7 +273,7 @@ const PropertyDetailsModal = ({ property, onClose, onAddImages, onRemoveImage, o
                 <button key={idx} onClick={() => setCurrentImageIndex(idx)}
                   className={`flex-shrink-0 w-12 sm:w-14 md:w-16 h-9 sm:h-10 md:h-12 rounded-lg overflow-hidden border-2 transition-all duration-300 ${currentImageIndex === idx ? 'border-[#00695C] shadow-md' : 'border-gray-200 hover:border-gray-400'}`}>
                   <img src={img} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover"
-                    onError={(e) => { e.target.src = 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image'; }} />
+                    onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }} />
                 </button>
               ))}
             </div>
@@ -412,8 +437,11 @@ const EditPropertyModal = ({ property, onSave, onCancel }) => {
     return sel.filter(a => !availableAmenities.includes(a));
   });
 
+  // coverImage and images (gallery) are separate concepts from the backend
+  // now - the cover is only ever whatever is actually flagged primary,
+  // never inferred from images[0].
   const [imagePreviews, setImagePreviews] = useState(property.images || []);
-  const [coverPreview, setCoverPreview] = useState(property.coverImage || (property.images && property.images[0]) || null);
+  const [coverPreview, setCoverPreview] = useState(property.coverImage || null);
   const [videoPreview, setVideoPreview] = useState(property.propertyVideo || null);
   const [floorPlanPreview, setFloorPlanPreview] = useState(property.floorPlan || null);
   const [newImageFiles, setNewImageFiles] = useState([]);
@@ -445,8 +473,10 @@ const EditPropertyModal = ({ property, onSave, onCancel }) => {
 
   const handleImageUpload = (e) => {
     const files = Array.from(e.target.files);
+    // The 3-image cap covers property gallery photos only - the cover image
+    // has its own dedicated slot and never counts against it.
     const remaining = Math.max(0, 3 - imagePreviews.length);
-    if (files.length > remaining) alert(`You can only upload ${remaining} more image(s). Maximum 3 images allowed.`);
+    if (files.length > remaining) alert(`You can only upload ${remaining} more image(s). Maximum 3 property photos allowed.`);
     const limited = files.slice(0, remaining);
     const previews = limited.map(f => URL.createObjectURL(f));
     setImagePreviews(prev => [...prev, ...previews]);
@@ -455,8 +485,16 @@ const EditPropertyModal = ({ property, onSave, onCancel }) => {
   };
 
   const removeImage = (idx) => {
+    const preview = imagePreviews[idx];
     setImagePreviews(prev => prev.filter((_, i) => i !== idx));
-    setNewImageFiles(prev => prev.filter((_, i) => i !== idx));
+    // Existing (already-uploaded) photos are plain URLs; only newly-picked
+    // files produce blob: previews and have a matching entry in
+    // newImageFiles - map by blob position, not by raw index.
+    if (preview && preview.startsWith('blob:')) {
+      const blobPosition = imagePreviews.slice(0, idx).filter(p => p.startsWith('blob:')).length;
+      setNewImageFiles(prev => prev.filter((_, i) => i !== blobPosition));
+      URL.revokeObjectURL(preview);
+    }
   };
 
   const handleCoverUpload = (e) => {
@@ -491,12 +529,19 @@ const EditPropertyModal = ({ property, onSave, onCancel }) => {
   const removeFloorPlan = () => { setFloorPlanFile(null); setFloorPlanPreview(null); };
 
   const handleSave = () => {
-    let finalImages = [...imagePreviews];
-    if (newImageFiles.length > 0) finalImages = [...finalImages, ...newImageFiles.map(f => URL.createObjectURL(f))];
-    const updated = { ...p, images: finalImages };
-    if (coverFile) updated.coverImage = URL.createObjectURL(coverFile);
-    if (videoFile) updated.propertyVideo = URL.createObjectURL(videoFile);
-    if (floorPlanFile) updated.floorPlan = floorPlanFile;
+    // Hand the raw cover/photo/video pieces up so the actual save handler
+    // can upload the real files via the multipart endpoints and use the
+    // backend-returned URLs - not local blob: previews, which are never
+    // persisted and vanish on reload.
+    const updated = { ...p };
+    updated._media = {
+      coverFile,
+      coverUrl: coverFile ? null : coverPreview,
+      existingPhotoUrls: imagePreviews.filter(img => !img.startsWith('blob:')),
+      newPhotoFiles: newImageFiles,
+      videoFile,
+      floorPlanFile,
+    };
     onSave(updated);
   };
 
@@ -776,7 +821,7 @@ const EditPropertyModal = ({ property, onSave, onCancel }) => {
             <label className="block text-xs font-bold text-gray-700 mb-1">Upload Property Photos (Max 3)</label>
             <div className="border-2 border-dashed border-teal-300 rounded-xl p-4 text-center hover:bg-green-50 transition-colors">
               <input type="file" accept="image/*" multiple className="hidden" id="edit-photos" onChange={handleImageUpload} disabled={imagePreviews.length >= 3} />
-              <label htmlFor="edit-photos" className={`cursor-pointer flex flex-col items-center ${imagePreviews.length >= 3 ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <label htmlFor="edit-photos" className={`cursor-pointer flex flex-col items-center ${imagePreviews.length >= 3 - ((coverPreview || coverFile) ? 1 : 0) ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 <ImagePlus className="mx-auto mb-2 w-8 h-8 text-[#00695C]" />
                 <span className="text-sm font-semibold text-[#00695C]">Upload Property Photos</span>
                 <span className="text-xs text-gray-400 mt-1">Max 3 photos</span>
@@ -893,11 +938,12 @@ const BuilderProfile = () => {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('company');
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
+  const { toast, showToast, hideToast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteItem, setDeleteItem] = useState(null);
   const [showProfilePhotoDeleteConfirm, setShowProfilePhotoDeleteConfirm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [showPdfViewer, setShowPdfViewer] = useState(false);
   const [pdfToView, setPdfToView] = useState(null);
   const [showMediaLightbox, setShowMediaLightbox] = useState(false);
@@ -917,165 +963,60 @@ const BuilderProfile = () => {
   const companyLogoInputRef = useRef(null);
   const fileInputRefs = useRef({});
 
-  // ============ PROPERTIES STATE ============
-  const [properties, setProperties] = useState([
-    {
-      id: 'PROJ-001',
-      name: 'Skyline Heights Tower A',
-      type: 'Apartment',
-      status: 'Active',
-      price: '₹18,000/month',
-      area: '1450 sq ft',
-      location: 'Baner, Pune, Maharashtra',
-      postedDate: '12-06-2025',
-      description: 'Premium 3 BHK residences with clubhouse, landscaped gardens, and skyline views.',
-       images: [
-        '/villa1_1.png',
-        '/villa1_2.png',
-        '/villa1_3.png',
-        '/villa1_4.png'
-      ],
-      features: ['3 BHK', 'Clubhouse', 'Landscaped Garden', 'Skyline View'],
-      views: 412,
-      inquiries: 26,
-      bedrooms: '3',
-      bathrooms: '3',
-      furnishing: 'Semi Furnish',
-      parking: 'yes',
-      listingPurpose: 'rent',
-      expectedPrice: '18000',
-      priceType: 'negotiable',
-      maintenance: '4000',
-      availableFrom: '2025-08-01',
-      selectedAmenities: ['Gated Community', '24/7 Security', 'Gym / Fitness Center', 'Swimming Pool'],
-      propertyCity: 'Pune',
-      builtUpArea: '1450',
-      carpetArea: '1280',
-      rentalDuration: 'Long Term',
-      occupancyDetails: 'Family',
-      petFriendly: 'Yes',
-      gardenSpace: 'Yes',
-      terrace: 'Yes',
-    },
-    {
-      id: 'PROJ-002',
-      name: 'Emerald Business Park',
-      type: 'Commercial',
-      status: 'Active',
-      price: '₹85,000/month',
-      area: '2200 sq ft',
-      location: 'Whitefield, Bangalore, Karnataka',
-      postedDate: '02-05-2025',
-      description: 'Grade-A office space with modern infrastructure and ample parking.',
-      images: ['https://via.placeholder.com/400x300/2E86AB/ffffff?text=Emerald+Business+Park'],
-      features: ['Grade-A Office', '24/7 Power Backup', 'Ample Parking'],
-      views: 268,
-      inquiries: 14,
-      bedrooms: '0',
-      bathrooms: '4',
-      furnishing: 'Unfurnished',
-      parking: 'yes',
-      listingPurpose: 'rent',
-      expectedPrice: '85000',
-      priceType: 'fixed',
-      maintenance: '12000',
-      availableFrom: '2025-07-01',
-      selectedAmenities: ['24/7 Security', 'Power Backup', 'CCTV Surveillance', 'Lift / Elevator'],
-      propertyCity: 'Bangalore',
-      builtUpArea: '2200',
-      carpetArea: '2000',
-      rentalDuration: 'Long Term',
-      occupancyDetails: 'Company Lease',
-      petFriendly: 'No',
-      gardenSpace: 'No',
-      terrace: 'No',
-    },
-    {
-      id: 'PROJ-003',
-      name: 'Palm Meadows Villas',
-      type: 'Independent Villa',
-      status: 'Inactive',
-      price: '₹65,000/month',
-      area: '3200 sq ft',
-      location: 'ECR, Chennai, Tamil Nadu',
-      postedDate: '20-04-2025',
-      description: 'Gated villa community with private gardens and clubhouse access.',
-      images: ['https://via.placeholder.com/400x300/2E86AB/ffffff?text=Palm+Meadows'],
-      features: ['4 BHK', 'Private Garden', 'Clubhouse Access'],
-      views: 189,
-      inquiries: 9,
-      bedrooms: '4',
-      bathrooms: '4',
-      furnishing: 'Full Furnish',
-      parking: 'yes',
-      listingPurpose: 'rent',
-      expectedPrice: '65000',
-      priceType: 'negotiable',
-      maintenance: '6000',
-      availableFrom: '2025-09-01',
-      selectedAmenities: ['Gated Community', 'Garden', 'Swimming Pool', 'Smart Home'],
-      propertyCity: 'Chennai',
-      builtUpArea: '3200',
-      carpetArea: '2900',
-      rentalDuration: 'Flexible',
-      occupancyDetails: 'Family',
-      petFriendly: 'Yes',
-      gardenSpace: 'Yes',
-      terrace: 'Yes',
-    },
-  ]);
+  // ============ PROPERTIES STATE (Initialized as empty array) ============
+  const [properties, setProperties] = useState([]);
 
   // ============ FORM STATE ============
   const [editForm, setEditForm] = useState({
     // Company Details
-    companyName: 'Sharma Infra Developers Pvt. Ltd.',
-    companyRegNumber: 'CIN/U45200MH2015PTC123456',
-    reraNumber: 'RERA/2025/MH/98765',
-    gstNumber: '22ABCDE1234F1Z5',
-    yearsOfExperience: '14',
-    companyWebsite: 'www.sharmainfra.com',
-    companyProfile: 'Sharma Infra Developers is a Mumbai-based real estate builder delivering residential and commercial projects across Maharashtra since 2011, known for timely delivery and RERA-compliant construction.',
+    companyName: '',
+    companyRegNumber: '',
+    reraNumber: '',
+    gstNumber: '',
+    yearsOfExperience: '',
+    companyWebsite: '',
+    companyProfile: '',
 
     // Authorized Person
-    authFullName: 'Rohit Sharma',
-    authDesignation: 'Director',
-    authMobile: '+91 98765 43210',
-    authEmail: 'rohit.sharma@sharmainfra.com',
-    authWhatsapp: '+91 98765 43211',
+    authFullName: '',
+    authDesignation: '',
+    authMobile: '',
+    authEmail: '',
+    authWhatsapp: '',
 
     // Office Address
-    officeAddress: 'Office No. 501, Crystal Tower, Andheri East, Mumbai - 400093',
-    officeCity: 'Mumbai',
-    officeDistrict: 'Mumbai City',
-    officeState: 'Maharashtra',
-    officePinCode: '400093',
-    officeLandmark: 'Near Andheri Metro Station',
+    officeAddress: '',
+    officeCity: '',
+    officeDistrict: '',
+    officeState: '',
+    officePinCode: '',
+    officeLandmark: '',
 
     // Identity & Business Verification
-    aadhaarNumber: '1234 5678 9012',
-    panNumber: 'ABCDE1234F',
+    aadhaarNumber: '',
+    panNumber: '',
 
     // Project Details
-    ongoingProjects: '6',
-    completedProjects: '22',
-    upcomingProjects: '3',
-    totalUnitsDelivered: '3800',
-    citiesOfOperation: 'Mumbai, Pune, Nashik',
-    serviceLocations: 'Andheri, Baner, Whitefield, ECR Chennai',
+    ongoingProjects: '',
+    completedProjects: '',
+    upcomingProjects: '',
+    totalUnitsDelivered: '',
+    citiesOfOperation: '',
+    serviceLocations: '',
 
     // Bank Details
-    accountHolderName: 'Sharma Infra Developers Pvt. Ltd.',
-    bankName: 'HDFC Bank',
-    accountNumber: '123456789012',
-    ifscCode: 'HDFC0001234',
-    upiId: 'sharmainfra@upi',
+    accountHolderName: '',
+    bankName: '',
+    accountNumber: '',
+    ifscCode: '',
+    upiId: '',
 
     // Social Media
-    website: 'www.sharmainfra.com',
-    facebookPage: 'facebook.com/sharmainfra',
-    instagram: 'instagram.com/sharmainfra',
-    linkedIn: 'linkedin.com/company/sharmainfra',
-    youtubeChannel: 'youtube.com/sharmainfra',
+    website: '',
+    facebookPage: '',
+    instagram: '',
+    linkedIn: '',
+    youtubeChannel: '',
   });
 
   // ============ DOCUMENTS STATE ============
@@ -1104,7 +1045,7 @@ const BuilderProfile = () => {
 
       // Extract data from response
       const profileData = response?.profile || {};
-      const propertiesData = response?.properties || [];
+      const propertiesData = response?.properties?.data || [];
 
       // ============ 1. SET EDIT FORM (Builder Profile Data) ============
       setEditForm({
@@ -1124,13 +1065,16 @@ const BuilderProfile = () => {
         authEmail: profileData.authEmail || profileData.email || '',
         authWhatsapp: profileData.authWhatsapp || profileData.whatsappNumber || '',
 
-        // Office Address
-        officeAddress: profileData.officeAddress || profileData.address || '',
-        officeCity: profileData.city || '',
-        officeDistrict: profileData.district || '',
-        officeState: profileData.state || '',
-        officePinCode: profileData.pincode || '',
-        officeLandmark: profileData.officeLandmark || profileData.landmark || '',
+        // Office Address - lives in builder_details JSONB only; the vendor's
+        // shared address/city/district/state/pincode columns are a different
+        // concept (personal/registration address) and are never substituted
+        // in here, so an unset office address renders empty, not borrowed.
+        officeAddress: profileData.officeAddress || '',
+        officeCity: profileData.officeCity || '',
+        officeDistrict: profileData.officeDistrict || '',
+        officeState: profileData.officeState || '',
+        officePinCode: profileData.officePinCode || '',
+        officeLandmark: profileData.officeLandmark || '',
 
         // Identity & Business Verification
         aadhaarNumber: profileData.aadhaarNumber || '',
@@ -1208,6 +1152,13 @@ const BuilderProfile = () => {
         });
       });
 
+      let vendorDocs = {};
+      try {
+        vendorDocs = await getVendorDocumentsByField('builder');
+      } catch (docError) {
+        console.error('⚠️ Failed to load vendor documents:', docError);
+      }
+
       // Set documents state
       setDocuments({
         // Profile Images
@@ -1244,6 +1195,7 @@ const BuilderProfile = () => {
 
         // Other documents
         otherDocuments: allDocuments,
+        ...vendorDocs,
       });
 
       console.log('✅ Builder profile data loaded successfully');
@@ -1267,39 +1219,11 @@ const BuilderProfile = () => {
     fetchBuilderProfileData();
   }, []);
 
-  const showSuccessToast = () => {
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+  const showSuccessToast = (message = 'Operation completed successfully!') => {
+    showToast(message, 'success');
   };
 
   // ============ FILE UPLOAD HANDLERS ============
-  const handleFileUpload = async (field, file) => {
-    if (file) {
-      setIsLoading(true);
-      try {
-        const response = await uploadDocument({
-          role: 'builder',
-          field: field,
-          file: file,
-          propertyId: null
-        });
-
-        console.log('✅ Document uploaded:', response);
-
-        setDocuments(prev => ({
-          ...prev,
-          [field]: file
-        }));
-        showSuccessToast();
-      } catch (error) {
-        console.error('❌ Error uploading document:', error);
-        alert('Failed to upload document. Please try again.');
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  };
-
   const handleProfilePhotoUpload = async (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -1313,7 +1237,7 @@ const BuilderProfile = () => {
             ...prev,
             profilePhoto: response.data.fileUrl
           }));
-          showSuccessToast();
+          showSuccessToast('Profile photo uploaded successfully!');
           await fetchBuilderProfileData();
         }
       } catch (error) {
@@ -1325,27 +1249,30 @@ const BuilderProfile = () => {
     }
   };
 
-  const handleCompanyLogoUpload = async (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setIsLoading(true);
-      try {
-        const response = await uploadDocument({
-          role: 'builder',
-          field: 'companyLogo',
-          file: file,
-          propertyId: null
-        });
-        console.log('✅ Company logo uploaded:', response);
-        showSuccessToast();
-        await fetchBuilderProfileData();
-      } catch (error) {
-        console.error('❌ Error uploading company logo:', error);
-        alert('Failed to upload logo. Please try again.');
-      } finally {
-        setIsLoading(false);
+  const uploadCompanyLogoFile = async (file) => {
+    setIsLoading(true);
+    try {
+      const response = await uploadVendorLogo('builder', file);
+      console.log('✅ Company logo uploaded:', response);
+      if (response.data?.fileUrl) {
+        setDocuments(prev => ({
+          ...prev,
+          companyLogo: response.data.fileUrl
+        }));
       }
+      showSuccessToast('Company logo uploaded successfully!');
+      await fetchBuilderProfileData();
+    } catch (error) {
+      console.error('❌ Error uploading company logo:', error);
+      alert('Failed to upload logo. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  const handleCompanyLogoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) uploadCompanyLogoFile(file);
   };
 
   const handlePdfUpload = async (field, file) => {
@@ -1364,7 +1291,7 @@ const BuilderProfile = () => {
             ...prev,
             [field]: file
           }));
-          showSuccessToast();
+          showSuccessToast('Document uploaded successfully!');
         } catch (error) {
           console.error('❌ Error uploading document:', error);
           alert('Failed to upload document. Please try again.');
@@ -1377,11 +1304,22 @@ const BuilderProfile = () => {
     }
   };
 
-  const handlePdfView = (field) => {
+  const handlePdfView = async (field) => {
     const file = documents[field];
-    if (file) {
+    if (!file) return;
+
+    if (file instanceof window.File || typeof file === 'string') {
       setPdfToView(file);
       setShowPdfViewer(true);
+      return;
+    }
+
+    try {
+      const viewUrl = await getVendorDocumentViewUrl('builder', field);
+      setPdfToView(viewUrl);
+      setShowPdfViewer(true);
+    } catch (error) {
+      alert('Failed to open document. Please try again.');
     }
   };
 
@@ -1414,7 +1352,7 @@ const BuilderProfile = () => {
         }
         setShowDeleteConfirm(false);
         setDeleteItem(null);
-        showSuccessToast();
+        showSuccessToast('Document deleted successfully!');
       } catch (error) {
         console.error('❌ Error deleting document:', error);
         alert('Failed to delete document. Please try again.');
@@ -1440,7 +1378,7 @@ const BuilderProfile = () => {
         profilePhotoInputRef.current.value = '';
       }
       setShowProfilePhotoDeleteConfirm(false);
-      showSuccessToast();
+      showSuccessToast('Profile photo deleted successfully!');
       await fetchBuilderProfileData();
     } catch (error) {
       console.error('❌ Error deleting profile photo:', error);
@@ -1515,7 +1453,7 @@ const BuilderProfile = () => {
 
       await updateMyProfile('builder', profileData);
       setShowEditModal(false);
-      showSuccessToast();
+      showSuccessToast('Profile updated successfully!');
       await fetchBuilderProfileData();
     } catch (error) {
       console.error('❌ Error updating profile:', error);
@@ -1636,7 +1574,7 @@ const BuilderProfile = () => {
       setProperties(prev =>
         prev.map(p => p.id === property.id ? { ...p, status: newStatus } : p)
       );
-      showSuccessToast();
+      showSuccessToast('Property status updated successfully!');
     } catch (error) {
       console.error('❌ Error updating property status:', error);
       alert('Failed to update property status. Please try again.');
@@ -1648,24 +1586,39 @@ const BuilderProfile = () => {
   const handleAddPropertyImages = async (propertyId, files) => {
     const fileArray = Array.from(files);
     if (fileArray.length === 0) return;
+
+    const existingProperty = properties.find(p => p.id === propertyId);
+    // images is gallery-only (coverImage is separate) - the 3-image cap
+    // covers gallery photos only, the cover has its own dedicated slot.
+    const existingCount = existingProperty?.images?.length || 0;
+    const coverOffset = existingProperty?.coverImage ? 1 : 0;
+    const remainingSlots = Math.max(0, 3 - existingCount);
+    if (fileArray.length > remainingSlots) {
+      alert(`You can only upload ${remainingSlots} more image(s). Maximum 3 property photos allowed.`);
+    }
+    const limitedFiles = fileArray.slice(0, remainingSlots);
+    if (limitedFiles.length === 0) return;
+
     setIsLoading(true);
     try {
-      for (const file of fileArray) {
-        await uploadPropertyImage('builder', propertyId, file);
+      const newImageUrls = [];
+      for (let i = 0; i < limitedFiles.length; i++) {
+        const result = await uploadPropertyImage('builder', propertyId, limitedFiles[i], coverOffset + existingCount + i);
+        if (result?.data?.file_url) newImageUrls.push(result.data.file_url);
       }
 
       setProperties(prev =>
         prev.map(p => p.id === propertyId
-          ? { ...p, images: [...(p.images || []), ...fileArray.map(f => URL.createObjectURL(f))] }
+          ? { ...p, images: [...(p.images || []), ...newImageUrls] }
           : p
         )
       );
       setSelectedProperty(prev =>
         prev && prev.id === propertyId
-          ? { ...prev, images: [...(prev.images || []), ...fileArray.map(f => URL.createObjectURL(f))] }
+          ? { ...prev, images: [...(prev.images || []), ...newImageUrls] }
           : prev
       );
-      showSuccessToast();
+      showSuccessToast('Property image uploaded successfully!');
     } catch (error) {
       console.error('❌ Error uploading property images:', error);
       alert('Failed to upload images. Please try again.');
@@ -1677,7 +1630,11 @@ const BuilderProfile = () => {
   const handleRemovePropertyImage = async (propertyId, imageIndex) => {
     setIsLoading(true);
     try {
-      await deletePropertyImage('builder', propertyId, imageIndex);
+      // imageIndex is a position within the gallery-only images array - the
+      // cover (if any) sits at backend order 0, ahead of every gallery slot.
+      const existingProperty = properties.find(p => p.id === propertyId);
+      const coverOffset = existingProperty?.coverImage ? 1 : 0;
+      await deletePropertyImage('builder', propertyId, coverOffset + imageIndex);
 
       setProperties(prev =>
         prev.map(p => p.id === propertyId
@@ -1690,10 +1647,33 @@ const BuilderProfile = () => {
           ? { ...prev, images: (prev.images || []).filter((_, i) => i !== imageIndex) }
           : prev
       );
-      showSuccessToast();
+      showSuccessToast('Property image deleted successfully!');
     } catch (error) {
       console.error('❌ Error deleting property image:', error);
       alert('Failed to delete image. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Deletes the cover only - the cover slot is left empty afterwards, it is
+  // never backfilled from the gallery. A new cover must be set explicitly
+  // (edit form / dedicated set-cover action), matching how the backend
+  // now tracks coverImage and gallery images as separate concepts.
+  const handleRemovePropertyCover = async (propertyId) => {
+    setIsLoading(true);
+    try {
+      await deletePropertyImage('builder', propertyId, 0);
+      setProperties(prev =>
+        prev.map(p => p.id === propertyId ? { ...p, coverImage: null } : p)
+      );
+      setSelectedProperty(prev =>
+        prev && prev.id === propertyId ? { ...prev, coverImage: null } : prev
+      );
+      showSuccessToast('Cover image removed successfully!');
+    } catch (error) {
+      console.error('❌ Error deleting cover image:', error);
+      alert('Failed to delete cover image. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -1703,18 +1683,89 @@ const BuilderProfile = () => {
     if (!updatedProperty) return;
     setIsLoading(true);
     try {
+      const propertyId = updatedProperty.id;
+      const media = updatedProperty._media || {};
       const backendData = mapPropertyToBackend(updatedProperty);
-      await updateVendorProperty('builder', updatedProperty.id, backendData);
+      await updateVendorProperty('builder', propertyId, backendData);
+
+      // images/coverImage on updatedProperty are never touched by local edit
+      // state (see EditPropertyModal) - they still reflect what the backend
+      // had before this save (coverImage and images/gallery are already
+      // separate concepts there), so they're a safe source for the original
+      // order layout used to reconcile deletions below.
+      const originalCover = updatedProperty.coverImage || null;
+      const originalGalleryPhotos = updatedProperty.images || [];
+      const hadCoverOriginally = !!originalCover;
+
+      let finalImages = [...(media.existingPhotoUrls || [])];
+      let finalCoverUrl = media.coverUrl || null;
+
+      // Cover replaced with a new file, or explicitly removed with no
+      // replacement: either way the old cover row must be deleted. Only
+      // upload a new one if a file was actually picked - a removed cover
+      // stays empty, it is never backfilled from the gallery.
+      if (hadCoverOriginally && (media.coverFile || !media.coverUrl)) {
+        await deletePropertyImage('builder', propertyId, 0);
+      }
+      if (media.coverFile) {
+        const coverResult = await uploadPropertyImage('builder', propertyId, media.coverFile, 0, true);
+        finalCoverUrl = coverResult?.data?.file_url || null;
+      }
+
+      // Reconcile the gallery: any original (non-cover) photo the vendor
+      // removed in the edit form must actually be deleted server-side too -
+      // otherwise it silently stays on the property and keeps counting
+      // against the 3-photo cap even though the UI no longer shows it. This
+      // makes editing replace the gallery rather than just append to it.
+      // `order` matches array position, same convention "Remove Image" in
+      // view mode already relies on.
+      const coverOrderOffset = hadCoverOriginally ? 1 : 0;
+      const keptSet = new Set(media.existingPhotoUrls || []);
+      const freedOrders = [];
+      for (let i = 0; i < originalGalleryPhotos.length; i++) {
+        if (!keptSet.has(originalGalleryPhotos[i])) {
+          const order = i + coverOrderOffset;
+          await deletePropertyImage('builder', propertyId, order);
+          freedOrders.push(order);
+        }
+      }
+
+      if (media.newPhotoFiles && media.newPhotoFiles.length > 0) {
+        let nextFallbackOrder = coverOrderOffset + originalGalleryPhotos.length;
+        for (const file of media.newPhotoFiles) {
+          const order = freedOrders.length > 0 ? freedOrders.shift() : nextFallbackOrder++;
+          const result = await uploadPropertyImage('builder', propertyId, file, order);
+          if (result?.data?.file_url) finalImages.push(result.data.file_url);
+        }
+      }
+
+      if (media.videoFile) {
+        await uploadPropertyVideo('builder', propertyId, media.videoFile);
+      }
+
+      // The floor plan picked in the edit form was only ever held in local
+      // state - it never made it into the JSON save payload, so it silently
+      // vanished on save. Upload it through the property-documents endpoint.
+      if (media.floorPlanFile) {
+        await addPropertyDocuments(propertyId, [media.floorPlanFile], ['floor_plan']);
+      }
+
+      const finalProperty = {
+        ...updatedProperty,
+        images: finalCoverUrl ? [finalCoverUrl, ...finalImages] : finalImages,
+        coverImage: finalCoverUrl,
+      };
+      delete finalProperty._media;
 
       setProperties(prev =>
-        prev.map(p => p.id === updatedProperty.id ? updatedProperty : p)
+        prev.map(p => p.id === propertyId ? finalProperty : p)
       );
       setShowEditPropertyModal(false);
       setEditingProperty(null);
-      showSuccessToast();
+      showSuccessToast('Property updated successfully!');
     } catch (error) {
       console.error('❌ Error updating property:', error);
-      alert('Failed to update property. Please try again.');
+      alert(error?.response?.data?.detail || 'Failed to update property. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -1729,7 +1780,7 @@ const BuilderProfile = () => {
       setProperties(prev => prev.filter(p => p.id !== propertyToDelete.id));
       setShowDeletePropertyConfirm(false);
       setPropertyToDelete(null);
-      showSuccessToast();
+      showSuccessToast('Property deleted successfully!');
     } catch (error) {
       console.error('❌ Error deleting property:', error);
       alert('Failed to delete property. Please try again.');
@@ -1868,7 +1919,7 @@ const BuilderProfile = () => {
               ) : (
                 <button onClick={() => handlePdfView(field)} className="flex-1 text-[9px] sm:text-[10px] text-[#00695C] font-medium hover:underline truncate text-left flex items-center gap-0.5 sm:gap-1">
                   <FileText className="w-2.5 h-2.5 sm:w-3 sm:h-3 flex-shrink-0" />
-                  <span className="truncate">{file.name || 'Document'}</span>
+                  <span className="truncate">{file.fileName || file.name || 'Document'}</span>
                 </button>
               )}
               <button onClick={() => removeFile(field)} className="p-0.5 sm:p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors duration-300 flex-shrink-0" title="Delete">
@@ -1886,7 +1937,7 @@ const BuilderProfile = () => {
                 </div>
                 <input type="file" className="hidden" accept={isImage ? 'image/*' : '.pdf'} onChange={(e) => {
                   const f = e.target.files[0];
-                  if (f) { isImage ? handleFileUpload(field, f) : handlePdfUpload(field, f); }
+                  if (f) { field === 'companyLogo' ? uploadCompanyLogoFile(f) : handlePdfUpload(field, f); }
                   e.target.value = '';
                 }} />
               </label>
@@ -2202,9 +2253,9 @@ const BuilderProfile = () => {
               {filteredProperties.map((property, index) => (
                 <div key={property.id} className="group relative bg-teal-100/30 rounded-lg sm:rounded-xl shadow-md hover:shadow-xl transition-all duration-300 border border-[#00695C]/10 overflow-hidden hover:-translate-y-1" style={{ animationDelay: `${index * 0.08}s` }}>
                   <div className="relative w-full h-40 sm:h-46 bg-gray-100 overflow-hidden">
-                    <img src={property.images?.[0] || 'https://via.placeholder.com/400x400/CCCCCC/666666?text=No+Image'} alt={property.name}
+                    <img src={property.coverImage || NO_IMAGE_PLACEHOLDER} alt={property.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      onError={(e) => { e.target.src = 'https://via.placeholder.com/400x400/CCCCCC/666666?text=No+Image'; }} />
+                      onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }} />
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent p-2 sm:p-3">
                       <p className="text-white font-bold text-base sm:text-lg drop-shadow-lg">{property.price}</p>
                     </div>
@@ -2212,6 +2263,19 @@ const BuilderProfile = () => {
                       <div className="absolute bottom-2 sm:bottom-3 right-2 sm:right-3 bg-black/60 backdrop-blur-sm text-white text-[9px] sm:text-xs px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full flex items-center gap-1 sm:gap-1.5">
                         <Image className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> {property.images.length}
                       </div>
+                    )}
+                    {property.videoUrl && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLightboxItems([{ type: 'video', url: property.videoUrl, name: property.name }]);
+                          setLightboxIndex(0);
+                          setShowMediaLightbox(true);
+                        }}
+                        className="absolute bottom-2 sm:bottom-3 left-2 sm:left-3 bg-black/70 hover:bg-black/90 text-white text-[9px] sm:text-xs font-bold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full flex items-center gap-1 sm:gap-1.5 transition-all hover:scale-105"
+                      >
+                        <span className="text-[10px] sm:text-xs">▶</span> Watch Video
+                      </button>
                     )}
                   </div>
 
@@ -2293,8 +2357,8 @@ const BuilderProfile = () => {
                       <td className="py-2 sm:py-3 px-2 sm:px-4">
                         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                           <div className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                            <img src={property.images?.[0] || 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image'} alt={property.name} className="w-full h-full object-cover"
-                              onError={(e) => { e.target.src = 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image'; }} />
+                            <img src={property.coverImage || NO_IMAGE_PLACEHOLDER} alt={property.name} className="w-full h-full object-cover"
+                              onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }} />
                           </div>
                           <div className="min-w-0">
                             <p className="font-bold text-[10px] sm:text-sm text-gray-800 group-hover:text-[#00695C] transition-colors truncate">{property.name}</p>
@@ -2394,7 +2458,7 @@ const BuilderProfile = () => {
               setDocuments(prev => ({ ...prev, [item.field]: null }));
               setLightboxItems([]);
               setShowMediaLightbox(false);
-              showSuccessToast();
+              showSuccessToast('Item deleted successfully!');
             }
           }}
           onClose={() => { setShowMediaLightbox(false); setLightboxItems([]); setLightboxIndex(0); }} />
@@ -2712,24 +2776,11 @@ const BuilderProfile = () => {
       )}
 
       {/* Success Toast */}
-      {showSuccess && (
-        <div className="fixed top-20 sm:top-24 md:top-28 right-2 sm:right-4 z-50 bg-gradient-to-r from-[#00695C]/10 to-[#26A69A]/10 border-2 border-[#00695C]/30 rounded-2xl p-2 sm:p-3 flex items-center gap-3 sm:gap-4 shadow-xl animate-slideDown max-w-xs sm:max-w-md backdrop-blur-sm">
-          <div className="bg-gradient-to-r from-[#00695C] to-[#26A69A] p-2 sm:p-3 rounded-2xl animate-bounce-in">
-            <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-          </div>
-          <div>
-            <p className="text-[#00695C] font-bold text-base sm:text-lg">Success!</p>
-            <p className="text-[#00695C]/80 text-[10px] sm:text-sm">Operation completed successfully!</p>
-          </div>
-          <button onClick={() => setShowSuccess(false)} className="text-[#00695C] hover:text-[#004D40] ml-auto hover:rotate-90 transition-transform duration-300 hover:scale-110">
-            <X className="w-4 h-4 sm:w-5 sm:h-5" />
-          </button>
-        </div>
-      )}
+      <Toast toast={toast} onClose={hideToast} />
 
       {showPropertyDetails && selectedProperty && (
         <PropertyDetailsModal property={selectedProperty} onClose={() => { setShowPropertyDetails(false); setSelectedProperty(null); }}
-          onAddImages={handleAddPropertyImages} onRemoveImage={handleRemovePropertyImage} onToggleStatus={handleToggleStatus}
+          onAddImages={handleAddPropertyImages} onRemoveImage={handleRemovePropertyImage} onRemoveCover={handleRemovePropertyCover} onToggleStatus={handleToggleStatus}
           onEdit={handleEditProperty} onDelete={handleDeleteProperty} />
       )}
 
@@ -2805,7 +2856,7 @@ const BuilderProfile = () => {
               <div className="absolute -inset-0.5 sm:-inset-1 rounded-[20px] sm:rounded-[24px] animate-spin-slow" style={{ background: 'conic-gradient(from 0deg, #00695C, #26A69A, #7fd6c9, #26A69A, #00695C)' }} />
               <div className="relative w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-xl sm:rounded-2xl overflow-hidden shadow-2xl bg-gradient-to-br from-[#00695C]/20 to-[#26A69A]/20 flex items-center justify-center ring-3 sm:ring-4 ring-white/60">
                 {documents.companyLogo ? (
-                  <img src={URL.createObjectURL(documents.companyLogo)} alt={editForm.companyName} className="w-full h-full object-cover" />
+                  <img src={documents.companyLogo} alt={editForm.companyName} className="w-full h-full object-cover" />
                 ) : (
                   <span className="text-3xl sm:text-4xl md:text-5xl font-bold bg-gradient-to-r from-[#00695C] to-[#26A69A] bg-clip-text text-transparent">
                     {editForm.companyName.charAt(0)}
@@ -3141,7 +3192,7 @@ export default BuilderProfile;
 //   const detailImageInputRef = useRef(null);
 //   const rawImages = property.images || [];
 //   const hasImages = rawImages.length > 0;
-//   const images = hasImages ? rawImages : ['https://via.placeholder.com/400x300/CCCCCC/666666?text=No+Image'];
+//   const images = hasImages ? rawImages : [NO_IMAGE_PLACEHOLDER];
 
 //   useEffect(() => {
 //     if (currentImageIndex >= images.length) setCurrentImageIndex(Math.max(0, images.length - 1));
@@ -3174,7 +3225,7 @@ export default BuilderProfile;
 //         <div className="p-3 sm:p-4 overflow-y-auto flex-1 space-y-3 sm:space-y-4">
 //           <div className="relative rounded-xl overflow-hidden bg-gray-100 h-48 sm:h-56 md:h-64">
 //             <img src={images[currentImageIndex]} alt={property.name} className="w-full h-full object-cover"
-//               onError={(e) => { e.target.src = 'https://via.placeholder.com/400x300/CCCCCC/666666?text=No+Image'; }} />
+//               onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }} />
 //             {images.length > 1 && (
 //               <>
 //                 <button onClick={prevImage} className="absolute left-1.5 sm:left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5 sm:p-2 transition-all duration-300">
@@ -3212,7 +3263,7 @@ export default BuilderProfile;
 //                 <button key={idx} onClick={() => setCurrentImageIndex(idx)}
 //                   className={`flex-shrink-0 w-12 sm:w-14 md:w-16 h-9 sm:h-10 md:h-12 rounded-lg overflow-hidden border-2 transition-all duration-300 ${currentImageIndex === idx ? 'border-[#00695C] shadow-md' : 'border-gray-200 hover:border-gray-400'}`}>
 //                   <img src={img} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover"
-//                     onError={(e) => { e.target.src = 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image'; }} />
+//                     onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }} />
 //                 </button>
 //               ))}
 //             </div>
@@ -4698,9 +4749,9 @@ export default BuilderProfile;
 //               {filteredProperties.map((property, index) => (
 //                 <div key={property.id} className="group relative bg-teal-100/30 rounded-lg sm:rounded-xl shadow-md hover:shadow-xl transition-all duration-300 border border-[#00695C]/10 overflow-hidden hover:-translate-y-1" style={{ animationDelay: `${index * 0.08}s` }}>
 //                   <div className="relative w-full h-40 sm:h-46 bg-gray-100 overflow-hidden">
-//                     <img src={property.images?.[0] || 'https://via.placeholder.com/400x400/CCCCCC/666666?text=No+Image'} alt={property.name}
+//                     <img src={property.images?.[0] || NO_IMAGE_PLACEHOLDER} alt={property.name}
 //                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-//                       onError={(e) => { e.target.src = 'https://via.placeholder.com/400x400/CCCCCC/666666?text=No+Image'; }} />
+//                       onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }} />
 //                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent p-2 sm:p-3">
 //                       <p className="text-white font-bold text-base sm:text-lg drop-shadow-lg">{property.price}</p>
 //                     </div>
@@ -4789,8 +4840,8 @@ export default BuilderProfile;
 //                       <td className="py-2 sm:py-3 px-2 sm:px-4">
 //                         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
 //                           <div className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-//                             <img src={property.images?.[0] || 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image'} alt={property.name} className="w-full h-full object-cover"
-//                               onError={(e) => { e.target.src = 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image'; }} />
+//                             <img src={property.images?.[0] || NO_IMAGE_PLACEHOLDER} alt={property.name} className="w-full h-full object-cover"
+//                               onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }} />
 //                           </div>
 //                           <div className="min-w-0">
 //                             <p className="font-bold text-[10px] sm:text-sm text-gray-800 group-hover:text-[#00695C] transition-colors truncate">{property.name}</p>

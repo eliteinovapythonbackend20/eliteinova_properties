@@ -77,60 +77,64 @@ const DOCUMENT_MAPPINGS = {
       isPropertyDocument: false,
       description: 'Company Logo'
     },
-  },
-  
-  property: {
+    // The "Legal Documents" grid on every profile page always calls
+    // uploadDocument/deleteDocument with propertyId: null ("Vendor
+    // documents have no property ID" per those call sites) - these belong
+    // here, not in a property-scoped bucket, or getDocumentContext would
+    // throw "Property ID required" before any request is even made.
     'saleDeed': {
       docType: 'sale_deed',
-      isPropertyDocument: true,
+      isPropertyDocument: false,
       description: 'Property Sale Deed'
     },
     'floorPlanOptional': {
       docType: 'floor_plan',
-      isPropertyDocument: true,
+      isPropertyDocument: false,
       description: 'Property Floor Plan'
     },
     'pattaChitta': {
       docType: 'patta_chitta',
-      isPropertyDocument: true,
+      isPropertyDocument: false,
       description: 'Property Patta/Chitta'
     },
     'encumbranceCertificate': {
       docType: 'encumbrance_certificate',
-      isPropertyDocument: true,
+      isPropertyDocument: false,
       description: 'Property Encumbrance Certificate'
     },
     'propertyTaxReceipt': {
       docType: 'property_tax_receipt',
-      isPropertyDocument: true,
+      isPropertyDocument: false,
       description: 'Property Tax Receipt'
     },
     'buildingApprovalPlan': {
       docType: 'building_approval_plan',
-      isPropertyDocument: true,
+      isPropertyDocument: false,
       description: 'Building Approval Plan'
     },
     'completionCertificate': {
       docType: 'completion_certificate',
-      isPropertyDocument: true,
+      isPropertyDocument: false,
       description: 'Completion Certificate'
     },
     'occupancyCertificate': {
       docType: 'occupancy_certificate',
-      isPropertyDocument: true,
+      isPropertyDocument: false,
       description: 'Occupancy Certificate'
     },
     'rentalAgreement': {
       docType: 'rental_agreement',
-      isPropertyDocument: true,
+      isPropertyDocument: false,
       description: 'Rental Agreement'
     },
     'otherDocuments': {
       docType: 'other_supporting_document',
-      isPropertyDocument: true,
+      isPropertyDocument: false,
       description: 'Other Supporting Document'
     },
-  }
+  },
+
+  property: {}
 };
 
 
@@ -176,6 +180,32 @@ export const deleteProfilePhoto = async (role) => {
     return response.data;
   } catch (error) {
     console.error('Failed to delete profile photo:', error);
+    throw error;
+  }
+};
+
+
+export const uploadVendorLogo = async (role, file) => {
+  try {
+    const formData = new FormData();
+    formData.append('logo', file);
+    const response = await axiosInstance.post(`/profile/${role}/logo`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Failed to upload vendor logo:', error);
+    throw error;
+  }
+};
+
+
+export const deleteVendorLogo = async (role) => {
+  try {
+    const response = await axiosInstance.delete(`/profile/${role}/logo`);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to delete vendor logo:', error);
     throw error;
   }
 };
@@ -231,6 +261,42 @@ export const getVendorDocuments = async (role) => {
 };
 
 
+const VENDOR_DOC_TYPE_TO_FIELD = Object.fromEntries(
+  Object.entries(DOCUMENT_MAPPINGS.vendor).map(([field, cfg]) => [cfg.docType, field])
+);
+
+// Same data as getVendorDocuments, keyed by the form field name
+// (saleDeed, pattaChitta, ...) instead of the backend's doc_type string, so
+// profile pages can drop the result straight into their `documents` state.
+// Fields with no DOCUMENT_MAPPINGS.vendor entry (e.g. Builder/PM's reraCert,
+// companyRegCert, ...) fall through getDocumentContext's own "unknown
+// field" default, which uploads using the field name itself as docType -
+// so on the way back, an unrecognized docType IS the field name.
+export const getVendorDocumentsByField = async (role) => {
+  const response = await getVendorDocuments(role);
+  const byDocType = response?.data || {};
+  const byField = {};
+  Object.entries(byDocType).forEach(([docType, meta]) => {
+    const field = VENDOR_DOC_TYPE_TO_FIELD[docType] || docType;
+    byField[field] = meta;
+  });
+  return byField;
+};
+
+// Vendor documents are private - there's never a permanent URL to display.
+// Call this only when the user clicks "view", and use the URL immediately.
+export const getVendorDocumentViewUrl = async (role, field) => {
+  try {
+    const docType = DOCUMENT_MAPPINGS.vendor[field]?.docType || field;
+    const response = await axiosInstance.get(`/profile/${role}/documents/${docType}/view-url`);
+    return response.data?.data?.viewUrl;
+  } catch (error) {
+    console.error(`Failed to get view URL for document ${field}:`, error);
+    throw error;
+  }
+};
+
+
 export const uploadPropertyDocument = async (role, propertyId, docType, file) => {
   try {
     const formData = new FormData();
@@ -281,6 +347,39 @@ export const getPropertyDocuments = async (role, propertyId) => {
     return response.data;
   } catch (error) {
     console.error('Failed to fetch property documents:', error);
+    throw error;
+  }
+};
+
+// The property-document endpoints above target /profile/{role}/... which
+// doesn't exist on the backend - property documents (floor plan, sale deed,
+// etc. picked in the property Edit form) actually live under the properties
+// router, not the profile router: POST/DELETE /properties/{property_id}/documents.
+export const addPropertyDocuments = async (propertyId, files, documentTypes = []) => {
+  try {
+    const formData = new FormData();
+    files.forEach(file => formData.append('documents', file));
+    if (documentTypes.length > 0) {
+      formData.append('document_types', documentTypes.join(','));
+    }
+    const response = await axiosInstance.post(
+      `/properties/${propertyId}/documents`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Failed to add property documents:', error);
+    throw error;
+  }
+};
+
+export const deletePropertyDocumentById = async (propertyId, documentId) => {
+  try {
+    const response = await axiosInstance.delete(`/properties/${propertyId}/documents/${documentId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to delete property document:', error);
     throw error;
   }
 };
@@ -437,12 +536,12 @@ export const updateVendorPropertyStatus = async (role, propertyId, status) => {
 };
 
 
-export const uploadPropertyImage = async (role, propertyId, file, order = 0) => {
+export const uploadPropertyImage = async (role, propertyId, file, order = 0, isCover = false) => {
   try {
     const formData = new FormData();
     formData.append('image', file);
     const response = await axiosInstance.post(
-      `/profile/${role}/properties/${propertyId}/images?order=${order}`,
+      `/profile/${role}/properties/${propertyId}/images?order=${order}&is_cover=${isCover}`,
       formData,
       { headers: { 'Content-Type': 'multipart/form-data' } }
     );
@@ -511,11 +610,22 @@ export const deletePropertyVideo = async (role, propertyId) => {
 export const mapPropertyToFrontend = (backendProperty) => {
   if (!backendProperty) return null;
   
-  // Get images from the property
+  // Get images from the property (excluding any video entry mixed into the
+  // same media array - it has no img-renderable frame and was showing up as
+  // an extra empty thumbnail in property card galleries).
   const images = backendProperty.images || [];
   const imageUrls = images
+    .filter(img => {
+      if (typeof img === 'string') return !img.includes('video');
+      return img?.mediaType !== 'video' && !img?.fileUrl?.includes('video');
+    })
     .map(img => img.fileUrl || img)
     .filter(Boolean);
+
+  // Video URL, if the property has one, kept separate so it can be surfaced
+  // via a dedicated "watch video" control instead of the image gallery.
+  const videoMedia = images.find(img => typeof img !== 'string' && (img?.mediaType === 'video' || img?.fileUrl?.includes('video')));
+  const videoUrl = videoMedia ? videoMedia.fileUrl : null;
   
   // Get contactPerson details for THIS property - from whichever role-specific
   // table it was posted through (owner_properties/agent_properties/
@@ -532,16 +642,26 @@ export const mapPropertyToFrontend = (backendProperty) => {
     id: backendProperty.id || `PROP-${Math.random().toString(36).substr(2, 9)}`,
     name: backendProperty.propertyTitle || backendProperty.name || 'Unnamed Property',
     type: backendProperty.propertyType || 'Apartment',
-    propertyStatus: backendProperty.propertyStatus,
+    // Backend sends the active/inactive flag as `status` ("Active"/"Inactive"),
+    // not `propertyStatus` - populate both spellings/cases since the 4 profile
+    // pages read this value under different names (Owner/Agent compare
+    // propertyStatus === 'ACTIVE'; Builder/PM compare status === 'Active').
+    status: backendProperty.status || 'Active',
+    propertyStatus: (backendProperty.status || 'Active').toUpperCase(),
     price: backendProperty.expectedPrice ? `₹${Number(backendProperty.expectedPrice).toLocaleString()}` : '₹0',
     area: backendProperty.builtUpArea ? `${backendProperty.builtUpArea} sq ft` : 'N/A',
     location: `${backendProperty.city || ''}, ${backendProperty.state || ''}`.trim() || 'Location not specified',
     postedDate: backendProperty.createdAt ? new Date(backendProperty.createdAt).toLocaleDateString('en-IN') : 'N/A',
     description: backendProperty.description || '',
     
-    // Images
+    // Images - coverImage and images (gallery) are separate concepts on the
+    // backend now: the cover is only ever whatever is actually flagged as
+    // primary. No fallback to the first gallery photo - if the cover was
+    // deleted and never replaced, it stays empty rather than a gallery
+    // photo getting silently promoted into the cover slot.
     images: imageUrls,
-    coverImage: backendProperty.coverImage || (imageUrls.length > 0 ? imageUrls[0] : null),
+    coverImage: backendProperty.coverImage || null,
+    videoUrl,
     
     // Features & Amenities
     features: backendProperty.features || backendProperty.amenities || [],
@@ -723,7 +843,9 @@ export default {
   getPropertyDocument,
   deletePropertyDocument,
   getPropertyDocuments,
-  
+  addPropertyDocuments,
+  deletePropertyDocumentById,
+
   // Smart Document Handler
   getDocumentContext,
   uploadDocument,

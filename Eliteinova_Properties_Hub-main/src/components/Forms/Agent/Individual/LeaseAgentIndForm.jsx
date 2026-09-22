@@ -306,6 +306,8 @@ export default function LeaseAgentIndForm({ isOpen, onClose }) {
     // Property Details (Step 2) - Updated
     propertyTitle: "", propertyType: "", propertyArea: "", propertyLandmark: "", propertyCity: "", pincode: "", state: "", district: "",
     builtUpArea: "", carpetArea: "", bedrooms: "", bathrooms: "", furnishingStatus: "", parking: "", parkingCount: "",
+    // Property Category & Posted By
+    propertyCategory: "individual", postedBy: "agent",
     // Pricing & Amenities (Step 3)
     listingPurpose: "lease", expectedPrice: "", budgetRange: { min: "", max: "" }, priceType: "", maintenance: "", availableFrom: "", selectedAmenities: [], otherAmenities: "",
     securityDeposit: "",

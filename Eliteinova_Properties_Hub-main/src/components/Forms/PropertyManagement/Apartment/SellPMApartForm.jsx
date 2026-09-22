@@ -178,14 +178,15 @@ export default function SellPMApartForm({ isOpen, onClose }) {
     // Identity & Business Verification (Step 3)
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, pmBusinessRegCert: null, pmGstCert: null, pmReraCert: null, officeAddressProof: null,
     
+    // Property Category & Posted By
+    propertyCategory: "apartment", postedBy: "property_management",
     // Property Details (Step 4)
-    propertyType: "Apartment", purpose: "Sell",
+    propertyType: "", purpose: "Sell",
     area: "", landmark: "", nearbyConnectivity: "",
     builtUpArea: "", carpetArea: "",
     bedrooms: "", bathrooms: "", floorNumber: "", totalFloors: "",
     facingDirection: "", balcony: "", propertyAge: "", cornerUnit: "",
-    furnishing: "", modularKitchen: "no", wardrobes: "no", airConditioning: "no",
-    utilityArea: "no", smartHomeFeatures: "no",
+    furnishing: "", interiorFeatures: [],
     ownershipType: "",
     nearbyPlaces: [],
     
@@ -558,8 +559,11 @@ export default function SellPMApartForm({ isOpen, onClose }) {
   const handleDocumentUpload = (docType, e, maxSize = 5) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.type !== 'application/pdf') {
-        alert(`${docType} must be a PDF file`);
+      // logo / photo uploads are images (the input says JPG/PNG); everything else is a PDF document
+      const isImageUpload = /logo|photo/i.test(docType);
+      const validTypes = isImageUpload ? ['image/jpeg', 'image/jpg', 'image/png'] : ['application/pdf'];
+      if (!validTypes.includes(file.type)) {
+        alert(isImageUpload ? `${docType} must be a JPG or PNG image` : `${docType} must be a PDF file`);
         return;
       }
       if (file.size > maxSize * 1024 * 1024) {
@@ -1372,15 +1376,12 @@ function MobContentSellPMApart({
       </Field>
       <Field label="Interior Features">
         <div className="grid grid-cols-2 gap-1">
-          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => {
-            const key = feature.toLowerCase().replace(/ /g, '');
-            return (
-              <label key={feature} className="flex items-center gap-1 text-[9px] cursor-pointer">
-                <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData[key] === "yes"} onChange={() => updateForm(key, formData[key] === "yes" ? "no" : "yes")} />
-                {feature}
-              </label>
-            );
-          })}
+          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => (
+            <label key={feature} className="flex items-center gap-1 text-[9px] cursor-pointer">
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={(formData.interiorFeatures || []).includes(feature)} onChange={() => toggleArrayItem("interiorFeatures", feature)} />
+              {feature}
+            </label>
+          ))}
         </div>
       </Field>
     </>
@@ -2241,15 +2242,12 @@ function DtContentSellPMApart({
       </FieldDt>
       <FieldDt label="Interior Features">
         <div className="grid grid-cols-2 gap-2">
-          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => {
-            const key = feature.toLowerCase().replace(/ /g, '');
-            return (
-              <label key={feature} className="flex items-center gap-2 text-[13px] cursor-pointer">
-                <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData[key] === "yes"} onChange={() => updateForm(key, formData[key] === "yes" ? "no" : "yes")} />
-                {feature}
-              </label>
-            );
-          })}
+          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => (
+            <label key={feature} className="flex items-center gap-2 text-[13px] cursor-pointer">
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={(formData.interiorFeatures || []).includes(feature)} onChange={() => toggleArrayItem("interiorFeatures", feature)} />
+              {feature}
+            </label>
+          ))}
         </div>
       </FieldDt>
     </>

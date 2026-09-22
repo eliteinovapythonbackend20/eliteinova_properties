@@ -8,15 +8,30 @@ from app.core.storage.base import StorageProvider
 from app.core.config import settings
 
 class LocalStorage(StorageProvider):
-    """Local filesystem storage implementation for development"""
-    
+    """Local filesystem storage implementation for development.
+
+    Files are written under LOCAL_STORAGE_PATH and served back over HTTP via
+    the "/uploads" StaticFiles mount in app/main.py. upload_file() returns a
+    full absolute URL (not just the relative disk path) because the frontend
+    runs on a different origin - a bare "/uploads/..." path would resolve
+    against the frontend's own host, not the API's.
+    """
+
+    URL_PREFIX = "/uploads/"
+
     def __init__(self):
         self.base_path = Path(settings.LOCAL_STORAGE_PATH)
         self.base_path.mkdir(parents=True, exist_ok=True)
-        print(f"📁 LocalStorage initialized at: {self.base_path.absolute()}")
-    
+        print(f"LocalStorage initialized at: {self.base_path.absolute()}")
+
     def _get_file_path(self, destination_path: str) -> Path:
-        return self.base_path / destination_path
+        # Accepts either the bare relative disk path or the full URL this
+        # class itself returns from upload_file() - strip the URL part down
+        # to the relative path either way before resolving it on disk.
+        relative = destination_path
+        if self.URL_PREFIX in relative:
+            relative = relative.split(self.URL_PREFIX, 1)[1]
+        return self.base_path / relative
     
     async def upload_file(
         self,
@@ -46,9 +61,9 @@ class LocalStorage(StorageProvider):
             # Write file
             with open(file_path, 'wb') as f:
                 f.write(content)
-            
-            return destination_path
-            
+
+            return f"{settings.BACKEND_BASE_URL.rstrip('/')}{self.URL_PREFIX}{destination_path}"
+
         except Exception as e:
             raise Exception(f"Failed to upload file: {str(e)}")
     

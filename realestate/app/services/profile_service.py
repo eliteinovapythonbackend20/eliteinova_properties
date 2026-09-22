@@ -86,7 +86,9 @@ class ProfileService:
     def to_response(self, property_obj) -> Optional[Dict[str, Any]]:
         if not property_obj:
             return None
-        
+
+        cover_image, gallery_images = self.formatter.format_media_split(property_obj.media)
+
         property_data = {
             # Basic identifiers
             'id': property_obj.id,
@@ -235,8 +237,13 @@ class ProfileService:
             'createdAt': property_obj.created_at.isoformat() if property_obj.created_at else None,
             'updatedAt': property_obj.updated_at.isoformat() if property_obj.updated_at else None,
             
-            # Media and documents
-            'images': self.formatter.format_media(property_obj.media) if property_obj.media else [],
+            # Media and documents - coverImage and images (gallery) are kept
+            # as separate concepts: the cover only ever comes from the row
+            # actually flagged is_primary, never inferred from position, so
+            # deleting it leaves the cover empty instead of promoting a
+            # gallery photo into it.
+            'coverImage': cover_image,
+            'images': gallery_images,
             'documents': self.formatter.format_documents(property_obj.documents) if property_obj.documents else [],
 
             # Per-property contact person (owner_properties/agent_properties/
@@ -494,6 +501,9 @@ class ProfileService:
     ) -> Dict[str, Any]:
         posted_by = self.resolve_vendor_type(vendor_type)
 
+        existing_profile = await self.vendor_profile_repository.get_vendor_profile(user_id)
+        old_url = existing_profile.profile_picture if existing_profile else None
+
         upload_result = await self.file_service.upload_image(
             file=file,
             user_id=user_id,
@@ -511,7 +521,16 @@ class ProfileService:
                 detail=f"No {vendor_type} profile found. Post a property as {vendor_type} before uploading a photo.",
             )
         await self.vendor_profile_repository.commit()
-        return {"profile_photo_url": profile_obj.profile_picture}
+
+        # Replacing an existing photo - clean up the old file so it doesn't
+        # leak on disk. Best-effort: a failure here shouldn't undo the DB update.
+        if old_url and old_url != profile_obj.profile_picture:
+            try:
+                await self.file_service.delete_files([old_url])
+            except Exception as e:
+                print(f"Failed to delete old profile photo from storage: {e}")
+
+        return {"fileUrl": profile_obj.profile_picture}
 
     async def upload_vendor_logo(
         self, user_id: str, vendor_type: str, file: UploadFile
@@ -523,6 +542,9 @@ class ProfileService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"'{vendor_type}' profiles don't have a logo (owners aren't a company).",
             )
+
+        existing_profile = await self.vendor_profile_repository.get_vendor_profile(user_id)
+        old_url = existing_profile.company_logo_url if existing_profile else None
 
         field_name = "agencyLogo" if posted_by == PostedBy.AGENT else "companyLogo"
         upload_result = await self.file_service.upload_image(
@@ -542,7 +564,14 @@ class ProfileService:
                 detail=f"No {vendor_type} profile found. Post a property as {vendor_type} before uploading a logo.",
             )
         await self.vendor_profile_repository.commit()
-        return {logo_field: profile_obj.company_logo_url}
+
+        if old_url and old_url != profile_obj.company_logo_url:
+            try:
+                await self.file_service.delete_files([old_url])
+            except Exception as e:
+                print(f"Failed to delete old logo from storage: {e}")
+
+        return {"fileUrl": profile_obj.company_logo_url}
 
     async def delete_vendor_profile_photo(self, user_id: str, vendor_type: str) -> Dict[str, Any]:
         posted_by = self.resolve_vendor_type(vendor_type)
@@ -559,7 +588,7 @@ class ProfileService:
         try:
             await self.file_service.delete_files([old_url])
         except Exception as e:
-            print(f"⚠️ Failed to delete old profile photo from storage: {e}")
+            print(f"Failed to delete old profile photo from storage: {e}")
 
         return {"deleted": True}
 
@@ -583,7 +612,7 @@ class ProfileService:
         try:
             await self.file_service.delete_files([old_url])
         except Exception as e:
-            print(f"⚠️ Failed to delete old logo from storage: {e}")
+            print(f"Failed to delete old logo from storage: {e}")
 
         return {"deleted": True}
 
@@ -634,6 +663,108 @@ class ProfileService:
         await self.vendor_profile_repository.update_vendor_profile(user_id, "OWNER", {db_column: None})
         await self.vendor_profile_repository.commit()
 
+    # ============================================
+    # VENDOR-LEVEL DOCUMENTS (sale deed, Aadhaar, GST certificate, ...) -
+    # metadata lives in the role-specific JSONB blob (see
+    # VendorProfileRepository's *_vendor_document_meta methods); the file
+    # itself sits in the private bucket and is never exposed as a permanent
+    # URL - a fresh signed URL is minted only when the vendor clicks "view".
+    # ============================================
+
+    @staticmethod
+    def _document_public_view(doc_type: str, meta: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "docType": doc_type,
+            "fileName": meta.get("fileName"),
+            "mimeType": meta.get("mimeType"),
+            "fileSizeKb": meta.get("fileSizeKb"),
+            "uploadedAt": meta.get("uploadedAt"),
+        }
+
+    async def upload_vendor_document(
+        self, user_id: str, vendor_type: str, doc_type: str, file: UploadFile
+    ) -> Dict[str, Any]:
+        posted_by = self.resolve_vendor_type(vendor_type)
+
+        old_meta = await self.vendor_profile_repository.get_vendor_document_meta(user_id, posted_by.value, doc_type)
+        old_path = old_meta.get("storedPath") if old_meta else None
+
+        upload_result = await self.file_service.upload_document(
+            file=file, user_id=user_id, property_id="profile", idx=0
+        )
+        metadata = {
+            "fileName": upload_result.get("stored_filename") or file.filename,
+            "mimeType": upload_result.get("mime_type") or file.content_type,
+            "fileSizeKb": upload_result.get("file_size_kb") or 0,
+            "storedPath": upload_result.get("file_url"),
+            "uploadedAt": datetime.utcnow().isoformat(),
+        }
+
+        profile_obj = await self.vendor_profile_repository.upsert_vendor_document_meta(
+            user_id, posted_by.value, doc_type, metadata
+        )
+        if not profile_obj:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No {vendor_type} profile found. Post a property as {vendor_type} before uploading a document.",
+            )
+        await self.vendor_profile_repository.commit()
+
+        # Replacing an existing document of this type - clean up the old
+        # file so it doesn't leak on disk.
+        if old_path and old_path != metadata["storedPath"]:
+            try:
+                await self.file_service.delete_files([old_path])
+            except Exception as e:
+                print(f"Failed to delete old vendor document from storage: {e}")
+
+        return self._document_public_view(doc_type, metadata)
+
+    async def get_vendor_document(self, user_id: str, vendor_type: str, doc_type: str) -> Optional[Dict[str, Any]]:
+        posted_by = self.resolve_vendor_type(vendor_type)
+        meta = await self.vendor_profile_repository.get_vendor_document_meta(user_id, posted_by.value, doc_type)
+        if not meta:
+            return None
+        return self._document_public_view(doc_type, meta)
+
+    async def get_vendor_documents(self, user_id: str, vendor_type: str) -> Dict[str, Any]:
+        posted_by = self.resolve_vendor_type(vendor_type)
+        documents = await self.vendor_profile_repository.get_vendor_documents_meta(user_id, posted_by.value)
+        return {doc_type: self._document_public_view(doc_type, meta) for doc_type, meta in documents.items()}
+
+    async def delete_vendor_document(self, user_id: str, vendor_type: str, doc_type: str) -> bool:
+        posted_by = self.resolve_vendor_type(vendor_type)
+        old_meta = await self.vendor_profile_repository.get_vendor_document_meta(user_id, posted_by.value, doc_type)
+        if not old_meta:
+            return False
+
+        deleted = await self.vendor_profile_repository.delete_vendor_document_meta(user_id, posted_by.value, doc_type)
+        if not deleted:
+            return False
+        await self.vendor_profile_repository.commit()
+
+        old_path = old_meta.get("storedPath")
+        if old_path:
+            try:
+                await self.file_service.delete_files([old_path])
+            except Exception as e:
+                print(f"Failed to delete vendor document from storage: {e}")
+        return True
+
+    async def get_vendor_document_view_url(self, user_id: str, vendor_type: str, doc_type: str) -> str:
+        """Mint a fresh, short-lived signed GET URL - called only when the
+        vendor clicks "view", never cached/persisted. Always scoped to the
+        caller's own profile (user_id comes from the JWT, not the request),
+        so no separate ownership check is needed here."""
+        posted_by = self.resolve_vendor_type(vendor_type)
+        meta = await self.vendor_profile_repository.get_vendor_document_meta(user_id, posted_by.value, doc_type)
+        if not meta or not meta.get("storedPath"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No '{doc_type}' document found")
+
+        from app.core.config import settings
+        return await self.file_service.private_storage.generate_signed_url(
+            meta["storedPath"], expiration=settings.PRIVATE_DOCUMENT_SIGNED_URL_EXPIRE_SECONDS
+        )
 
     async def delete_profile_file(self, file_path: str, user_id: str, vendor_documents: List[Any]) -> Dict[str, Any]:
         if not await self._user_owns_profile_file(user_id, file_path, vendor_documents):

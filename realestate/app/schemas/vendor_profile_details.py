@@ -29,6 +29,9 @@ class AgentProfileExtra(_RoleProfileExtra):
     # Free-text input ("e.g. Mumbai, Pune, Navi Mumbai"), not a multi-select -
     # stored as typed by the vendor, not split into a list.
     service_areas: Optional[str] = Field(None, alias="serviceAreas")
+    # Agency office address - role-specific, not the shared personal
+    # address columns (those stay free for an owner's home address).
+    office_address: Optional[str] = Field(None, alias="officeAddress")
 
     @field_validator("years_of_experience", "number_of_active_listings", mode="before")
     @classmethod
@@ -48,6 +51,13 @@ class BuilderProfileExtra(_RoleProfileExtra):
     years_of_experience: Optional[int] = Field(None, alias="yearsOfExperience")
     company_profile: Optional[str] = Field(None, alias="companyProfile")
     designation: Optional[str] = Field(None, alias="authDesignation")
+    # Office address - role-specific, not the shared personal address
+    # columns (those stay free for an owner's home address).
+    office_address: Optional[str] = Field(None, alias="officeAddress")
+    office_city: Optional[str] = Field(None, alias="officeCity")
+    office_district: Optional[str] = Field(None, alias="officeDistrict")
+    office_state: Optional[str] = Field(None, alias="officeState")
+    office_pincode: Optional[str] = Field(None, alias="officePinCode")
     office_landmark: Optional[str] = Field(None, alias="officeLandmark")
     ongoing_projects: Optional[int] = Field(None, alias="ongoingProjects")
     completed_projects: Optional[int] = Field(None, alias="completedProjects")
@@ -78,6 +88,13 @@ class PropertyManagementProfileExtra(_RoleProfileExtra):
     years_of_experience: Optional[int] = Field(None, alias="yearsOfExperience")
     company_description: Optional[str] = Field(None, alias="companyDescription")
     designation: Optional[str] = Field(None, alias="authDesignation")
+    # Office address - role-specific, not the shared personal address
+    # columns (those stay free for an owner's home address).
+    office_address: Optional[str] = Field(None, alias="officeAddress")
+    office_city: Optional[str] = Field(None, alias="officeCity")
+    office_district: Optional[str] = Field(None, alias="officeDistrict")
+    office_state: Optional[str] = Field(None, alias="officeState")
+    office_pincode: Optional[str] = Field(None, alias="officePinCode")
     office_landmark: Optional[str] = Field(None, alias="officeLandmark")
 
     @field_validator("years_of_experience", mode="before")

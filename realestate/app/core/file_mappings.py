@@ -33,6 +33,48 @@ DOC_TYPE_MAPPING = {
     'companyAddressProof': 'company_address_proof',
     'projectBrochure': 'project_brochure',
     'authorizedSignatoryIdProof': 'authorized_signatory_id_proof',
+
+    # Hostel-specific property documents (new - previously unmapped, fell through
+    # as the raw camelCase key instead of a clean snake_case doc_type)
+    'healthCertificate': 'health_certificate',
+    'hostelLicense': 'hostel_license',
+
+    # Other new property documents
+    'ownershipDoc': 'ownership_document',
+    'saleAgreement': 'sale_agreement',
+
+    # New vendor document (generic ID proof, distinct from aadhaar/PAN)
+    'idProofDoc': 'id_proof',
+
+    # ---- alias variants the posting-form wizards actually emit for document
+    # fields that already have a canonical type above (see
+    # src/components/Forms/**/*.jsx - each family/step names the same document
+    # slightly differently) ----
+    'authIdProof': 'authorized_signatory_id_proof',
+    'aadhaarCardDoc': 'aadhaar_card',
+    'panCardDoc': 'pan_card',
+    'profilePhotoDoc': 'passport_photo',
+    'gstCert': 'gst_certificate',
+    'gstCertDoc': 'gst_certificate',
+    'gstCertificateDoc': 'gst_certificate',
+    'pmGstCert': 'gst_certificate',
+    'pmGstCertDoc': 'gst_certificate',
+    'reraCert': 'rera_certificate',
+    'reraCertDoc': 'rera_certificate',
+    'reraCertificateDoc': 'rera_certificate',
+    'pmReraCert': 'rera_certificate',
+    'pmReraCertDoc': 'rera_certificate',
+    'businessRegistrationDoc': 'business_registration_certificate',
+    'pmBusinessRegCert': 'business_registration_certificate',
+    'pmBusinessRegCertDoc': 'business_registration_certificate',
+    'companyRegCert': 'company_registration_certificate',
+    'companyRegCertDoc': 'company_registration_certificate',
+    'officeAddressProof': 'company_address_proof',
+    'officeAddressProofDoc': 'company_address_proof',
+    'companyLogoDoc': 'company_logo',
+    'pmCompanyLogoDoc': 'company_logo',
+    'companyBrochure': 'company_profile_brochure',
+    'pmCompanyBrochure': 'company_profile_brochure',
 }
 
 # ============================================
@@ -100,6 +142,11 @@ FILE_MAPPINGS = {
         'is_profile': True
     },
     'panCard': {
+        'category': 'documents',
+        'is_document': True,
+        'is_profile': True
+    },
+    'idProofDoc': {
         'category': 'documents',
         'is_document': True,
         'is_profile': True

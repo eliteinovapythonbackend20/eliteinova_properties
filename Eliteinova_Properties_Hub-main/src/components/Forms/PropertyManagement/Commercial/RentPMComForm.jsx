@@ -369,6 +369,8 @@ export default function RentPMComForm({ isOpen, onClose }) {
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null,
     pmBusinessRegCert: null, pmGstCert: null, pmReraCert: null, officeAddressProof: null,
 
+    // Property Category & Posted By
+    propertyCategory: "commercial", postedBy: "property_management",
     // Property Details (Step 4)
     propertyTitle: "", commercialType: "", propertyAddress: "", propertyCity: "",
     builtUpArea: "", carpetArea: "",
@@ -769,8 +771,11 @@ export default function RentPMComForm({ isOpen, onClose }) {
   const handleDocumentUpload = (docType, e, maxSize = 5) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.type !== 'application/pdf') {
-        alert(`${docType} must be a PDF file`);
+      // logo / photo uploads are images (the input says JPG/PNG); everything else is a PDF document
+      const isImageUpload = /logo|photo/i.test(docType);
+      const validTypes = isImageUpload ? ['image/jpeg', 'image/jpg', 'image/png'] : ['application/pdf'];
+      if (!validTypes.includes(file.type)) {
+        alert(isImageUpload ? `${docType} must be a JPG or PNG image` : `${docType} must be a PDF file`);
         return;
       }
       if (file.size > maxSize * 1024 * 1024) {

@@ -347,6 +347,8 @@ export default function SellAgentComForm({ isOpen, onClose }) {
     agencyName: "", reraNumber: "", gstNumber: "", yearsExperience: "", activeListings: "", serviceAreas: [],
     officeAddress: "",
     
+    // Property Category & Posted By
+    propertyCategory: "commercial", postedBy: "agent", listingPurpose: "sell",
     // Property Details (Step 2) - Location + Details & Interior combined
     city: "", area: "", landmark: "", pinCode: "", state: "", district: "", nearbyConnectivity: "",
     commercialType: "", builtUpArea: "", carpetArea: "",

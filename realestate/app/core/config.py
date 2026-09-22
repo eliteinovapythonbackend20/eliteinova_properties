@@ -3,7 +3,7 @@ from typing import Optional, List, Union
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-current_profile = os.getenv("ENVIRONMENT", "")
+current_profile = os.getenv("ENVIRONMENT", "development")
 env_filename = f".env.{current_profile}"
 
 if not os.path.exists(env_filename):
@@ -51,11 +51,20 @@ class Settings(BaseSettings):
     RAZORPAY_WEBHOOK_SECRET: str
 
     
-    # GCS
+    # GCS - two buckets: public media (images/videos/profile photos, publicly
+    # readable) and private docs (KYC/legal documents, never publicly readable -
+    # served only through a short-lived signed URL minted on demand).
     GCS_BUCKET_NAME: str = "property-bucket"
+    GCS_PUBLIC_BUCKET: str = "realestate-public-media"
+    GCS_PRIVATE_BUCKET: str = "realestate-private-docs"
+    GCS_LOCATION: str = "asia-south1"
     GCS_UPLOAD_WORKERS: int = 10
     GCS_PROJECT_ID: Optional[str] = None
     GCS_CREDENTIALS_PATH: Optional[str] = None
+
+    # Private document "View" signed URL - generated fresh on every click,
+    # never cached/persisted, never generated ahead of time.
+    PRIVATE_DOCUMENT_SIGNED_URL_EXPIRE_SECONDS: int = 600  # exactly 10 minutes
     
     # Image Compression
     IMAGE_MAX_WIDTH: int = 1200
@@ -76,10 +85,6 @@ class Settings(BaseSettings):
     STORAGE_DOCUMENTS: str = "NEARLINE"
     STORAGE_PROFILE_IMAGES: str = "STANDARD"
 
-    CLOUDINARY_CLOUD_NAME: str = os.getenv("CLOUDINARY_CLOUD_NAME", "")
-    CLOUDINARY_API_KEY: str = os.getenv("CLOUDINARY_API_KEY", "")
-    CLOUDINARY_API_SECRET: str = os.getenv("CLOUDINARY_API_SECRET", "")
-    
     # Pagination
     DEFAULT_PAGE_SIZE: int = 20
     MAX_PAGE_SIZE: int = 100
@@ -91,8 +96,12 @@ class Settings(BaseSettings):
     ALLOWED_HEADERS: List[str] = ["*"]
 
     # Storage Selection
-    STORAGE_TYPE: str = "cloudinary"
+    STORAGE_TYPE: str = "local"
     LOCAL_STORAGE_PATH: str = "./uploads"
+    # Used to build absolute URLs for files served from local disk storage
+    # (the frontend is a different origin, so a bare "/uploads/..." path
+    # would resolve against the frontend's own host, not the API's).
+    BACKEND_BASE_URL: str = "http://localhost:8000"
 
     # Validator to cleanly parse comma-separated string domains into a Python list
     @field_validator("ALLOWED_ORIGINS", mode="before")

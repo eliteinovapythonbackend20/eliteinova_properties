@@ -68,11 +68,15 @@ class IDGenerator:
         category_letter = IDGenerator.get_property_category(category)
         
         pattern = f"{prefix}{year_month}{category_letter}"
-        
-        # Query max property ID for this user
+
+        # properties.id is a GLOBAL primary key with no per-user component in
+        # its format (EP<YYYYMM><CategoryLetter><sequence>) - the max must be
+        # computed across ALL users sharing this pattern, not just this one.
+        # Filtering by user_id here previously let two different users each
+        # compute "00001" for their own first property of the month/category,
+        # colliding on the shared primary key (IntegrityError on insert).
         result = await db.execute(
             select(func.max(Property.id))
-            .where(Property.user_id == user_id)  # Filter by user_id
             .where(Property.id.startswith(pattern))
         )
         latest_id = result.scalar()

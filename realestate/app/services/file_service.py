@@ -12,7 +12,7 @@ class FileService:
     # forms (e.g. OwnerProfile.jsx, SellPMLPForm.jsx: 2MB images, 10MB video,
     # 5MB PDFs) - re-checked here so a direct API call can't bypass them.
     _MAX_SIZE_BYTES = {
-        'image': 2 * 1024 * 1024,
+        'image': 10 * 1024 * 1024,
         'video': 10 * 1024 * 1024,
         'document': 5 * 1024 * 1024,
     }
@@ -21,8 +21,18 @@ class FileService:
         'video': {'video/mp4', 'video/quicktime', 'video/mov', 'video/webm', 'video/x-matroska'},
     }
 
+    # Cache-Control applied to every object in the public bucket (images,
+    # videos, vendor profile photos) - fixed value per the storage architecture,
+    # not per-media-type like the old Cloudinary cache-control strings were.
+    _PUBLIC_CACHE_CONTROL = 'public, max-age=604800'
+
     def __init__(self):
-        self.storage = StorageFactory.get_storage()
+        self.public_storage = StorageFactory.get_storage("public")
+        self.private_storage = StorageFactory.get_storage("private")
+        # Backward-compat alias - some older call sites may still reference
+        # self.storage; it now means "public", matching pre-split behavior
+        # (everything used to go through one storage instance).
+        self.storage = self.public_storage
         self.file_processor = FileProcessor()
 
     async def _validate_upload(self, file: UploadFile, category: str) -> None:
@@ -191,14 +201,14 @@ class FileService:
                 quality=85
             )
             
-            stored_path = await self.storage.upload_file(
+            stored_path = await self.public_storage.upload_file(
                 file=compressed_file,
                 destination_path=file_path,
-                cache_control='public, max-age=31536000, immutable',
+                cache_control=self._PUBLIC_CACHE_CONTROL,
                 storage_class='STANDARD',
                 content_type='image/webp'
             )
-            
+
             return {
                 'file_url': stored_path,
                 'file_name': file.filename,
@@ -213,7 +223,7 @@ class FileService:
                 'field_name': field_name,
                 'is_compressed': True
             }
-            
+
         except Exception as e:
             print(f"Vendor profile image upload failed for {file.filename}: {str(e)}")
             raise HTTPException(
@@ -247,10 +257,10 @@ class FileService:
                     quality='medium'
                 )
 
-                stored_path = await self.storage.upload_file(
+                stored_path = await self.private_storage.upload_file(
                     file=compressed_file,
                     destination_path=file_path,
-                    cache_control='public, max-age=86400, stale-while-revalidate=3600',
+                    cache_control='private, max-age=86400, stale-while-revalidate=3600',
                     storage_class='NEARLINE',
                     content_type='application/pdf'
                 )
@@ -264,17 +274,17 @@ class FileService:
                     'document_type': document_type,
                 }
             else:
-                stored_path = await self.storage.upload_file(
+                stored_path = await self.private_storage.upload_file(
                     file=file,
                     destination_path=file_path,
-                    cache_control='public, max-age=86400, stale-while-revalidate=3600',
+                    cache_control='private, max-age=86400, stale-while-revalidate=3600',
                     storage_class='NEARLINE'
                 )
-                
+
                 content = await file.read()
                 file_size_kb = len(content) // 1024
                 file.file.seek(0)
-                
+
                 return {
                     'file_url': stored_path,
                     'file_name': file.filename,
@@ -375,10 +385,10 @@ class FileService:
                 filename=filename
             )
             
-            stored_path = await self.storage.upload_file(
+            stored_path = await self.public_storage.upload_file(
                 file=compressed_file,
                 destination_path=file_path,
-                cache_control='public, max-age=31536000, immutable',
+                cache_control=self._PUBLIC_CACHE_CONTROL,
                 storage_class='STANDARD',
                 content_type='image/webp'
             )
@@ -426,7 +436,7 @@ class FileService:
         if field_name is None:
             field_name = 'propertyImages'
         
-        print(f"📸 Uploading {len(images)} images with field_name: {field_name}")
+        print(f"Uploading {len(images)} images with field_name: {field_name}")
         
         # Single image types (passportPhoto, agencyLogo, companyLogo)
         if field_name in ['passportPhoto', 'agencyLogo', 'companyLogo']:
@@ -501,10 +511,10 @@ class FileService:
                 filename=filename
             )
             
-            stored_path = await self.storage.upload_file(
+            stored_path = await self.public_storage.upload_file(
                 file=compressed_file,
                 destination_path=file_path,
-                cache_control='public, max-age=604800, stale-while-revalidate=86400',
+                cache_control=self._PUBLIC_CACHE_CONTROL,
                 storage_class='STANDARD',
                 content_type='video/mp4'
             )
@@ -541,10 +551,10 @@ class FileService:
                 
                 file.file.seek(0)
                 
-                stored_path = await self.storage.upload_file(
+                stored_path = await self.public_storage.upload_file(
                     file=file,
                     destination_path=file_path,
-                    cache_control='public, max-age=604800, stale-while-revalidate=86400',
+                    cache_control=self._PUBLIC_CACHE_CONTROL,
                     storage_class='STANDARD'
                 )
                 
@@ -599,14 +609,14 @@ class FileService:
                     filename=filename
                 )
                 
-                stored_path = await self.storage.upload_file(
+                stored_path = await self.private_storage.upload_file(
                     file=compressed_file,
                     destination_path=file_path,
-                    cache_control='public, max-age=86400, stale-while-revalidate=3600',
+                    cache_control='private, max-age=86400, stale-while-revalidate=3600',
                     storage_class='NEARLINE',
                     content_type='application/pdf'
                 )
-                
+
                 return {
                     'file_url': stored_path,
                     'file_name': file.filename,
@@ -634,13 +644,13 @@ class FileService:
                     filename=filename
                 )
                 
-                stored_path = await self.storage.upload_file(
+                stored_path = await self.private_storage.upload_file(
                     file=file,
                     destination_path=file_path,
-                    cache_control='public, max-age=86400, stale-while-revalidate=3600',
+                    cache_control='private, max-age=86400, stale-while-revalidate=3600',
                     storage_class='NEARLINE'
                 )
-                
+
                 return {
                     'file_url': stored_path,
                     'file_name': file.filename,
@@ -676,9 +686,22 @@ class FileService:
     
     
     async def delete_files(self, file_paths: List[str]) -> None:
+        """Best-effort delete. Callers (e.g. delete_property) pass mixed lists
+        of public-bucket (media) and private-bucket (document) paths with no
+        indication of which is which, so try both storages per path - the one
+        that doesn't hold that object just no-ops/fails quietly, same as today's
+        existing best-effort/log-only behavior."""
         for file_path in file_paths:
-            try:
-                await self.storage.delete_file(file_path)
+            deleted = False
+            last_error: Optional[Exception] = None
+            for storage in (self.public_storage, self.private_storage):
+                try:
+                    await storage.delete_file(file_path)
+                    deleted = True
+                    break
+                except Exception as e:
+                    last_error = e
+            if deleted:
                 print(f"Deleted file: {file_path}")
-            except Exception as e:
-                print(f"Failed to delete file {file_path}: {str(e)}")
+            else:
+                print(f"Failed to delete file {file_path}: {str(last_error)}")

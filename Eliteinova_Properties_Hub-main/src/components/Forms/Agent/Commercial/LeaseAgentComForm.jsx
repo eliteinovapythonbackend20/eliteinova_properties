@@ -338,6 +338,8 @@ export default function LeaseAgentComForm({ isOpen, onClose }) {
     agencyName: "", reraNumber: "", gstNumber: "", yearsExperience: "", activeListings: "", 
     serviceAreas: [], officeAddress: "",
     
+    // Property Category & Posted By
+    propertyCategory: "commercial", postedBy: "agent", listingPurpose: "lease",
     // Property Details (Step 2)
     city: "", area: "", landmark: "", pinCode: "", nearbyConnectivity: "",
     commercialType: "", builtUpArea: "", carpetArea: "",

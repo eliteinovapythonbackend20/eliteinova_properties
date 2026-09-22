@@ -95,9 +95,11 @@ export default function LeaseBuilderIndForm({ isOpen, onClose }) {
     // Identity & Business Verification (Step 3)
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, companyRegCert: null, gstCert: null, reraCert: null, companyPanCard: null,
     
+    // Property Category & Posted By
+    propertyCategory: "individual", postedBy: "builder",
     // Property Details (Step 4)
     propertyTitle: "", propertyType: "", propertyAddress: "", propertyCity: "", builtUpArea: "", carpetArea: "", bedrooms: "", bathrooms: "", furnishingStatus: "", parking: "",
-    
+
     // Lease Preferences (Step 4)
     preferredLocation: "", leaseBudget: { min: "", max: "" }, advanceDeposit: { min: "", max: "" }, leaseDuration: "", occupancyType: "", leasePetFriendly: "", gardenSpace: "", terrace: "",
     

@@ -3,6 +3,7 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.id_generator import IDGenerator
+from app.core.config import settings
 from app.core.response_utils import PropertyFormatter, strip_none_values
 from app.repositories.property_repository import PropertyRepository
 from app.services.file_service import FileService
@@ -93,6 +94,8 @@ class PropertyService:
             
         except PropertyError:
             raise
+        except HTTPException:
+            raise
         except Exception as e:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to create property: {str(e)}")
@@ -163,6 +166,8 @@ class PropertyService:
             
         except PropertyError:
             raise
+        except HTTPException:
+            raise
         except Exception as e:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to update property: {str(e)}")
@@ -210,6 +215,8 @@ class PropertyService:
                 'message': f'Property with ID {property_id} deleted successfully'
             }
             
+        except HTTPException:
+            raise
         except Exception as e:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to delete property: {str(e)}")
@@ -292,16 +299,40 @@ class PropertyService:
         await self.repository.commit()
         return prop
 
+    MAX_PROPERTY_IMAGES = 3
+
     async def add_property_image_raw(
-        self, property_id: str, file: UploadFile, user_id: str, is_primary: bool
+        self, property_id: str, file: UploadFile, user_id: str, is_primary: bool, order: int = 0
     ) -> Dict[str, Any]:
         """Faithful move of the single-image-with-caller-controlled-order path
         (distinct from add_property_images, which always appends and never
         sets is_primary)."""
-        upload_results = await self.file_service.upload_images(
-            images=[file], user_id=user_id, property_id=property_id, field_name="propertyImages"
+        # The 3-image cap applies to gallery photos only - the cover image
+        # has its own dedicated slot and is never counted against it, so a
+        # cover upload/replace must never be blocked by a full gallery.
+        if not is_primary:
+            existing_count = await self.repository.count_property_images(property_id, exclude_primary=True)
+            if existing_count >= self.MAX_PROPERTY_IMAGES:
+                raise PropertyValidationError(
+                    message=f"A property can have at most {self.MAX_PROPERTY_IMAGES} images",
+                    errors={"images": f"Maximum {self.MAX_PROPERTY_IMAGES} images allowed per property"},
+                )
+
+        # upload_image directly, not upload_images([file]) - the latter always
+        # treats a single-item list as idx==0 and forces field_name/quality/
+        # filename to "coverImage" regardless of the real is_primary/order
+        # passed in here, mislabeling gallery-only uploads as the cover.
+        result = await self.file_service.upload_image(
+            file=file, user_id=user_id, property_id=property_id,
+            field_name='coverImage' if is_primary else 'propertyImages',
+            is_primary=is_primary, order=order,
         )
-        result = upload_results[0] if upload_results else {}
+
+        # Only one image is ever the cover - unset any existing primary
+        # before this one claims the slot (mirrors set_cover_image).
+        if is_primary:
+            await self.repository.unset_primary_images(property_id)
+
         media_obj = await self.repository.create_property_media({
             'property_id': property_id,
             'media_type': 'image',
@@ -315,7 +346,7 @@ class PropertyService:
             'width': result.get('width'),
             'height': result.get('height'),
             'is_primary': is_primary,
-            'order': 0
+            'order': order
         })
         await self.repository.commit()
         return {
@@ -644,8 +675,9 @@ class PropertyService:
             ],
             'AGENT': [
                 'agent_name', 'date_of_birth', 'gender', 'mobile', 'email_id',
-                'office_address', 'agency_name', 'rera_registration_number',
+                'office_address', 'address_line1', 'address_line2', 'agency_name', 'rera_registration_number',
                 'gst_number', 'experience', 'active_listing', 'service_area',
+                'aadhaar_number',
                 'website', 'facebook', 'instagram', 'linkedin', 'youtube',
                 'bank_name', 'account_holder_name', 'account_number',
                 'ifsc_code', 'upi_id', 'signature', 'signature_date',
@@ -654,7 +686,7 @@ class PropertyService:
             'BUILDER': [
                 'name', 'designation', 'mobile', 'whatsapp_number', 'email',
                 'rera_registration_number', 'gst_number', 'experience',
-                'aadhar_number', 'pan_number', 'company_name', 'company_reg_number',
+                'aadhaar_number', 'service_area', 'pan_number', 'company_name', 'company_reg_number',
                 'company_website', 'company_description', 'office_address',
                 'city', 'district', 'state', 'pincode', 'landmark',
                 'website', 'facebook', 'instagram', 'linkedin', 'youtube',
@@ -665,7 +697,7 @@ class PropertyService:
             'PROPERTY_MANAGEMENT': [
                 'name', 'designation', 'mobile', 'whatsapp_number', 'email',
                 'rera_registration_number', 'gst_number', 'experience',
-                'aadhar_number', 'pan_number', 'company_name', 'company_reg_number',
+                'aadhaar_number', 'service_area', 'pan_number', 'company_name', 'company_reg_number',
                 'company_website', 'company_description', 'office_address',
                 'city', 'district', 'state', 'pincode', 'landmark',
                 'website', 'facebook', 'instagram', 'linkedin', 'youtube',
@@ -795,6 +827,7 @@ class PropertyService:
             'totalFloors': p.total_floors,
             'facing': p.facing_direction,
             'propertyAge': p.property_age,
+            'propertyAgeRange': p.property_age_range,
             'propertyCondition': p.property_condition,
             'cornerUnit': p.corner_unit,
             'builtUpArea': f(p.built_up_area),
@@ -838,6 +871,8 @@ class PropertyService:
             'constructionStatus': p.construction_status,
             'possessionTimeline': p.possession_timeline,
             'readyToBuy': p.ready_to_buy,
+            'underConstruction': p.underconstruction,
+            'immediatePossession': p.immediate_possession,
 
             # commercial
             'commercialType': p.commercial_type,
@@ -899,6 +934,34 @@ class PropertyService:
         response = self._to_card(property_obj)
         response['documents'] = self._format_documents(property_obj.documents) if getattr(property_obj, 'documents', None) else []
         return strip_none_values(response)
+
+    async def get_document_view_url(self, document_id: int, current_user: Dict[str, Any]) -> str:
+        """Mint a fresh, short-lived signed GET URL for a private document -
+        called only when the user clicks "View", never in advance, never
+        cached/persisted. Authorized for: admin, or the document's own
+        uploader/owner. (Sharing a property's documents with a third,
+        explicitly-approved user is not implemented yet - only admin/owner
+        for now.) Ownership is always resolved from the DB row - the caller's
+        JWT identity, never anything the client claims about who owns it.
+        """
+        doc = await self.repository.get_document_by_id(document_id)
+        if not doc:
+            raise PropertyError(f"Document {document_id} not found", status_code=404)
+
+        user_id = current_user.get("user_id")
+        role = current_user.get("role")
+
+        authorized = role == "admin" or doc.user_id == user_id
+
+        if not authorized:
+            raise PropertyPermissionError("Not authorized to view this document")
+
+        if not doc.file_url:
+            raise PropertyError(f"Document {document_id} has no stored file", status_code=404)
+
+        return await self.file_service.private_storage.generate_signed_url(
+            doc.file_url, expiration=settings.PRIVATE_DOCUMENT_SIGNED_URL_EXPIRE_SECONDS
+        )
 
     def _format_media(self, media_list):
         return self.formatter.format_media(media_list)
@@ -974,6 +1037,8 @@ class PropertyService:
             await self.repository.commit()
             return uploaded_images
 
+        except HTTPException:
+            raise
         except Exception as e:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to add images: {str(e)}")
@@ -1022,6 +1087,8 @@ class PropertyService:
 
             await self.repository.commit()
 
+        except HTTPException:
+            raise
         except Exception as e:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to delete image: {str(e)}")
@@ -1029,8 +1096,10 @@ class PropertyService:
         urls_to_delete = [image_to_delete.file_url, image_to_delete.thumbnail_url]
         try:
             await self.file_service.delete_files([u for u in urls_to_delete if u])
+        except HTTPException:
+            raise
         except Exception as e:
-            print(f"⚠️ Failed to delete old property image from storage: {e}")
+            print(f"Failed to delete old property image from storage: {e}")
 
     async def set_cover_image(
         self,
@@ -1057,6 +1126,8 @@ class PropertyService:
             await self.repository.commit()
             return media
         
+        except HTTPException:
+            raise
         except Exception as e:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to set cover image: {str(e)}")
@@ -1107,6 +1178,8 @@ class PropertyService:
             await self.repository.commit()
             return media
         
+        except HTTPException:
+            raise
         except Exception as e:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to add video: {str(e)}")
@@ -1136,6 +1209,8 @@ class PropertyService:
             await self.repository.delete_property_media_by_id(video.id)
             await self.repository.commit()
 
+        except HTTPException:
+            raise
         except Exception as e:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to delete video: {str(e)}")
@@ -1143,8 +1218,10 @@ class PropertyService:
         if video.file_url:
             try:
                 await self.file_service.delete_files([video.file_url])
+            except HTTPException:
+                raise
             except Exception as e:
-                print(f"⚠️ Failed to delete old property video from storage: {e}")
+                print(f"Failed to delete old property video from storage: {e}")
 
     # ============================================
     # PROPERTY DOCUMENT MANAGEMENT METHODS
@@ -1197,6 +1274,8 @@ class PropertyService:
             await self.repository.commit()
             return uploaded_docs
         
+        except HTTPException:
+            raise
         except Exception as e:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to add documents: {str(e)}")
@@ -1227,6 +1306,8 @@ class PropertyService:
             await self.repository.delete_property_document_by_id(document_id)
             await self.repository.commit()
 
+        except HTTPException:
+            raise
         except Exception as e:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to delete document: {str(e)}")
@@ -1234,8 +1315,10 @@ class PropertyService:
         if document.file_url:
             try:
                 await self.file_service.delete_files([document.file_url])
+            except HTTPException:
+                raise
             except Exception as e:
-                print(f"⚠️ Failed to delete old property document from storage: {e}")
+                print(f"Failed to delete old property document from storage: {e}")
 
     # ============================================
     # VENDOR PROFILE IMAGE MANAGEMENT
@@ -1284,6 +1367,8 @@ class PropertyService:
             await self.repository.commit()
             return result
 
+        except HTTPException:
+            raise
         except Exception as e:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to update profile image: {str(e)}")
@@ -1329,6 +1414,8 @@ class PropertyService:
 
                     await self.repository.commit()
 
+        except HTTPException:
+            raise
         except Exception as e:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to delete profile image: {str(e)}")
@@ -1368,6 +1455,8 @@ class PropertyService:
             await self.repository.commit()
             return doc_obj
         
+        except HTTPException:
+            raise
         except Exception as e:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to upload vendor document: {str(e)}")
@@ -1392,6 +1481,8 @@ class PropertyService:
             await self.repository.delete_vendor_document(user_id, document_type)
             await self.repository.commit()
         
+        except HTTPException:
+            raise
         except Exception as e:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to delete vendor document: {str(e)}")
@@ -1402,50 +1493,6 @@ class PropertyService:
     ) -> List[PropertyDocument]:
         """Get all vendor documents"""
         return await self.repository.get_vendor_documents(user_id)
-
-    # ============================================
-    # VENDOR DOCUMENT MANAGEMENT - faithful moves of the vendor_type-scoped
-    # single-document routes (profile_controller.py's /{vendor_type}/documents/{doc_type}).
-    # Distinct from upload_vendor_document/delete_vendor_document/get_vendor_documents
-    # above (which use a different file_service method, different status
-    # codes, and no singular get-by-type) - kept separate rather than reused
-    # to avoid a silent behavior change.
-    # ============================================
-
-    async def upload_vendor_document_raw(self, user_id: str, doc_type: str, file: UploadFile) -> PropertyDocument:
-        upload_result = await self.file_service.upload_document(
-            file=file, user_id=user_id, property_id="profile", idx=0,
-        )
-        doc_data = {
-            "file_name": upload_result.get("stored_filename") or file.filename,
-            "mime_type": upload_result.get("mime_type") or file.content_type,
-            "file_url": upload_result.get("file_url"),
-            "file_size_kb": upload_result.get("file_size_kb") or 0,
-            "is_public": False,
-        }
-        doc_obj = await self.repository.upsert_vendor_document(user_id, doc_type, doc_data)
-        await self.repository.commit()
-        return doc_obj
-
-    async def get_vendor_document_raw(self, user_id: str, doc_type: str) -> Optional[PropertyDocument]:
-        return await self.repository.get_vendor_document(user_id, doc_type)
-
-    async def delete_vendor_document_raw(self, user_id: str, doc_type: str) -> bool:
-        doc_obj = await self.repository.get_vendor_document(user_id, doc_type)
-        if not doc_obj:
-            return False
-
-        old_url = doc_obj.file_url
-        deleted = await self.repository.delete_vendor_document(user_id, doc_type)
-        await self.repository.commit()
-
-        if deleted and old_url:
-            try:
-                await self.file_service.delete_files([old_url])
-            except Exception as e:
-                print(f"⚠️ Failed to delete vendor document from storage: {e}")
-
-        return deleted
 
     async def get_latest_vendor_detail_raw(self, user_id: str, posted_by: PostedBy):
         return await self.repository.get_latest_vendor_detail(user_id, posted_by)

@@ -355,6 +355,8 @@ export default function RentAgentApartForm({ isOpen, onClose }) {
     agencyName: "", reraNumber: "", gstNumber: "", yearsExperience: "", activeListings: "", serviceAreas: [],
     officeAddress: "",
     
+    // Property Category & Posted By
+    propertyCategory: "apartment", postedBy: "agent", listingPurpose: "rent",
     // Property Details (Step 2) - Location + Details & Interior combined
     city: "", area: "", landmark: "", pinCode: "", nearbyConnectivity: "",
     propertyType: "", bedrooms: "", bathrooms: "", floorNumber: "", totalFloors: "",
@@ -548,8 +550,11 @@ export default function RentAgentApartForm({ isOpen, onClose }) {
   const handleDocumentUpload = (docType, e, maxSize = 5) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.type !== 'application/pdf') {
-        alert(`${docType} must be a PDF file`);
+      // logo / photo uploads are images (the input says JPG/PNG); everything else is a PDF document
+      const isImageUpload = /logo|photo/i.test(docType);
+      const validTypes = isImageUpload ? ['image/jpeg', 'image/jpg', 'image/png'] : ['application/pdf'];
+      if (!validTypes.includes(file.type)) {
+        alert(isImageUpload ? `${docType} must be a JPG or PNG image` : `${docType} must be a PDF file`);
         return;
       }
       if (file.size > maxSize * 1024 * 1024) {

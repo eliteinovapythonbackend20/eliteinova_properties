@@ -172,9 +172,11 @@ export default function RentBuilderHostelForm({ isOpen, onClose }) {
     // Identity & Business Verification (Step 3)
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, companyRegCert: null, gstCert: null, reraCert: null, companyPanCard: null,
     
+    // Property Category & Posted By
+    propertyCategory: "hostel", postedBy: "builder", listingPurpose: "rent",
     // Property Details (Step 4)
     city: "", area: "", landmark: "", pinCode: "", nearbyConnectivity: "",
-    hostelType: "", roomType: "", sharingType: "", totalCapacity: "",
+    hostelType: "", roomType: [], sharingType: [], totalCapacity: "",
     bathrooms: "", furnishedStatus: "", totalFloors: "", floorNumber: "",
     facingDirection: "", balcony: "", propertyAge: "",
     builtUpArea: "", carpetArea: "",
@@ -354,11 +356,11 @@ export default function RentBuilderHostelForm({ isOpen, onClose }) {
           newErrors.totalCapacity = "Total capacity is required";
           isValid = false;
         }
-        if (!formData.roomType) {
+        if (!formData.roomType.length) {
           newErrors.roomType = "Please select a room type";
           isValid = false;
         }
-        if (!formData.sharingType) {
+        if (!formData.sharingType.length) {
           newErrors.sharingType = "Please select a sharing type";
           isValid = false;
         }
@@ -1315,7 +1317,7 @@ function MobContentRentBuilderHostel({
         <div className="grid grid-cols-2 gap-1">
           {roomTypeOptions.map(rt => (
             <label key={rt} className="flex items-center gap-1 text-[10px] cursor-pointer">
-              <input type="radio" name="mob-room-type-builder" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType === rt} onChange={() => updateForm("roomType", rt)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType.includes(rt)} onChange={() => toggleArrayItem("roomType", rt)} />
               {rt}
             </label>
           ))}
@@ -1326,7 +1328,7 @@ function MobContentRentBuilderHostel({
         <div className="grid grid-cols-2 gap-1">
           {["Single", "Double", "Triple", "4-Sharing", "Dormitory", "Bunk Bed"].map(sh => (
             <label key={sh} className="flex items-center gap-1 text-[10px] cursor-pointer">
-              <input type="radio" name="mob-sharing-builder" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType === sh} onChange={() => updateForm("sharingType", sh)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType.includes(sh)} onChange={() => toggleArrayItem("sharingType", sh)} />
               {sh}
             </label>
           ))}
@@ -2297,7 +2299,7 @@ function DtContentRentBuilderHostel({
         <div className="grid grid-cols-2 gap-1">
           {roomTypeOptions.map(rt => (
             <label key={rt} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-room-type-builder" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType === rt} onChange={() => updateForm("roomType", rt)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType.includes(rt)} onChange={() => toggleArrayItem("roomType", rt)} />
               {rt}
             </label>
           ))}
@@ -2308,7 +2310,7 @@ function DtContentRentBuilderHostel({
         <div className="grid grid-cols-2 gap-1">
           {["Single", "Double", "Triple", "4-Sharing", "Dormitory", "Bunk Bed"].map(sh => (
             <label key={sh} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-sharing-builder" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType === sh} onChange={() => updateForm("sharingType", sh)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType.includes(sh)} onChange={() => toggleArrayItem("sharingType", sh)} />
               {sh}
             </label>
           ))}

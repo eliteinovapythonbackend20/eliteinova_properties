@@ -16,8 +16,8 @@ from app.core.config import settings
 class GCSStorage(StorageProvider):
     """Google Cloud Storage implementation"""
 
-    def __init__(self):
-        self.bucket_name = settings.GCS_BUCKET_NAME
+    def __init__(self, bucket_name: Optional[str] = None):
+        self.bucket_name = bucket_name or settings.GCS_BUCKET_NAME
         self.max_workers = settings.GCS_UPLOAD_WORKERS
         self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
 

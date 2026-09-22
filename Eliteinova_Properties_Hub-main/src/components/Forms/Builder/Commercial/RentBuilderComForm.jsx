@@ -201,8 +201,10 @@ export default function RentBuilderComForm({ isOpen, onClose }) {
     // Identity & Business Verification (Step 3)
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, companyRegCert: null, gstCert: null, reraCert: null, companyPanCard: null,
     
+    // Property Category & Posted By
+    propertyCategory: "commercial", postedBy: "builder",
     // Property Details (Step 4)
-    propertyTitle: "", commercialType: "", propertyAddress: "", propertyCity: "", 
+    propertyTitle: "", commercialType: "", propertyAddress: "", propertyCity: "",
     builtUpArea: "", carpetArea: "",
     floorNumber: "", totalFloors: "", facingDirection: "", propertyAge: "",
     frontageWidth: "", ceilingHeight: "", furnishing: "", powerLoad: "",

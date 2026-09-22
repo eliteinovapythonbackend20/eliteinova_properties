@@ -47,6 +47,7 @@ class BaseProperty(Base):
     floor_number = Column(Integer, nullable=True) # 2, 3, 4
     total_floors = Column(Integer, nullable=True) # 2, 3, 4
     property_age = Column(Integer, nullable=True) # 2, 3, 4+
+    property_age_range = Column(String(50), nullable=True)  # "New Construction", "1-3 Years", "10+ Years" ...
     corner_unit = Column(String(5), nullable=True)  # Yes/No
     facing_direction = Column(String(20), nullable=True) # East, West
     

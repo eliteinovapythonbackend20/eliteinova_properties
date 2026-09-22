@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import engine, Base
@@ -33,6 +36,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+Path(settings.LOCAL_STORAGE_PATH).mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=settings.LOCAL_STORAGE_PATH), name="uploads")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -54,6 +60,7 @@ app.add_middleware(
         r"^/redoc",
         r"^/openapi.json",
         r"^/health",
+        r"^/uploads/",  # locally-stored public media (images/videos) - browser <img>/<video> tags send no auth header
         r"^/api/v1/properties/?$",  # GET properties (public)
         r"^/api/v1/properties/by-category",
         r"^/api/v1/properties/by-property-type",

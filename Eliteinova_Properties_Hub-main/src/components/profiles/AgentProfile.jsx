@@ -32,8 +32,11 @@ import {
   updateMyProfile,
   uploadProfilePhoto,
   deleteProfilePhoto,
+  uploadVendorLogo,
   uploadDocument,
   deleteDocument,
+  getVendorDocumentsByField,
+  getVendorDocumentViewUrl,
   updateVendorProperty,
   deleteVendorProperty,
   updateVendorPropertyStatus,
@@ -45,6 +48,13 @@ import {
   mapPropertyToBackend,
   getDocumentContext
 } from '../../services/profileService';
+import { useToast } from '../../hooks/useToast';
+import Toast from '../common/Toast';
+
+// Self-contained "No Image" fallback - via.placeholder.com is an external
+// network call that can time out/be unreachable, leaving a blank box with
+// nothing rendered at all when a property has no photos.
+const NO_IMAGE_PLACEHOLDER = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="100%" height="100%" fill="#CCCCCC"/><text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" fill="#666666" font-family="Arial, sans-serif" font-size="20">No Image</text></svg>')}`;
 
 // ============ TOGGLE SWITCH COMPONENT ============
 const ToggleSwitch = ({ isOn, onToggle, size = 'sm' }) => {
@@ -254,14 +264,14 @@ const PdfFileCard = ({ file, onDelete, onView }) => {
 };
 
 // ============ PROPERTY DETAILS MODAL ============
-const PropertyDetailsModal = ({ property, onClose, onAddImages, onRemoveImage, onToggleStatus, onEdit, onDelete }) => {
+const PropertyDetailsModal = ({ property, onClose, onAddImages, onRemoveImage, onRemoveCover, onToggleStatus, onEdit, onDelete }) => {
   if (!property) return null;
 
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const detailImageInputRef = useRef(null);
   const rawImages = property.images || [];
   const hasImages = rawImages.length > 0;
-  const images = hasImages ? rawImages : ['https://via.placeholder.com/400x300/CCCCCC/666666?text=No+Image'];
+  const images = hasImages ? rawImages : [NO_IMAGE_PLACEHOLDER];
 
   useEffect(() => {
     if (currentImageIndex >= images.length) {
@@ -310,13 +320,36 @@ const PropertyDetailsModal = ({ property, onClose, onAddImages, onRemoveImage, o
         </div>
 
         <div className="p-3 sm:p-4 overflow-y-auto flex-1 space-y-3 sm:space-y-4">
+          {/* <div>
+            <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Cover Image</p>
+            <div className="relative rounded-xl overflow-hidden bg-gray-100 h-32 sm:h-36">
+              <img
+                src={property.coverImage || NO_IMAGE_PLACEHOLDER}
+                alt={`${property.name} cover`}
+                className="w-full h-full object-cover"
+                onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }}
+              />
+              {property.coverImage && (
+                <button
+                  onClick={() => onRemoveCover(property.id)}
+                  title="Delete cover image"
+                  className="absolute bottom-1.5 sm:bottom-2 left-1.5 sm:left-2 flex items-center gap-1 bg-red-500/90 hover:bg-red-600 text-white text-[9px] sm:text-[10px] font-bold px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg shadow-lg transition-all duration-300 hover:scale-105"
+                >
+                  <Trash2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                  Delete
+                </button>
+              )}
+            </div>
+          </div> */}
+
+          <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Property Photos</p>
           <div className="relative rounded-xl overflow-hidden bg-gray-100 h-48 sm:h-56 md:h-64">
-            <img 
-              src={images[currentImageIndex]} 
+            <img
+              src={images[currentImageIndex]}
               alt={property.name}
               className="w-full h-full object-cover"
               onError={(e) => {
-                e.target.src = 'https://via.placeholder.com/400x300/CCCCCC/666666?text=No+Image';
+                e.target.src = NO_IMAGE_PLACEHOLDER;
               }}
             />
             
@@ -388,7 +421,7 @@ const PropertyDetailsModal = ({ property, onClose, onAddImages, onRemoveImage, o
                     alt={`Thumbnail ${idx + 1}`}
                     className="w-full h-full object-cover"
                     onError={(e) => {
-                      e.target.src = 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image';
+                      e.target.src = NO_IMAGE_PLACEHOLDER;
                     }}
                   />
                 </button>
@@ -643,12 +676,11 @@ const EditPropertyModal = ({ property, onSave, onCancel }) => {
       const custom = property.selectedAmenities.filter(a => !availableAmenities.includes(a));
       setLocalCustomAmenities(custom);
     }
-    if (property.images && property.images.length > 0) {
-      setLocalImagePreviews(property.images.map(img => img));
-    }
-    if (property.coverImage) {
-      setLocalCoverPreview(property.coverImage);
-    }
+    // coverImage and images (gallery) are separate concepts from the
+    // backend now - the cover is only ever whatever is actually flagged
+    // primary, never inferred from images[0].
+    setLocalCoverPreview(property.coverImage || null);
+    setLocalImagePreviews(property.images || []);
     if (property.propertyVideo) {
       setLocalVideoPreview(property.propertyVideo);
     }
@@ -697,9 +729,11 @@ const EditPropertyModal = ({ property, onSave, onCancel }) => {
 
   const handleLocalImageUpload = (e) => {
     const files = Array.from(e.target.files);
+    // The 3-image cap covers property gallery photos only - the cover image
+    // has its own dedicated slot and never counts against it.
     const remainingSlots = Math.max(0, 3 - localImagePreviews.length);
     if (files.length > remainingSlots) {
-      alert(`You can only upload ${remainingSlots} more image(s). Maximum 3 images allowed.`);
+      alert(`You can only upload ${remainingSlots} more image(s). Maximum 3 property photos allowed.`);
     }
     const limitedFiles = files.slice(0, remainingSlots);
     const newPreviews = limitedFiles.map(file => URL.createObjectURL(file));
@@ -708,10 +742,18 @@ const EditPropertyModal = ({ property, onSave, onCancel }) => {
   };
 
   const removeLocalImage = (index) => {
+    const preview = localImagePreviews[index];
     const newPreviews = localImagePreviews.filter((_, i) => i !== index);
     setLocalImagePreviews(newPreviews);
-    const newFiles = newImageFiles.filter((_, i) => i !== index);
-    setNewImageFiles(newFiles);
+    // Existing (already-uploaded) photos are plain URLs; only newly-picked
+    // files produce blob: previews and have a matching entry in
+    // newImageFiles - map by blob position, not by raw index, since the
+    // two arrays aren't 1:1 once an existing photo sits ahead of a new one.
+    if (preview && preview.startsWith('blob:')) {
+      const blobPosition = localImagePreviews.slice(0, index).filter(p => p.startsWith('blob:')).length;
+      setNewImageFiles(newImageFiles.filter((_, i) => i !== blobPosition));
+      URL.revokeObjectURL(preview);
+    }
   };
 
   const handleLocalCoverImageUpload = (e) => {
@@ -762,26 +804,19 @@ const EditPropertyModal = ({ property, onSave, onCancel }) => {
     const updatedProperty = {
       ...localProperty,
     };
-    
-    let finalImages = [...localImagePreviews];
-    
-    if (newImageFiles.length > 0) {
-      const newUrls = newImageFiles.map(f => URL.createObjectURL(f));
-      finalImages = [...finalImages, ...newUrls];
-    }
-    
-    if (localCoverImage) {
-      const coverUrl = URL.createObjectURL(localCoverImage);
-      finalImages = [coverUrl, ...finalImages.filter((_, i) => i !== 0)];
-      updatedProperty.coverImage = localCoverImage;
-    }
-    
-    updatedProperty.images = finalImages;
-    
-    if (localVideoFile) {
-      updatedProperty.propertyVideo = localVideoFile;
-    }
-    
+
+    // Hand the raw cover/photo/video pieces up so the actual save handler
+    // can upload the real files via the multipart endpoints and use the
+    // backend-returned URLs - not local blob: previews, which are never
+    // persisted and vanish on reload.
+    updatedProperty._media = {
+      coverFile: localCoverImage,
+      coverUrl: localCoverImage ? null : localCoverPreview,
+      existingPhotoUrls: localImagePreviews.filter(p => !p.startsWith('blob:')),
+      newPhotoFiles: newImageFiles,
+      videoFile: localVideoFile,
+    };
+
     onSave(updatedProperty);
   };
 
@@ -1180,7 +1215,7 @@ const EditPropertyModal = ({ property, onSave, onCancel }) => {
             <label className="block text-xs font-bold text-gray-700 mb-1">Upload Property Photos (Max 3)</label>
             <div className="border-2 border-dashed border-teal-300 rounded-xl p-4 text-center hover:bg-green-50 transition-colors">
               <input type="file" accept="image/*" multiple className="hidden" id="edit-photos" onChange={handleLocalImageUpload} disabled={localImagePreviews.length >= 3} />
-              <label htmlFor="edit-photos" className={`cursor-pointer flex flex-col items-center ${localImagePreviews.length >= 3 ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <label htmlFor="edit-photos" className={`cursor-pointer flex flex-col items-center ${localImagePreviews.length >= 3 - ((localCoverPreview || localCoverImage) ? 1 : 0) ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 <ImagePlus className="mx-auto mb-2 w-8 h-8 text-[#00695C]" />
                 <span className="text-sm font-semibold text-[#00695C]">Upload Property Photos</span>
                 <span className="text-xs text-gray-400 mt-1">Max 3 photos</span>
@@ -1303,7 +1338,7 @@ const AgentProfile = () => {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('personal');
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
+  const { toast, showToast, hideToast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteItem, setDeleteItem] = useState(null);
   const [showProfilePhotoDeleteConfirm, setShowProfilePhotoDeleteConfirm] = useState(false);
@@ -1336,7 +1371,7 @@ const AgentProfile = () => {
   const [editForm, setEditForm] = useState({
     // Personal Details
     fullName: '',
-    mobileNumber: '',
+    phoneNumber: '',
     emailAddress: '',
     dateOfBirth: '',
     gender: '',
@@ -1422,13 +1457,13 @@ const AgentProfile = () => {
       
       // Extract data from response
       const profileData = response?.profile || {};
-      const propertiesData = response?.properties || [];
+      const propertiesData = response?.properties?.data || [];
       
       // ============ 1. SET EDIT FORM (Agent Profile Data) ============
       setEditForm({
         // Personal Details
         fullName: profileData.fullName || profileData.agentName || '',
-        mobileNumber: profileData.mobileNumber || profileData.mobile || '',
+        phoneNumber: profileData.phoneNumber || profileData.mobile || '',
         emailAddress: profileData.emailAddress || profileData.emailId || '',
         dateOfBirth: profileData.dateOfBirth || '',
         gender: profileData.gender || '',
@@ -1440,7 +1475,9 @@ const AgentProfile = () => {
         yearsOfExperience: profileData.yearsOfExperience || profileData.experience || '',
         numberOfActiveListings: profileData.numberOfActiveListings || profileData.activeListings || '0',
         serviceAreas: profileData.serviceAreas || profileData.serviceArea || '',
-        officeAddress: profileData.officeAddress || profileData.address || '',
+        // Office address lives in agency_details JSONB only - never
+        // borrowed from the vendor's shared personal address column.
+        officeAddress: profileData.officeAddress || '',
         
         // Identity Verification
         aadhaarNumber: profileData.aadhaarNumber || '',
@@ -1517,26 +1554,33 @@ const AgentProfile = () => {
         });
       });
       
+      let vendorDocs = {};
+      try {
+        vendorDocs = await getVendorDocumentsByField('agent');
+      } catch (docError) {
+        console.error('⚠️ Failed to load vendor documents:', docError);
+      }
+
       // Set documents state
       setDocuments({
         // Profile Images
         profilePhoto: profilePhotoUrl,
         agencyLogo: agencyLogoUrl,
-        
+
         // Identity Documents
         aadhaarCard: null,
         panCard: null,
-        
+
         // Business Documents
         reraCertificate: null,
         gstCertificate: null,
         businessRegistrationCertificate: null,
-        
+
         // Property Images
         coverImage: allImages.length > 0 ? allImages[0] : null,
         propertyPhotos: allImages.slice(0, 3),
         propertyVideo: videoUrl,
-        
+
         // Property Documents
         floorPlan: floorPlanUrl,
         saleDeed: null,
@@ -1547,11 +1591,12 @@ const AgentProfile = () => {
         completionCertificate: null,
         occupancyCertificate: null,
         rentalAgreement: null,
-        
+
         // Other documents
         otherDocuments: allDocuments,
+        ...vendorDocs,
       });
-      
+
       console.log('✅ Agent profile data loaded successfully');
       
     } catch (error) {
@@ -1577,9 +1622,8 @@ const AgentProfile = () => {
   };
 
   // ============ TOAST HANDLER ============
-  const showSuccessToast = () => {
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+  const showSuccessToast = (message = 'Operation completed successfully!') => {
+    showToast(message, 'success');
   };
 
   // ============ FORM CHANGE HANDLER ============
@@ -1600,7 +1644,7 @@ const AgentProfile = () => {
 
   // ============ HANDLE SAVE ============
   const handleSave = async () => {
-    const requiredFields = ['fullName', 'mobileNumber', 'emailAddress', 'agencyName', 'aadhaarNumber', 'panNumber'];
+    const requiredFields = ['fullName', 'phoneNumber', 'emailAddress', 'agencyName', 'aadhaarNumber', 'panNumber'];
     const missingFields = requiredFields.filter(field => !editForm[field]);
 
     if (missingFields.length > 0) {
@@ -1612,7 +1656,7 @@ const AgentProfile = () => {
     try {
       const profileData = {
         fullName: editForm.fullName,
-        mobileNumber: editForm.mobileNumber,
+        phoneNumber: editForm.phoneNumber,
         emailAddress: editForm.emailAddress,
         dateOfBirth: editForm.dateOfBirth,
         gender: editForm.gender,
@@ -1644,7 +1688,7 @@ const AgentProfile = () => {
       
       await updateMyProfile('agent', profileData);
       setShowEditModal(false);
-      showSuccessToast();
+      showSuccessToast('Profile updated successfully!');
       await fetchAgentProfileData();
     } catch (error) {
       console.error('❌ Error updating profile:', error);
@@ -1655,80 +1699,57 @@ const AgentProfile = () => {
   };
 
   // ============ FILE UPLOAD HANDLERS ============
-  const handleFileUpload = async (field, file) => {
-    if (file) {
-      setIsLoading(true);
-      try {
-        // Use the smart document upload
-        const response = await uploadDocument({
-          role: 'agent',
-          field: field,
-          file: file,
-          propertyId: null  // Vendor documents have no property ID
-        });
-        
-        console.log('✅ Document uploaded:', response);
-        
+  const uploadProfilePhotoFile = async (file) => {
+    setIsLoading(true);
+    try {
+      const response = await uploadProfilePhoto('agent', file);
+      console.log('✅ Photo uploaded:', response);
+
+      if (response.data?.fileUrl) {
         setDocuments(prev => ({
           ...prev,
-          [field]: file
+          profilePhoto: response.data.fileUrl
         }));
-        showSuccessToast();
-      } catch (error) {
-        console.error('❌ Error uploading document:', error);
-        alert('Failed to upload document. Please try again.');
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  };
-
-  const handleProfilePhotoUpload = async (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setIsLoading(true);
-      try {
-        const response = await uploadProfilePhoto('agent', file);
-        console.log('✅ Photo uploaded:', response);
-        
-        if (response.data?.fileUrl) {
-          setDocuments(prev => ({
-            ...prev,
-            profilePhoto: response.data.fileUrl
-          }));
-          showSuccessToast();
-          await fetchAgentProfileData();
-        }
-      } catch (error) {
-        console.error('❌ Error uploading profile photo:', error);
-        alert('Failed to upload photo. Please try again.');
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  };
-
-  const handleAgencyLogoUpload = async (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setIsLoading(true);
-      try {
-        const response = await uploadDocument({
-          role: 'agent',
-          field: 'agencyLogo',
-          file: file,
-          propertyId: null
-        });
-        console.log('✅ Agency logo uploaded:', response);
-        showSuccessToast();
+        showSuccessToast('Profile photo uploaded successfully!');
         await fetchAgentProfileData();
-      } catch (error) {
-        console.error('❌ Error uploading agency logo:', error);
-        alert('Failed to upload logo. Please try again.');
-      } finally {
-        setIsLoading(false);
       }
+    } catch (error) {
+      console.error('❌ Error uploading profile photo:', error);
+      alert('Failed to upload photo. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  const handleProfilePhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) uploadProfilePhotoFile(file);
+  };
+
+  const uploadAgencyLogoFile = async (file) => {
+    setIsLoading(true);
+    try {
+      const response = await uploadVendorLogo('agent', file);
+      console.log('✅ Agency logo uploaded:', response);
+      if (response.data?.fileUrl) {
+        setDocuments(prev => ({
+          ...prev,
+          agencyLogo: response.data.fileUrl
+        }));
+      }
+      showSuccessToast('Agency logo uploaded successfully!');
+      await fetchAgentProfileData();
+    } catch (error) {
+      console.error('❌ Error uploading agency logo:', error);
+      alert('Failed to upload logo. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAgencyLogoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) uploadAgencyLogoFile(file);
   };
 
   const handlePdfUpload = async (field, file) => {
@@ -1747,7 +1768,7 @@ const AgentProfile = () => {
             ...prev,
             [field]: file
           }));
-          showSuccessToast();
+          showSuccessToast('Document uploaded successfully!');
         } catch (error) {
           console.error('❌ Error uploading document:', error);
           alert('Failed to upload document. Please try again.');
@@ -1760,11 +1781,22 @@ const AgentProfile = () => {
     }
   };
 
-  const handlePdfView = (field) => {
+  const handlePdfView = async (field) => {
     const file = documents[field];
-    if (file) {
+    if (!file) return;
+
+    if (file instanceof window.File || typeof file === 'string') {
       setPdfToView(file);
       setShowPdfViewer(true);
+      return;
+    }
+
+    try {
+      const viewUrl = await getVendorDocumentViewUrl('agent', field);
+      setPdfToView(viewUrl);
+      setShowPdfViewer(true);
+    } catch (error) {
+      alert('Failed to open document. Please try again.');
     }
   };
 
@@ -1797,7 +1829,7 @@ const AgentProfile = () => {
         }
         setShowDeleteConfirm(false);
         setDeleteItem(null);
-        showSuccessToast();
+        showSuccessToast('Document deleted successfully!');
       } catch (error) {
         console.error('❌ Error deleting document:', error);
         alert('Failed to delete document. Please try again.');
@@ -1823,7 +1855,7 @@ const AgentProfile = () => {
         profilePhotoInputRef.current.value = '';
       }
       setShowProfilePhotoDeleteConfirm(false);
-      showSuccessToast();
+      showSuccessToast('Profile photo deleted successfully!');
       await fetchAgentProfileData();
     } catch (error) {
       console.error('❌ Error deleting profile photo:', error);
@@ -1874,7 +1906,7 @@ const AgentProfile = () => {
 
     section('Personal Details');
     row('Full Name', editForm.fullName);
-    row('Mobile Number', editForm.mobileNumber);
+    row('Mobile Number', editForm.phoneNumber);
     row('Email Address', editForm.emailAddress);
     row('Date of Birth', editForm.dateOfBirth);
     row('Gender', editForm.gender);
@@ -1982,7 +2014,7 @@ const AgentProfile = () => {
       setProperties(prev => 
         prev.map(p => p.id === property.id ? { ...p, status: newStatus } : p)
       );
-      showSuccessToast();
+      showSuccessToast('Property status updated successfully!');
     } catch (error) {
       console.error('❌ Error updating property status:', error);
       alert('Failed to update property status. Please try again.');
@@ -1994,24 +2026,39 @@ const AgentProfile = () => {
   const handleAddPropertyImages = async (propertyId, files) => {
     const fileArray = Array.from(files);
     if (fileArray.length === 0) return;
+
+    const existingProperty = properties.find(p => p.id === propertyId);
+    // images is gallery-only (coverImage is separate) - the 3-image cap
+    // covers gallery photos only, the cover has its own dedicated slot.
+    const existingCount = existingProperty?.images?.length || 0;
+    const coverOffset = existingProperty?.coverImage ? 1 : 0;
+    const remainingSlots = Math.max(0, 3 - existingCount);
+    if (fileArray.length > remainingSlots) {
+      alert(`You can only upload ${remainingSlots} more image(s). Maximum 3 property photos allowed.`);
+    }
+    const limitedFiles = fileArray.slice(0, remainingSlots);
+    if (limitedFiles.length === 0) return;
+
     setIsLoading(true);
     try {
-      for (const file of fileArray) {
-        await uploadPropertyImage('agent', propertyId, file);
+      const newImageUrls = [];
+      for (let i = 0; i < limitedFiles.length; i++) {
+        const result = await uploadPropertyImage('agent', propertyId, limitedFiles[i], coverOffset + existingCount + i);
+        if (result?.data?.file_url) newImageUrls.push(result.data.file_url);
       }
-      
+
       setProperties(prev =>
-        prev.map(p => p.id === propertyId 
-          ? { ...p, images: [...(p.images || []), ...fileArray.map(f => URL.createObjectURL(f))] }
+        prev.map(p => p.id === propertyId
+          ? { ...p, images: [...(p.images || []), ...newImageUrls] }
           : p
         )
       );
       setSelectedProperty(prev =>
-        prev && prev.id === propertyId 
-          ? { ...prev, images: [...(prev.images || []), ...fileArray.map(f => URL.createObjectURL(f))] }
+        prev && prev.id === propertyId
+          ? { ...prev, images: [...(prev.images || []), ...newImageUrls] }
           : prev
       );
-      showSuccessToast();
+      showSuccessToast('Property image uploaded successfully!');
     } catch (error) {
       console.error('❌ Error uploading property images:', error);
       alert('Failed to upload images. Please try again.');
@@ -2023,23 +2070,51 @@ const AgentProfile = () => {
   const handleRemovePropertyImage = async (propertyId, imageIndex) => {
     setIsLoading(true);
     try {
-      await deletePropertyImage('agent', propertyId, imageIndex);
-      
+      // imageIndex is a position within the gallery-only images array - the
+      // cover (if any) sits at backend order 0, ahead of every gallery slot.
+      const existingProperty = properties.find(p => p.id === propertyId);
+      const coverOffset = existingProperty?.coverImage ? 1 : 0;
+      await deletePropertyImage('agent', propertyId, coverOffset + imageIndex);
+
       setProperties(prev =>
-        prev.map(p => p.id === propertyId 
+        prev.map(p => p.id === propertyId
           ? { ...p, images: (p.images || []).filter((_, i) => i !== imageIndex) }
           : p
         )
       );
       setSelectedProperty(prev =>
-        prev && prev.id === propertyId 
+        prev && prev.id === propertyId
           ? { ...prev, images: (prev.images || []).filter((_, i) => i !== imageIndex) }
           : prev
       );
-      showSuccessToast();
+      showSuccessToast('Property image deleted successfully!');
     } catch (error) {
       console.error('❌ Error deleting property image:', error);
       alert('Failed to delete image. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Deletes the cover only - the cover slot is left empty afterwards, it is
+  // never backfilled from the gallery. A new cover must be set explicitly
+  // (edit form / dedicated set-cover action), matching how the backend
+  // now tracks coverImage and gallery images as separate concepts.
+  const handleRemovePropertyCover = async (propertyId) => {
+    setIsLoading(true);
+    try {
+      await deletePropertyImage('agent', propertyId, 0);
+
+      setProperties(prev =>
+        prev.map(p => p.id === propertyId ? { ...p, coverImage: null } : p)
+      );
+      setSelectedProperty(prev =>
+        prev && prev.id === propertyId ? { ...prev, coverImage: null } : prev
+      );
+      showSuccessToast('Cover image removed successfully!');
+    } catch (error) {
+      console.error('❌ Error deleting cover image:', error);
+      alert('Failed to delete cover image. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -2049,18 +2124,82 @@ const AgentProfile = () => {
     if (!updatedProperty) return;
     setIsLoading(true);
     try {
+      const propertyId = updatedProperty.id;
+      const media = updatedProperty._media || {};
       const backendData = mapPropertyToBackend(updatedProperty);
-      await updateVendorProperty('agent', updatedProperty.id, backendData);
-      
-      setProperties(prev => 
-        prev.map(p => p.id === updatedProperty.id ? updatedProperty : p)
+      await updateVendorProperty('agent', propertyId, backendData);
+
+      // images/coverImage on updatedProperty are never touched by local edit
+      // state (see EditPropertyModal) - they still reflect what the backend
+      // had before this save (coverImage and images/gallery are already
+      // separate concepts there), so they're a safe source for the original
+      // order layout used to reconcile deletions below.
+      const originalCover = updatedProperty.coverImage || null;
+      const originalGalleryPhotos = updatedProperty.images || [];
+      const hadCoverOriginally = !!originalCover;
+
+      let finalImages = [...(media.existingPhotoUrls || [])];
+      let finalCoverUrl = media.coverUrl || null;
+
+      // Cover replaced with a new file, or explicitly removed with no
+      // replacement: either way the old cover row must be deleted. Only
+      // upload a new one if a file was actually picked - a removed cover
+      // stays empty, it is never backfilled from the gallery.
+      if (hadCoverOriginally && (media.coverFile || !media.coverUrl)) {
+        await deletePropertyImage('agent', propertyId, 0);
+      }
+      if (media.coverFile) {
+        const coverResult = await uploadPropertyImage('agent', propertyId, media.coverFile, 0, true);
+        finalCoverUrl = coverResult?.data?.file_url || null;
+      }
+
+      // Reconcile the gallery: any original (non-cover) photo the vendor
+      // removed in the edit form must actually be deleted server-side too -
+      // otherwise it silently stays on the property and keeps counting
+      // against the 3-photo cap even though the UI no longer shows it. This
+      // makes editing replace the gallery rather than just append to it.
+      // `order` matches array position, same convention "Remove Image" in
+      // view mode already relies on.
+      const coverOrderOffset = hadCoverOriginally ? 1 : 0;
+      const keptSet = new Set(media.existingPhotoUrls || []);
+      const freedOrders = [];
+      for (let i = 0; i < originalGalleryPhotos.length; i++) {
+        if (!keptSet.has(originalGalleryPhotos[i])) {
+          const order = i + coverOrderOffset;
+          await deletePropertyImage('agent', propertyId, order);
+          freedOrders.push(order);
+        }
+      }
+
+      if (media.newPhotoFiles && media.newPhotoFiles.length > 0) {
+        let nextFallbackOrder = coverOrderOffset + originalGalleryPhotos.length;
+        for (const file of media.newPhotoFiles) {
+          const order = freedOrders.length > 0 ? freedOrders.shift() : nextFallbackOrder++;
+          const result = await uploadPropertyImage('agent', propertyId, file, order);
+          if (result?.data?.file_url) finalImages.push(result.data.file_url);
+        }
+      }
+
+      if (media.videoFile) {
+        await uploadPropertyVideo('agent', propertyId, media.videoFile);
+      }
+
+      const finalProperty = {
+        ...updatedProperty,
+        images: finalCoverUrl ? [finalCoverUrl, ...finalImages] : finalImages,
+        coverImage: finalCoverUrl,
+      };
+      delete finalProperty._media;
+
+      setProperties(prev =>
+        prev.map(p => p.id === propertyId ? finalProperty : p)
       );
       setShowEditPropertyModal(false);
       setEditingProperty(null);
-      showSuccessToast();
+      showSuccessToast('Property updated successfully!');
     } catch (error) {
       console.error('❌ Error updating property:', error);
-      alert('Failed to update property. Please try again.');
+      alert(error?.response?.data?.detail || 'Failed to update property. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -2078,7 +2217,7 @@ const AgentProfile = () => {
       setProperties(prev => prev.filter(p => p.id !== propertyToDelete.id));
       setShowDeletePropertyConfirm(false);
       setPropertyToDelete(null);
-      showSuccessToast();
+      showSuccessToast('Property deleted successfully!');
     } catch (error) {
       console.error('❌ Error deleting property:', error);
       alert('Failed to delete property. Please try again.');
@@ -2223,7 +2362,7 @@ const AgentProfile = () => {
       case 'personal': {
         const personalFields = [
           editForm.fullName,
-          editForm.mobileNumber,
+          editForm.phoneNumber,
           editForm.emailAddress,
           editForm.dateOfBirth,
           editForm.gender,
@@ -2242,7 +2381,7 @@ const AgentProfile = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
               <div className="space-y-3 w-full">
                 <AnimatedCard label="Full Name" value={editForm.fullName} icon={<User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.05} />
-                <AnimatedCard label="Mobile Number" value={editForm.mobileNumber} icon={<Phone className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.12} />
+                <AnimatedCard label="Mobile Number" value={editForm.phoneNumber} icon={<Phone className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.12} />
                 <AnimatedCard label="Email Address" value={editForm.emailAddress} icon={<Mail className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.19} />
               </div>
               <div className="space-y-3 w-full">
@@ -2516,7 +2655,7 @@ const AgentProfile = () => {
                               className="flex-1 text-[9px] sm:text-[10px] text-[#00695C] font-medium hover:underline truncate text-left flex items-center gap-0.5 sm:gap-1"
                             >
                               <FileText className="w-2.5 h-2.5 sm:w-3 sm:h-3 flex-shrink-0" />
-                              <span className="truncate">{file.name || 'Document'}</span>
+                              <span className="truncate">{file.fileName || file.name || 'Document'}</span>
                             </button>
                           )}
                           <button
@@ -2545,8 +2684,10 @@ const AgentProfile = () => {
                               onChange={(e) => {
                                 const file = e.target.files[0];
                                 if (file) {
-                                  if (doc.field === 'profilePhoto' || doc.field === 'agencyLogo') {
-                                    handleFileUpload(doc.field, file);
+                                  if (doc.field === 'profilePhoto') {
+                                    uploadProfilePhotoFile(file);
+                                  } else if (doc.field === 'agencyLogo') {
+                                    uploadAgencyLogoFile(file);
                                   } else {
                                     handlePdfUpload(doc.field, file);
                                   }
@@ -2853,11 +2994,11 @@ const AgentProfile = () => {
                   >
                     <div className="relative w-full h-40 sm:h-46 bg-gray-100 overflow-hidden">
                       <img 
-                        src={property.images?.[0] || 'https://via.placeholder.com/400x400/CCCCCC/666666?text=No+Image'} 
+                        src={property.coverImage || NO_IMAGE_PLACEHOLDER}
                         alt={property.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         onError={(e) => {
-                          e.target.src = 'https://via.placeholder.com/400x400/CCCCCC/666666?text=No+Image';
+                          e.target.src = NO_IMAGE_PLACEHOLDER;
                         }}
                       />
                       <div className="absolute top-2 sm:top-3 left-2 sm:left-3">
@@ -2875,6 +3016,19 @@ const AgentProfile = () => {
                           <Image className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                           {property.images.length}
                         </div>
+                      )}
+                      {property.videoUrl && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setLightboxItems([{ type: 'video', url: property.videoUrl, name: property.name }]);
+                            setLightboxIndex(0);
+                            setShowMediaLightbox(true);
+                          }}
+                          className="absolute bottom-2 sm:bottom-3 left-2 sm:left-3 bg-black/70 hover:bg-black/90 text-white text-[9px] sm:text-xs font-bold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full flex items-center gap-1 sm:gap-1.5 transition-all hover:scale-105"
+                        >
+                          <span className="text-[10px] sm:text-xs">▶</span> Watch Video
+                        </button>
                       )}
                     </div>
 
@@ -2981,10 +3135,10 @@ const AgentProfile = () => {
                           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                             <div className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
                               <img
-                                src={property.images?.[0] || 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image'}
+                                src={property.coverImage || NO_IMAGE_PLACEHOLDER}
                                 alt={property.name}
                                 className="w-full h-full object-cover"
-                                onError={(e) => { e.target.src = 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image'; }}
+                                onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }}
                               />
                             </div>
                             <div className="min-w-0">
@@ -3128,7 +3282,7 @@ const AgentProfile = () => {
               setDocuments(prev => ({ ...prev, [field]: null }));
               setLightboxItems([]);
               setShowMediaLightbox(false);
-              showSuccessToast();
+              showSuccessToast('Item deleted successfully!');
             }
           }}
           onClose={() => {
@@ -3230,7 +3384,7 @@ const AgentProfile = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 w-full">
                   {[
                     { name: 'fullName', label: 'Full Name *', emoji: '👤' },
-                    { name: 'mobileNumber', label: 'Mobile Number *', emoji: '📱' },
+                    { name: 'phoneNumber', label: 'Mobile Number *', emoji: '📱' },
                     { name: 'emailAddress', label: 'Email Address *', emoji: '✉️' },
                     { name: 'dateOfBirth', label: 'Date of Birth', type: 'date', emoji: '🎂' },
                     { name: 'gender', label: 'Gender', emoji: '⚥' },
@@ -3652,7 +3806,7 @@ const AgentProfile = () => {
                   {[
                     { name: 'username', label: 'Username *', emoji: '👤' },
                     { name: 'emailAddressLogin', label: 'Email Address *', emoji: '✉️' },
-                    { name: 'mobileNumberLogin', label: 'Mobile Number *', emoji: '📱' },
+                    { name: 'phoneNumberLogin', label: 'Mobile Number *', emoji: '📱' },
                     { name: 'password', label: 'Password *', emoji: '🔒', type: 'password' },
                     { name: 'confirmPassword', label: 'Confirm Password *', emoji: '🔒', type: 'password' },
                   ].map((field) => (
@@ -3697,20 +3851,7 @@ const AgentProfile = () => {
       )}
 
       {/* Success Toast */}
-      {showSuccess && (
-        <div className="fixed top-20 sm:top-24 md:top-28 right-2 sm:right-4 z-50 bg-gradient-to-r from-[#00695C]/10 to-[#26A69A]/10 border-2 border-[#00695C]/30 rounded-2xl p-2 sm:p-3 flex items-center gap-3 sm:gap-4 shadow-xl animate-slideDown max-w-xs sm:max-w-md backdrop-blur-sm">
-          <div className="bg-gradient-to-r from-[#00695C] to-[#26A69A] p-2 sm:p-3 rounded-2xl animate-bounce-in">
-            <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-          </div>
-          <div>
-            <p className="text-[#00695C] font-bold text-base sm:text-lg">Success!</p>
-            <p className="text-[#00695C]/80 text-[10px] sm:text-sm">Operation completed successfully!</p>
-          </div>
-          <button onClick={() => setShowSuccess(false)} className="text-[#00695C] hover:text-[#004D40] ml-auto hover:rotate-90 transition-transform duration-300 hover:scale-110">
-            <X className="w-4 h-4 sm:w-5 sm:h-5" />
-          </button>
-        </div>
-      )}
+      <Toast toast={toast} onClose={hideToast} />
 
       {/* Property Details Modal */}
       {showPropertyDetails && selectedProperty && (
@@ -3722,6 +3863,7 @@ const AgentProfile = () => {
           }}
           onAddImages={handleAddPropertyImages}
           onRemoveImage={handleRemovePropertyImage}
+          onRemoveCover={handleRemovePropertyCover}
           onToggleStatus={handleToggleStatus}
           onEdit={handleEditProperty}
           onDelete={handleDeleteProperty}
@@ -3842,7 +3984,7 @@ const AgentProfile = () => {
                 style={{ background: 'conic-gradient(from 0deg, #00695C, #26A69A, #7fd6c9, #26A69A, #00695C)' }} />
               <div className="relative w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-xl sm:rounded-2xl overflow-hidden shadow-2xl bg-gradient-to-br from-[#00695C]/20 to-[#26A69A]/20 flex items-center justify-center ring-3 sm:ring-4 ring-white/60">
                 {documents.profilePhoto ? (
-                  <img src={URL.createObjectURL(documents.profilePhoto)} alt={editForm.fullName} className="w-full h-full object-cover" />
+                  <img src={documents.profilePhoto} alt={editForm.fullName} className="w-full h-full object-cover" />
                 ) : (
                   <span className="text-3xl sm:text-4xl md:text-5xl font-bold bg-gradient-to-r from-[#00695C] to-[#26A69A] bg-clip-text text-transparent">
                     {editForm.fullName.charAt(0)}
@@ -3870,7 +4012,7 @@ const AgentProfile = () => {
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-1.5 sm:gap-2 mb-1 sm:mb-1.5">
                 <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-gray-800">{editForm.fullName}</h2>
                 <span className="text-[10px] sm:text-xs text-[#00695C] font-medium bg-gray-100 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full border border-gray-200">
-                  Agent ID: #AGT-{editForm.mobileNumber?.slice(-4) || '0000'}
+                  Agent ID: #AGT-{editForm.phoneNumber?.slice(-4) || '0000'}
                 </span>
                 <span className="relative overflow-hidden bg-gradient-to-r from-[#00695C] to-[#26A69A] text-white px-2 sm:px-3 py-0.5 rounded-full text-[8px] sm:text-[10px] font-bold">
                   Verified Agent
@@ -3886,7 +4028,7 @@ const AgentProfile = () => {
                   <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /> {editForm.city}, {editForm.state}
                 </span>
                 <span className="flex items-center gap-1 sm:gap-1.5 bg-[#00695C]/5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl shadow-sm border border-[#00695C]/10 hover:border-[#26A69A] hover:-translate-y-0.5 transition-all duration-300 animate-rise" style={{ animationDelay: '0.25s' }}>
-                  <Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /> {editForm.mobileNumber}
+                  <Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /> {editForm.phoneNumber}
                 </span>
                 <span className="flex items-center gap-1 sm:gap-1.5 bg-[#00695C]/5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl shadow-sm border border-[#00695C]/10 hover:border-[#26A69A] hover:-translate-y-0.5 transition-all duration-300 animate-rise" style={{ animationDelay: '0.35s' }}>
                   <Award className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /> {editForm.yearsOfExperience} Years Exp.
@@ -4327,7 +4469,7 @@ export default AgentProfile;
 //   const detailImageInputRef = useRef(null);
 //   const rawImages = property.images || [];
 //   const hasImages = rawImages.length > 0;
-//   const images = hasImages ? rawImages : ['https://via.placeholder.com/400x300/CCCCCC/666666?text=No+Image'];
+//   const images = hasImages ? rawImages : [NO_IMAGE_PLACEHOLDER];
 
 //   useEffect(() => {
 //     if (currentImageIndex >= images.length) {
@@ -4382,7 +4524,7 @@ export default AgentProfile;
 //               alt={property.name}
 //               className="w-full h-full object-cover"
 //               onError={(e) => {
-//                 e.target.src = 'https://via.placeholder.com/400x300/CCCCCC/666666?text=No+Image';
+//                 e.target.src = NO_IMAGE_PLACEHOLDER;
 //               }}
 //             />
             
@@ -4454,7 +4596,7 @@ export default AgentProfile;
 //                     alt={`Thumbnail ${idx + 1}`}
 //                     className="w-full h-full object-cover"
 //                     onError={(e) => {
-//                       e.target.src = 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image';
+//                       e.target.src = NO_IMAGE_PLACEHOLDER;
 //                     }}
 //                   />
 //                 </button>
@@ -5502,7 +5644,7 @@ export default AgentProfile;
 //   const [editForm, setEditForm] = useState({
 //     // Personal Details
 //     fullName: 'Amit Sharma',
-//     mobileNumber: '+91 98765 43210',
+//     phoneNumber: '+91 98765 43210',
 //     emailAddress: 'amit.sharma@realestate.com',
 //     dateOfBirth: '15-03-1990',
 //     gender: 'Male',
@@ -5578,7 +5720,7 @@ export default AgentProfile;
 //     setEditForm({
 //       // ===== Personal Details =====
 //       fullName: agentData.fullName || agentData.agentName || agentData.name || '',
-//       mobileNumber: agentData.mobileNumber || agentData.mobile || agentData.phone || '',
+//       phoneNumber: agentData.phoneNumber || agentData.mobile || agentData.phone || '',
 //       emailAddress: agentData.emailAddress || agentData.emailId || agentData.email || '',
 //       dateOfBirth: agentData.dateOfBirth || '',
 //       gender: agentData.gender || '',
@@ -6109,7 +6251,7 @@ export default AgentProfile;
 
 //   // ============ SAVE HANDLER ============
 //   const handleSave = () => {
-//     const requiredFields = ['fullName', 'mobileNumber', 'emailAddress', 'agencyName', 'aadhaarNumber', 'panNumber'];
+//     const requiredFields = ['fullName', 'phoneNumber', 'emailAddress', 'agencyName', 'aadhaarNumber', 'panNumber'];
 //     const missingFields = requiredFields.filter(field => !editForm[field]);
 
 //     if (missingFields.length > 0) {
@@ -6166,7 +6308,7 @@ export default AgentProfile;
 
 //     section('Personal Details');
 //     row('Full Name', editForm.fullName);
-//     row('Mobile Number', editForm.mobileNumber);
+//     row('Mobile Number', editForm.phoneNumber);
 //     row('Email Address', editForm.emailAddress);
 //     row('Date of Birth', editForm.dateOfBirth);
 //     row('Gender', editForm.gender);
@@ -6462,7 +6604,7 @@ export default AgentProfile;
 //       case 'personal': {
 //         const personalFields = [
 //           editForm.fullName,
-//           editForm.mobileNumber,
+//           editForm.phoneNumber,
 //           editForm.emailAddress,
 //           editForm.dateOfBirth,
 //           editForm.gender,
@@ -6481,7 +6623,7 @@ export default AgentProfile;
 //             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
 //               <div className="space-y-3 w-full">
 //                 <AnimatedCard label="Full Name" value={editForm.fullName} icon={<User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.05} />
-//                 <AnimatedCard label="Mobile Number" value={editForm.mobileNumber} icon={<Phone className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.12} />
+//                 <AnimatedCard label="Mobile Number" value={editForm.phoneNumber} icon={<Phone className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.12} />
 //                 <AnimatedCard label="Email Address" value={editForm.emailAddress} icon={<Mail className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.19} />
 //               </div>
 //               <div className="space-y-3 w-full">
@@ -7092,11 +7234,11 @@ export default AgentProfile;
 //                   >
 //                     <div className="relative w-full h-40 sm:h-46 bg-gray-100 overflow-hidden">
 //                       <img 
-//                         src={property.images?.[0] || 'https://via.placeholder.com/400x400/CCCCCC/666666?text=No+Image'} 
+//                         src={property.images?.[0] || NO_IMAGE_PLACEHOLDER}
 //                         alt={property.name}
 //                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
 //                         onError={(e) => {
-//                           e.target.src = 'https://via.placeholder.com/400x400/CCCCCC/666666?text=No+Image';
+//                           e.target.src = NO_IMAGE_PLACEHOLDER;
 //                         }}
 //                       />
 //                       <div className="absolute top-2 sm:top-3 left-2 sm:left-3">
@@ -7220,10 +7362,10 @@ export default AgentProfile;
 //                           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
 //                             <div className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
 //                               <img
-//                                 src={property.images?.[0] || 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image'}
+//                                 src={property.images?.[0] || NO_IMAGE_PLACEHOLDER}
 //                                 alt={property.name}
 //                                 className="w-full h-full object-cover"
-//                                 onError={(e) => { e.target.src = 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image'; }}
+//                                 onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }}
 //                               />
 //                             </div>
 //                             <div className="min-w-0">
@@ -7469,7 +7611,7 @@ export default AgentProfile;
 //                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 w-full">
 //                   {[
 //                     { name: 'fullName', label: 'Full Name *', emoji: '👤' },
-//                     { name: 'mobileNumber', label: 'Mobile Number *', emoji: '📱' },
+//                     { name: 'phoneNumber', label: 'Mobile Number *', emoji: '📱' },
 //                     { name: 'emailAddress', label: 'Email Address *', emoji: '✉️' },
 //                     { name: 'dateOfBirth', label: 'Date of Birth', type: 'date', emoji: '🎂' },
 //                     { name: 'gender', label: 'Gender', emoji: '⚥' },
@@ -7891,7 +8033,7 @@ export default AgentProfile;
 //                   {[
 //                     { name: 'username', label: 'Username *', emoji: '👤' },
 //                     { name: 'emailAddressLogin', label: 'Email Address *', emoji: '✉️' },
-//                     { name: 'mobileNumberLogin', label: 'Mobile Number *', emoji: '📱' },
+//                     { name: 'phoneNumberLogin', label: 'Mobile Number *', emoji: '📱' },
 //                     { name: 'password', label: 'Password *', emoji: '🔒', type: 'password' },
 //                     { name: 'confirmPassword', label: 'Confirm Password *', emoji: '🔒', type: 'password' },
 //                   ].map((field) => (
@@ -8109,7 +8251,7 @@ export default AgentProfile;
 //               <div className="flex flex-wrap items-center justify-center md:justify-start gap-1.5 sm:gap-2 mb-1 sm:mb-1.5">
 //                 <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-gray-800">{editForm.fullName}</h2>
 //                 <span className="text-[10px] sm:text-xs text-[#00695C] font-medium bg-gray-100 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full border border-gray-200">
-//                   Agent ID: #AGT-{editForm.mobileNumber?.slice(-4) || '0000'}
+//                   Agent ID: #AGT-{editForm.phoneNumber?.slice(-4) || '0000'}
 //                 </span>
 //                 <span className="relative overflow-hidden bg-gradient-to-r from-[#00695C] to-[#26A69A] text-white px-2 sm:px-3 py-0.5 rounded-full text-[8px] sm:text-[10px] font-bold">
 //                   Verified Agent
@@ -8125,7 +8267,7 @@ export default AgentProfile;
 //                   <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /> {editForm.city}, {editForm.state}
 //                 </span>
 //                 <span className="flex items-center gap-1 sm:gap-1.5 bg-[#00695C]/5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl shadow-sm border border-[#00695C]/10 hover:border-[#26A69A] hover:-translate-y-0.5 transition-all duration-300 animate-rise" style={{ animationDelay: '0.25s' }}>
-//                   <Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /> {editForm.mobileNumber}
+//                   <Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /> {editForm.phoneNumber}
 //                 </span>
 //                 <span className="flex items-center gap-1 sm:gap-1.5 bg-[#00695C]/5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl shadow-sm border border-[#00695C]/10 hover:border-[#26A69A] hover:-translate-y-0.5 transition-all duration-300 animate-rise" style={{ animationDelay: '0.35s' }}>
 //                   <Award className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /> {editForm.yearsOfExperience} Years Exp.

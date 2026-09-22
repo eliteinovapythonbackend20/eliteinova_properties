@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, lazy, Suspense } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -7,131 +7,133 @@ import {
 import { AuthProvider } from "./context/authContext.jsx";
 
 import Header from "./components/common/Header";
-import HomePage from "./pages/HomePage";
-import PostPropertyPage from "./pages/PostPropertyPage";
-import CustomerPortalPage from "./pages/CustomerPortalPage";
-import IndividualPage from "./pages/Individual/IndividualPage";
-import BuyPage from "./pages/BuyPage";
-import LeasePage from "./pages/LeasePage";
+import CustomerLoginWrapper  from "./components/login/CustomerLoginWrapper.jsx";
+import HomePage from "./pages/HomePage.jsx";
+// const HomePage = lazy(() => import("./pages/HomePage"));
+const PostPropertyPage = lazy(() => import("./pages/PostPropertyPage"));
+const CustomerPortalPage = lazy(() => import("./pages/CustomerPortalPage"));
+const IndividualPage = lazy(() => import("./pages/Individual/IndividualPage"));
+const BuyPage = lazy(() => import("./pages/BuyPage"));
+const LeasePage = lazy(() => import("./pages/LeasePage"));
 // import RentPage from "./pages/RentPage";
 // import SellPage from "./pages/SellPage";
-import ApartmentPage from "./pages/Apartment/ApartmentPage";
-import CommercialPage from "./pages/Commercial/CommercialPage";
-import LandPlotsPage from "./pages/LandAndPlots/LandAndPlotsPage";
-import HostelPage from "./pages/Hostel/HostelPage";
+const ApartmentPage = lazy(() => import("./pages/Apartment/ApartmentPage"));
+const CommercialPage = lazy(() => import("./pages/Commercial/CommercialPage"));
+const LandPlotsPage = lazy(() => import("./pages/LandAndPlots/LandAndPlotsPage"));
+const HostelPage = lazy(() => import("./pages/Hostel/HostelPage"));
 
 // Import all house type pages
-import IndependentHousePage from "./pages/Individual/IndependentHousePage";
-import IndependentVillaPage from "./pages/Individual/IndependentVillaPage";
-import ResidentialApartmentPage from "./pages/Individual/ResidentialApartmentPage";
-import DuplexResidentialUnitPage from "./pages/Individual/DuplexResidentialUnitPage";
-import RowHousePage from "./pages/Individual/RowHousePage";
+const IndependentHousePage = lazy(() => import("./pages/Individual/IndependentHousePage"));
+const IndependentVillaPage = lazy(() => import("./pages/Individual/IndependentVillaPage"));
+const ResidentialApartmentPage = lazy(() => import("./pages/Individual/ResidentialApartmentPage"));
+const DuplexResidentialUnitPage = lazy(() => import("./pages/Individual/DuplexResidentialUnitPage"));
+const RowHousePage = lazy(() => import("./pages/Individual/RowHousePage"));
 
 // Import all apartment type pages
-import RentalApartmentPage from './pages/Apartment/RentalApartmentPage';
-import ServicedApartmentPage from './pages/Apartment/ServicedApartmentPage';
-import LeaseApartmentPage from './pages/Apartment/LeaseApartmentPage';
-import ResidentialApartmentsPage from './pages/Apartment/ResidentialApartmentsPage';
-import GatedCommunityApartmentPage from './pages/Apartment/GatedCommunityApartmentPage';
-import StudioApartmentPage from './pages/Apartment/StudioApartmentPage';
-import DuplexApartmentPage from './pages/Apartment/DuplexApartmentPage';
-import LuxuryApartmentPage from './pages/Apartment/LuxuryApartmentPage';
-import CondominiumApartmentPage from './pages/Apartment/CondominiumApartmentPage';
-import PentHouseApartmentPage from './pages/Apartment/PentHouseApartmentPage';
+const RentalApartmentPage = lazy(() => import('./pages/Apartment/RentalApartmentPage'));
+const ServicedApartmentPage = lazy(() => import('./pages/Apartment/ServicedApartmentPage'));
+const LeaseApartmentPage = lazy(() => import('./pages/Apartment/LeaseApartmentPage'));
+const ResidentialApartmentsPage = lazy(() => import('./pages/Apartment/ResidentialApartmentsPage'));
+const GatedCommunityApartmentPage = lazy(() => import('./pages/Apartment/GatedCommunityApartmentPage'));
+const StudioApartmentPage = lazy(() => import('./pages/Apartment/StudioApartmentPage'));
+const DuplexApartmentPage = lazy(() => import('./pages/Apartment/DuplexApartmentPage'));
+const LuxuryApartmentPage = lazy(() => import('./pages/Apartment/LuxuryApartmentPage'));
+const CondominiumApartmentPage = lazy(() => import('./pages/Apartment/CondominiumApartmentPage'));
+const PentHouseApartmentPage = lazy(() => import('./pages/Apartment/PentHouseApartmentPage'));
 
 //Import all commercial type pages
-import OfficeSpacePage from './pages/Commercial/OfficeSpacePage';
-import RetailShopPage from './pages/Commercial/RetailShopPage';
-import ShowroomPage from './pages/Commercial/ShowroomPage';
-import CommercialLandPage from './pages/Commercial/CommercialLandPage';
-import WareHousePage from './pages/Commercial/WareHousePage';
-import IndustrialPropertyPage from './pages/Commercial/IndustrialPropertyPage';
-import CoWorkingSpacePage from './pages/Commercial/CoWorkingSpacePage';
-import BusinessCenterPage from './pages/Commercial/BusinessCenterPage';
-import ShoppingMallSpacePage from './pages/Commercial/ShoppingMallSpacePage';
-import CommercialComplexPage from './pages/Commercial/CommercialComplexPage';
-import RestaurantPage from './pages/Commercial/RestaurantPage';
-import HotelPage from './pages/Commercial/HotelPage';
-import ClinicPage from './pages/Commercial/ClinicPage';
-import EducationalPage from './pages/Commercial/EducationalPage';
-import ITParkPage from './pages/Commercial/ITParkPage';
-import MultiplexPage from './pages/Commercial/MultiplexPage';
-import PertrolBunkPage from './pages/Commercial/PetrolBunkPage';
-import ColdStoragePage from './pages/Commercial/ColdStoragePage';
-import MixedUsePage from './pages/Commercial/MixedUsePage';
-import AgriculturalPage from './pages/Commercial/AgriculturalPage';
+const OfficeSpacePage = lazy(() => import('./pages/Commercial/OfficeSpacePage'));
+const RetailShopPage = lazy(() => import('./pages/Commercial/RetailShopPage'));
+const ShowroomPage = lazy(() => import('./pages/Commercial/ShowroomPage'));
+const CommercialLandPage = lazy(() => import('./pages/Commercial/CommercialLandPage'));
+const WareHousePage = lazy(() => import('./pages/Commercial/WareHousePage'));
+const IndustrialPropertyPage = lazy(() => import('./pages/Commercial/IndustrialPropertyPage'));
+const CoWorkingSpacePage = lazy(() => import('./pages/Commercial/CoWorkingSpacePage'));
+const BusinessCenterPage = lazy(() => import('./pages/Commercial/BusinessCenterPage'));
+const ShoppingMallSpacePage = lazy(() => import('./pages/Commercial/ShoppingMallSpacePage'));
+const CommercialComplexPage = lazy(() => import('./pages/Commercial/CommercialComplexPage'));
+const RestaurantPage = lazy(() => import('./pages/Commercial/RestaurantPage'));
+const HotelPage = lazy(() => import('./pages/Commercial/HotelPage'));
+const ClinicPage = lazy(() => import('./pages/Commercial/ClinicPage'));
+const EducationalPage = lazy(() => import('./pages/Commercial/EducationalPage'));
+const ITParkPage = lazy(() => import('./pages/Commercial/ITParkPage'));
+const MultiplexPage = lazy(() => import('./pages/Commercial/MultiplexPage'));
+const PertrolBunkPage = lazy(() => import('./pages/Commercial/PetrolBunkPage'));
+const ColdStoragePage = lazy(() => import('./pages/Commercial/ColdStoragePage'));
+const MixedUsePage = lazy(() => import('./pages/Commercial/MixedUsePage'));
+const AgriculturalPage = lazy(() => import('./pages/Commercial/AgriculturalPage'));
 
 // Import all land and plot type pages
-import ResidentialLandPlotsPage from './pages/LandAndPlots/ResidentialLandPlotsPage';
-import ResidentialPlotPage from './pages/LandAndPlots/ResidentialPlotPage';
-import DTCPPlotPage from './pages/LandAndPlots/DTCPPlotPage';
-import GatedCommunityPlotPage from './pages/LandAndPlots/GatedCommunityPlotPage';
-import VillaPlotPage from './pages/LandAndPlots/VillaPlotPage';
-import FarmHousePlotPage from './pages/LandAndPlots/FarmHousePlotPage';
-import CommonPlotPage from './pages/LandAndPlots/CommonPlotPage';
-import DuplexHousePlotPage from './pages/LandAndPlots/DuplexHousePlotPage';
-import IndependentHousePlotPage from './pages/LandAndPlots/IndependentHousePlotPage';
-import RowHousePlotPage from './pages/LandAndPlots/RowHousePlotPage';
+const ResidentialLandPlotsPage = lazy(() => import('./pages/LandAndPlots/ResidentialLandPlotsPage'));
+const ResidentialPlotPage = lazy(() => import('./pages/LandAndPlots/ResidentialPlotPage'));
+const DTCPPlotPage = lazy(() => import('./pages/LandAndPlots/DTCPPlotPage'));
+const GatedCommunityPlotPage = lazy(() => import('./pages/LandAndPlots/GatedCommunityPlotPage'));
+const VillaPlotPage = lazy(() => import('./pages/LandAndPlots/VillaPlotPage'));
+const FarmHousePlotPage = lazy(() => import('./pages/LandAndPlots/FarmHousePlotPage'));
+const CommonPlotPage = lazy(() => import('./pages/LandAndPlots/CommonPlotPage'));
+const DuplexHousePlotPage = lazy(() => import('./pages/LandAndPlots/DuplexHousePlotPage'));
+const IndependentHousePlotPage = lazy(() => import('./pages/LandAndPlots/IndependentHousePlotPage'));
+const RowHousePlotPage = lazy(() => import('./pages/LandAndPlots/RowHousePlotPage'));
 
-import CommercialLandPlotsPage from './pages/LandAndPlots/CommercialLandPlotsPage';
-import CommercialPlotPage from './pages/LandAndPlots/CommercialPlotPage';
-import OfficeSpaceLandPage from './pages/LandAndPlots/OfficeSpaceLandPage';
-import RetailShopPlotPage from './pages/LandAndPlots/RetailShopPlotPage';
-import ShowroomPlotPage from './pages/LandAndPlots/ShowroomPlotPage';
-import ShoppingComplexLandPage from './pages/LandAndPlots/ShoppingComplexLandPage';
-import HotelResortLandPage from './pages/LandAndPlots/HotelResortLandPage';
-import PetrolBunkPlotPage from './pages/LandAndPlots/PetrolBunkPlotPage';
-import ITParkLandPage from './pages/LandAndPlots/ITParkLandPage';
-import WarehouseLandPage from './pages/LandAndPlots/WarehouseLandPage';
-import IndustrialCommercialPlotPage from './pages/LandAndPlots/IndustrialCommercialPlotPage';
+const CommercialLandPlotsPage = lazy(() => import('./pages/LandAndPlots/CommercialLandPlotsPage'));
+const CommercialPlotPage = lazy(() => import('./pages/LandAndPlots/CommercialPlotPage'));
+const OfficeSpaceLandPage = lazy(() => import('./pages/LandAndPlots/OfficeSpaceLandPage'));
+const RetailShopPlotPage = lazy(() => import('./pages/LandAndPlots/RetailShopPlotPage'));
+const ShowroomPlotPage = lazy(() => import('./pages/LandAndPlots/ShowroomPlotPage'));
+const ShoppingComplexLandPage = lazy(() => import('./pages/LandAndPlots/ShoppingComplexLandPage'));
+const HotelResortLandPage = lazy(() => import('./pages/LandAndPlots/HotelResortLandPage'));
+const PetrolBunkPlotPage = lazy(() => import('./pages/LandAndPlots/PetrolBunkPlotPage'));
+const ITParkLandPage = lazy(() => import('./pages/LandAndPlots/ITParkLandPage'));
+const WarehouseLandPage = lazy(() => import('./pages/LandAndPlots/WarehouseLandPage'));
+const IndustrialCommercialPlotPage = lazy(() => import('./pages/LandAndPlots/IndustrialCommercialPlotPage'));
 
-import AgriculturalLandPlotsPage from './pages/LandAndPlots/AgriculturalLandPlotsPage';
-import AgriculturalLandPage from './pages/LandAndPlots/AgriculturalLandPage';
-import FarmLandPage from './pages/LandAndPlots/FarmLandPage';
-import OrganicFarmingLandPage from './pages/LandAndPlots/OrganicFarmingLandPage';
-import CoconutFarmLandPage from './pages/LandAndPlots/CoconutFarmLandPage';
-import MangoGroveLandPage from './pages/LandAndPlots/MangoGroveLandPage';
-import TeaCoffeeLandPage from './pages/LandAndPlots/TeaCoffeeLandPage';
-import DairyFarmLandPage from './pages/LandAndPlots/DairyFarmLandPage.jsx';
-import FisheriesAquacultureLandPage from './pages/LandAndPlots/FisheriesAquacultureLandPage';
-import PoultryFarmLandPage from './pages/LandAndPlots/PoultryFarmLandPage';
+const AgriculturalLandPlotsPage = lazy(() => import('./pages/LandAndPlots/AgriculturalLandPlotsPage'));
+const AgriculturalLandPage = lazy(() => import('./pages/LandAndPlots/AgriculturalLandPage'));
+const FarmLandPage = lazy(() => import('./pages/LandAndPlots/FarmLandPage'));
+const OrganicFarmingLandPage = lazy(() => import('./pages/LandAndPlots/OrganicFarmingLandPage'));
+const CoconutFarmLandPage = lazy(() => import('./pages/LandAndPlots/CoconutFarmLandPage'));
+const MangoGroveLandPage = lazy(() => import('./pages/LandAndPlots/MangoGroveLandPage'));
+const TeaCoffeeLandPage = lazy(() => import('./pages/LandAndPlots/TeaCoffeeLandPage'));
+const DairyFarmLandPage = lazy(() => import('./pages/LandAndPlots/DairyFarmLandPage.jsx'));
+const FisheriesAquacultureLandPage = lazy(() => import('./pages/LandAndPlots/FisheriesAquacultureLandPage'));
+const PoultryFarmLandPage = lazy(() => import('./pages/LandAndPlots/PoultryFarmLandPage'));
 
-import IndustrialLandPlotPage from "./pages/LandAndPlots/IndustrialLandPlotPage.jsx";
-import IndustrialPlotPage from './pages/LandAndPlots/IndustrialPlotPage';
-import FactoryLandPage from './pages/LandAndPlots/FactoryLandPage';
-import ManufacturingUnitPlotPage from './pages/LandAndPlots/ManufacturingUnitPlotPage';
-import LogisticsHubLandPage from './pages/LandAndPlots/LogisticsHubLandPage';
-import WarehousePlotPage from './pages/LandAndPlots/WarehousePlotPage';
-import ColdStorageLandPage from './pages/LandAndPlots/ColdStorageLandPage';
-import SEZLandPage from './pages/LandAndPlots/SEZLandPage';
+const IndustrialLandPlotPage = lazy(() => import("./pages/LandAndPlots/IndustrialLandPlotPage.jsx"));
+const IndustrialPlotPage = lazy(() => import('./pages/LandAndPlots/IndustrialPlotPage'));
+const FactoryLandPage = lazy(() => import('./pages/LandAndPlots/FactoryLandPage'));
+const ManufacturingUnitPlotPage = lazy(() => import('./pages/LandAndPlots/ManufacturingUnitPlotPage'));
+const LogisticsHubLandPage = lazy(() => import('./pages/LandAndPlots/LogisticsHubLandPage'));
+const WarehousePlotPage = lazy(() => import('./pages/LandAndPlots/WarehousePlotPage'));
+const ColdStorageLandPage = lazy(() => import('./pages/LandAndPlots/ColdStorageLandPage'));
+const SEZLandPage = lazy(() => import('./pages/LandAndPlots/SEZLandPage'));
 
-import MixedUseLandPlotPage from './pages/LandAndPlots/MixedUseLandPlotPage';
-import ResidentialCommercialPlotPage from './pages/LandAndPlots/ResidentialCommercialPlotPage';
-import CommercialIndustrialLandPage from './pages/LandAndPlots/CommercialIndustrialLandPage';
-import TownshipDevelopmentLandPage from './pages/LandAndPlots/TownshipDevelopmentLandPage';
-import MultiPurposeDevelopmentLandPage from './pages/LandAndPlots/MultiPurposeDevelopmentLandPage';
+const MixedUseLandPlotPage = lazy(() => import('./pages/LandAndPlots/MixedUseLandPlotPage'));
+const ResidentialCommercialPlotPage = lazy(() => import('./pages/LandAndPlots/ResidentialCommercialPlotPage'));
+const CommercialIndustrialLandPage = lazy(() => import('./pages/LandAndPlots/CommercialIndustrialLandPage'));
+const TownshipDevelopmentLandPage = lazy(() => import('./pages/LandAndPlots/TownshipDevelopmentLandPage'));
+const MultiPurposeDevelopmentLandPage = lazy(() => import('./pages/LandAndPlots/MultiPurposeDevelopmentLandPage'));
 
-import InstitutionalLandPlotPage from './pages/LandAndPlots/InstitutionalLandPlotPage';
-import SchoolCollegeLandPage from './pages/LandAndPlots/SchoolCollegeLandPage';
-import HospitalClinicLandPage from './pages/LandAndPlots/HospitalClinicLandPage';
-import TrainingInstitutePlotPage from './pages/LandAndPlots/TrainingInstitutePlotPage';
-import ReligiousInstitutionLandPage from './pages/LandAndPlots/ReligiousInstitutionLandPage';
+const InstitutionalLandPlotPage = lazy(() => import('./pages/LandAndPlots/InstitutionalLandPlotPage'));
+const SchoolCollegeLandPage = lazy(() => import('./pages/LandAndPlots/SchoolCollegeLandPage'));
+const HospitalClinicLandPage = lazy(() => import('./pages/LandAndPlots/HospitalClinicLandPage'));
+const TrainingInstitutePlotPage = lazy(() => import('./pages/LandAndPlots/TrainingInstitutePlotPage'));
+const ReligiousInstitutionLandPage = lazy(() => import('./pages/LandAndPlots/ReligiousInstitutionLandPage'));
 
-import InvestmentLandPlotPage from './pages/LandAndPlots/InvestmentLandPlotPage';
-import HighwayFacingPlotPage from './pages/LandAndPlots/HighwayFacingPlotPage';
-import LakeViewPlotPage from './pages/LandAndPlots/LakeViewPlotPage';
-import HillViewPlotPage from './pages/LandAndPlots/HillViewPlotPage';
-import BeachSidePlotPage from './pages/LandAndPlots/BeachSidePlotPage';
-import RiverSideLandPage from './pages/LandAndPlots/RiverSideLandPage';
-import EcoTourismLandPage from './pages/LandAndPlots/EcoTourismLandPage';
-import LayoutDevelopmentLandPage from './pages/LandAndPlots/LayoutDevelopmentLandPage';
-import FutureInvestmentPlotPage from './pages/LandAndPlots/FutureInvestmentPlotPage';
+const InvestmentLandPlotPage = lazy(() => import('./pages/LandAndPlots/InvestmentLandPlotPage'));
+const HighwayFacingPlotPage = lazy(() => import('./pages/LandAndPlots/HighwayFacingPlotPage'));
+const LakeViewPlotPage = lazy(() => import('./pages/LandAndPlots/LakeViewPlotPage'));
+const HillViewPlotPage = lazy(() => import('./pages/LandAndPlots/HillViewPlotPage'));
+const BeachSidePlotPage = lazy(() => import('./pages/LandAndPlots/BeachSidePlotPage'));
+const RiverSideLandPage = lazy(() => import('./pages/LandAndPlots/RiverSideLandPage'));
+const EcoTourismLandPage = lazy(() => import('./pages/LandAndPlots/EcoTourismLandPage'));
+const LayoutDevelopmentLandPage = lazy(() => import('./pages/LandAndPlots/LayoutDevelopmentLandPage'));
+const FutureInvestmentPlotPage = lazy(() => import('./pages/LandAndPlots/FutureInvestmentPlotPage'));
 
 //Hostel
-import GirlsHostelPage from "./pages/Hostel/GirlsHostelPage";
-import BoysHostelPage from "./pages/Hostel/BoysHostelPage.jsx";
-import CoLivingSpacePage from "./pages/Hostel/CoLivingSpacePage.jsx";
-import WorkingProfessionalHostelPage from "./pages/Hostel/WorkingProfessionalHostelPage.jsx";
+const GirlsHostelPage = lazy(() => import("./pages/Hostel/GirlsHostelPage"));
+const BoysHostelPage = lazy(() => import("./pages/Hostel/BoysHostelPage.jsx"));
+const CoLivingSpacePage = lazy(() => import("./pages/Hostel/CoLivingSpacePage.jsx"));
+const WorkingProfessionalHostelPage = lazy(() => import("./pages/Hostel/WorkingProfessionalHostelPage.jsx"));
 
 // Import all form modals
 // import OwnerFormModal from "./components/Forms/OwnerFormModal";
@@ -141,11 +143,11 @@ import WorkingProfessionalHostelPage from "./pages/Hostel/WorkingProfessionalHos
 // import PropertyManagementFormModal from "./components/Forms/PropertyManagementFormModal";
 
 
-import OwnerProfile from "./components/profiles/OwnerProfile.jsx";
-import AgentProfile from "./components/profiles/AgentProfile.jsx";
-import BuilderProfile from "./components/profiles/BuilderProfile.jsx";
-import PropertyManagementProfile from "./components/profiles/PropertyManagementProfile";
-import AdminDashboard from "./components/dashboard/AdminDashboard";
+const OwnerProfile = lazy(() => import("./components/profiles/OwnerProfile.jsx"));
+const AgentProfile = lazy(() => import("./components/profiles/AgentProfile.jsx"));
+const BuilderProfile = lazy(() => import("./components/profiles/BuilderProfile.jsx"));
+const PropertyManagementProfile = lazy(() => import("./components/profiles/PropertyManagementProfile"));
+const AdminDashboard = lazy(() => import("./components/dashboard/AdminDashboard"));
 
 function AppLayout() {
   const [openOwnerForm, setOpenOwnerForm] = useState(false);
@@ -157,7 +159,7 @@ function AppLayout() {
   // Central control from Header
   const handlePostPropertyClick = (type) => {
     console.log("Form clicked:", type);
-    
+
     if (type === "Owner") {
       setOpenOwnerForm(true);
     } else if (type === "Agent") {
@@ -217,8 +219,10 @@ function AppLayout() {
 
       {/* MAIN CONTENT — compensate fixed header height */}
       <main className="pt-[90px] md:pt-[132px]">
+        <Suspense fallback={null}>
         <Routes>
 
+          <Route path="/login" element={<CustomerLoginWrapper />} />
           <Route path="/profile/owner" element={<OwnerProfile/>} />
            <Route path="/profile/agent" element={<AgentProfile/>} />
            <Route path="/profile/builder" element={<BuilderProfile/>} />
@@ -228,7 +232,7 @@ function AppLayout() {
           <Route path="/" element={<HomePage />} />
           <Route path="/customer-portal" element={<CustomerPortalPage />} />
           <Route path="/admin/*" element={<AdminDashboard/>} />
-          
+
           {/* Customer Portal Routes */}
           <Route path="/individual" element={<IndividualPage />} />
           <Route path="/apartment" element={<ApartmentPage />} />
@@ -356,7 +360,7 @@ function AppLayout() {
            <Route path="/land-plots/investment-land-plots/eco-tourism-land" element={<EcoTourismLandPage/>} />
            <Route path="/land-plots/investment-land-plots/layout-development-land" element={<LayoutDevelopmentLandPage/>} />
            <Route path="/land-plots/investment-land-plots/future-investment-plot" element={<FutureInvestmentPlotPage/>} />
-          
+
           {/* Hostel */}
 
           <Route path="/hostel/girls-hostel" element={<GirlsHostelPage/>} />
@@ -364,19 +368,24 @@ function AppLayout() {
           <Route path="/hostel/co-living-hostel" element={<CoLivingSpacePage/>} />
           <Route path="/hostel/working-professional-hostel" element={<WorkingProfessionalHostelPage/>} />
 
-          <Route 
-            path="/post-property" 
-            element={<PostPropertyPage onPostPropertyClick={handlePostPropertyClick} />} 
+          <Route
+            path="/post-property"
+            element={<PostPropertyPage onPostPropertyClick={handlePostPropertyClick} />}
           />
         </Routes>
+        </Suspense>
       </main>
     </>
   );
 }
 
+
+
+
+
 export default function App() {
   return (
-   <AuthProvider> 
+   <AuthProvider>
     <Router>
       <AppLayout />
     </Router>

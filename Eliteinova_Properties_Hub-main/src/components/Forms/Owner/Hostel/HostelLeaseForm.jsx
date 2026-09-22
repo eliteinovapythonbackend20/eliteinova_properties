@@ -99,13 +99,15 @@ export default function HostelLeaseForm({ isOpen, onClose }) {
     // Property Details (Step 2)
     propertyTitle: "", propertyType: "", propertyAddress: "",
     propertyCity: "", builtUpArea: "", carpetArea: "",
-    numberOfRooms: "", numberOfBathrooms: "", roomType: "", bathroomType: "",
-    furnishingStatus: "", sharingType: "", totalCapacity: "",
+    numberOfRooms: "", numberOfBathrooms: "", roomType: [], bathroomType: "",
+    furnishingStatus: "", sharingType: [], totalCapacity: "",
     // Hostel-specific (Step 2)
     hostelCategory: "", genderType: "", ageGroup: "", foodIncluded: "",
     foodType: "", mealsPerDay: "", kitchenAccess: "",
+    // Property Category & Posted By
+    propertyCategory: "hostel", postedBy: "owner",
     // Pricing & Amenities (Step 3)
-    listingPurpose: "lease", expectedPrice: "", budgetRange: { min: "", max: "" }, 
+    listingPurpose: "lease", expectedPrice: "", budgetRange: { min: "", max: "" },
     priceType: "", maintenance: "", securityDeposit: "",
     availableFrom: "", selectedAmenities: [], otherAmenities: "",
     paymentFrequency: "",
@@ -319,6 +321,24 @@ export default function HostelLeaseForm({ isOpen, onClose }) {
     }
   };
 
+  const toggleRoomType = (rt) => {
+    const current = formData.roomType;
+    if (current.includes(rt)) {
+      updateForm("roomType", current.filter(r => r !== rt));
+    } else {
+      updateForm("roomType", [...current, rt]);
+    }
+  };
+
+  const toggleSharingType = (sh) => {
+    const current = formData.sharingType;
+    if (current.includes(sh)) {
+      updateForm("sharingType", current.filter(s => s !== sh));
+    } else {
+      updateForm("sharingType", [...current, sh]);
+    }
+  };
+
   const addCustomAmenity = () => {
     const newAmenity = formData.otherAmenities.trim();
     if (newAmenity && !formData.selectedAmenities.includes(newAmenity) && !customAmenitiesList.includes(newAmenity)) {
@@ -424,8 +444,8 @@ export default function HostelLeaseForm({ isOpen, onClose }) {
       else if (!isOnlyNumbers(formData.numberOfRooms)) e.numberOfRooms = "Number of rooms must be a number";
       if (!formData.totalCapacity) e.totalCapacity = "Total capacity is required";
       else if (!isOnlyNumbers(formData.totalCapacity)) e.totalCapacity = "Total capacity must be a number";
-      if (!formData.roomType) e.roomType = "Please select a room type";
-      if (!formData.sharingType) e.sharingType = "Please select a sharing type";
+      if (!formData.roomType.length) e.roomType = "Please select at least one room type";
+      if (!formData.sharingType.length) e.sharingType = "Please select at least one sharing type";
       if (!formData.bathroomType) e.bathroomType = "Please select a bathroom type";
       if (!formData.furnishingStatus) e.furnishingStatus = "Please select furnishing status";
       if (!formData.leaseDuration) e.leaseDuration = "Please select lease duration";
@@ -571,6 +591,8 @@ export default function HostelLeaseForm({ isOpen, onClose }) {
               removeCoverImage={removeCoverImage}
               removeFloorPlan={removeFloorPlan}
               toggleContactMethod={toggleContactMethod}
+              toggleRoomType={toggleRoomType}
+              toggleSharingType={toggleSharingType}
               startDrawing={startDrawing}
               draw={draw}
               stopDrawing={stopDrawing}
@@ -693,6 +715,8 @@ export default function HostelLeaseForm({ isOpen, onClose }) {
               removeCoverImage={removeCoverImage}
               removeFloorPlan={removeFloorPlan}
               toggleContactMethod={toggleContactMethod}
+              toggleRoomType={toggleRoomType}
+              toggleSharingType={toggleSharingType}
               startDrawing={startDrawing}
               draw={draw}
               stopDrawing={stopDrawing}
@@ -746,7 +770,7 @@ export default function HostelLeaseForm({ isOpen, onClose }) {
 }
 
 // MOBILE CONTENT - HOSTEL LEASE
-function MobContentLease({ step, inp, formData, updateForm, handleAlphaFieldChange, handleNumericFieldChange, handlePinCodeChange, imagePreviews, handleImageUpload, removeImage, handleVideoUpload, videoPreview, removeVideo, handleDocumentUpload, handlePassportUpload, toggleAmenity, availableAmenities, customAmenitiesList, addCustomAmenity, removeCustomAmenity, hostelTypeOptions, roomTypeOptions, bathroomOptions, furnishingOptions, sharingOptions, yesNoOptions, leaseDurationOptions, occupancyTypeOptions, paymentFrequencyOptions, foodTypeOptions, mealOptions, bankOptions, handleCoverImageUpload, handleFloorPlanUpload, coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, toggleContactMethod, startDrawing, draw, stopDrawing, clearSignature, signaturePoints, allSignaturePoints, setAllSignaturePoints, errors }) {
+function MobContentLease({ step, inp, formData, updateForm, handleAlphaFieldChange, handleNumericFieldChange, handlePinCodeChange, imagePreviews, handleImageUpload, removeImage, handleVideoUpload, videoPreview, removeVideo, handleDocumentUpload, handlePassportUpload, toggleAmenity, availableAmenities, customAmenitiesList, addCustomAmenity, removeCustomAmenity, hostelTypeOptions, roomTypeOptions, bathroomOptions, furnishingOptions, sharingOptions, yesNoOptions, leaseDurationOptions, occupancyTypeOptions, paymentFrequencyOptions, foodTypeOptions, mealOptions, bankOptions, handleCoverImageUpload, handleFloorPlanUpload, coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, toggleContactMethod, toggleRoomType, toggleSharingType, startDrawing, draw, stopDrawing, clearSignature, signaturePoints, allSignaturePoints, setAllSignaturePoints, errors }) {
   const ta = `${inp} resize-y`;
   const signatureCanvasRef = useRef(null);
 
@@ -963,7 +987,7 @@ function MobContentLease({ step, inp, formData, updateForm, handleAlphaFieldChan
         <div className="grid grid-cols-2 gap-1.5">
           {roomTypeOptions.map(rt => (
             <label key={rt} className="flex items-center gap-1.5 text-[10px] cursor-pointer">
-              <input type="radio" name="mob-room-type" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType === rt} onChange={() => updateForm("roomType", rt)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType.includes(rt)} onChange={() => toggleRoomType(rt)} />
               {rt}
             </label>
           ))}
@@ -974,7 +998,7 @@ function MobContentLease({ step, inp, formData, updateForm, handleAlphaFieldChan
         <div className="grid grid-cols-2 gap-1.5">
           {sharingOptions.map(sh => (
             <label key={sh} className="flex items-center gap-1.5 text-[10px] cursor-pointer">
-              <input type="radio" name="mob-sharing" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType === sh} onChange={() => updateForm("sharingType", sh)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType.includes(sh)} onChange={() => toggleSharingType(sh)} />
               {sh}
             </label>
           ))}
@@ -1525,7 +1549,7 @@ function MobContentLease({ step, inp, formData, updateForm, handleAlphaFieldChan
 }
 
 // DESKTOP CONTENT - HOSTEL LEASE
-function DtContentLease({ step, inp, formData, updateForm, handleAlphaFieldChange, handleNumericFieldChange, handlePinCodeChange, imagePreviews, handleImageUpload, removeImage, handleVideoUpload, videoPreview, removeVideo, handleDocumentUpload, handlePassportUpload, toggleAmenity, availableAmenities, customAmenitiesList, addCustomAmenity, removeCustomAmenity, hostelTypeOptions, roomTypeOptions, bathroomOptions, furnishingOptions, sharingOptions, yesNoOptions, leaseDurationOptions, occupancyTypeOptions, paymentFrequencyOptions, foodTypeOptions, mealOptions, bankOptions, handleCoverImageUpload, handleFloorPlanUpload, coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, toggleContactMethod, startDrawing, draw, stopDrawing, clearSignature, signaturePoints, allSignaturePoints, setAllSignaturePoints, errors }) {
+function DtContentLease({ step, inp, formData, updateForm, handleAlphaFieldChange, handleNumericFieldChange, handlePinCodeChange, imagePreviews, handleImageUpload, removeImage, handleVideoUpload, videoPreview, removeVideo, handleDocumentUpload, handlePassportUpload, toggleAmenity, availableAmenities, customAmenitiesList, addCustomAmenity, removeCustomAmenity, hostelTypeOptions, roomTypeOptions, bathroomOptions, furnishingOptions, sharingOptions, yesNoOptions, leaseDurationOptions, occupancyTypeOptions, paymentFrequencyOptions, foodTypeOptions, mealOptions, bankOptions, handleCoverImageUpload, handleFloorPlanUpload, coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, toggleContactMethod, toggleRoomType, toggleSharingType, startDrawing, draw, stopDrawing, clearSignature, signaturePoints, allSignaturePoints, setAllSignaturePoints, errors }) {
   const ta = `${inp} resize-y`;
   const signatureCanvasRef = useRef(null);
 
@@ -1744,7 +1768,7 @@ function DtContentLease({ step, inp, formData, updateForm, handleAlphaFieldChang
         <div className="grid grid-cols-2 gap-1">
           {roomTypeOptions.map(rt => (
             <label key={rt} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-room-type" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType === rt} onChange={() => updateForm("roomType", rt)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType.includes(rt)} onChange={() => toggleRoomType(rt)} />
               {rt}
             </label>
           ))}
@@ -1755,7 +1779,7 @@ function DtContentLease({ step, inp, formData, updateForm, handleAlphaFieldChang
         <div className="grid grid-cols-2 gap-1">
           {sharingOptions.map(sh => (
             <label key={sh} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-sharing" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType === sh} onChange={() => updateForm("sharingType", sh)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType.includes(sh)} onChange={() => toggleSharingType(sh)} />
               {sh}
             </label>
           ))}

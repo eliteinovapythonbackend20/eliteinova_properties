@@ -48,30 +48,6 @@ class DummyRepository:
     async def delete_property_video(self, property_id):
         self.calls.append(("delete_property_video", property_id))
 
-    async def upsert_vendor_document(self, user_id, doc_type, doc_data):
-        self.calls.append(("upsert_vendor_document", user_id, doc_type, doc_data))
-
-        class DocStub:
-            id = 1
-            file_url = doc_data.get("file_url")
-
-        return DocStub()
-
-    async def get_vendor_document(self, user_id, doc_type):
-        self.calls.append(("get_vendor_document", user_id, doc_type))
-        if doc_type != "existing_doc":
-            return None
-
-        class DocStub:
-            id = 1
-            file_url = "http://example.com/doc.pdf"
-
-        return DocStub()
-
-    async def delete_vendor_document(self, user_id, doc_type):
-        self.calls.append(("delete_vendor_document", user_id, doc_type))
-        return True
-
     async def commit(self):
         return None
 
@@ -228,65 +204,6 @@ async def test_delete_property_video_raw_delegates_and_commits():
     assert ("delete_property_video", "PROP-1") in repo.calls
 
 
-class FakeFileService:
-    def __init__(self):
-        self.deleted_urls = []
-
-    async def upload_document(self, file, user_id, property_id, idx):
-        return {"stored_filename": "doc.pdf", "mime_type": "application/pdf", "file_url": "http://example.com/new.pdf", "file_size_kb": 12}
-
-    async def delete_files(self, urls):
-        self.deleted_urls.extend(urls)
-
-
-class FakeUploadFile:
-    filename = "doc.pdf"
-    content_type = "application/pdf"
-
-
-@pytest.mark.asyncio
-async def test_upload_vendor_document_raw_upserts_and_commits():
-    repo = DummyRepository()
-    service = PropertyService(repo, file_service=FakeFileService())
-
-    doc = await service.upload_vendor_document_raw("EP1", "aadhaar", FakeUploadFile())
-
-    assert doc.file_url == "http://example.com/new.pdf"
-    assert repo.calls[0][0] == "upsert_vendor_document"
-
-
-@pytest.mark.asyncio
-async def test_get_vendor_document_raw_returns_none_when_missing():
-    repo = DummyRepository()
-    service = PropertyService(repo)
-
-    result = await service.get_vendor_document_raw("EP1", "missing_doc")
-
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_delete_vendor_document_raw_returns_false_when_missing():
-    repo = DummyRepository()
-    service = PropertyService(repo)
-
-    deleted = await service.delete_vendor_document_raw("EP1", "missing_doc")
-
-    assert deleted is False
-
-
-@pytest.mark.asyncio
-async def test_delete_vendor_document_raw_deletes_db_row_then_storage_file():
-    repo = DummyRepository()
-    file_service = FakeFileService()
-    service = PropertyService(repo, file_service=file_service)
-
-    deleted = await service.delete_vendor_document_raw("EP1", "existing_doc")
-
-    assert deleted is True
-    assert file_service.deleted_urls == ["http://example.com/doc.pdf"]
-
-
 # ---------------------------------------------------------------------------
 # Bug: PropertyRepository.update_vendor_detail's live signature had no
 # property_id param, but three callers (vendor profile-image processing
@@ -398,6 +315,94 @@ async def test_delete_vendor_profile_image_deletes_storage_and_clears_this_prope
     assert file_service.deleted_urls == ["http://example.com/old.jpg"]
     image_call = next(c for c in repo.calls if c[0] == "update_vendor_profile_image")
     assert image_call[1:] == ("EP1", "profile_photo_url", None, "PROP-1")
+
+
+class _FakeDocument:
+    def __init__(self, doc_id=1, user_id="EP1", property_id="PROP-1", file_url="documents/EP1/PROP-1/documents/x.pdf"):
+        self.id = doc_id
+        self.user_id = user_id
+        self.property_id = property_id
+        self.file_url = file_url
+
+
+class _FakeDocumentRepository:
+    def __init__(self, document=None):
+        self._document = document
+
+    async def get_document_by_id(self, document_id):
+        return self._document
+
+
+class _FakePrivateStorage:
+    def __init__(self):
+        self.calls = []
+
+    async def generate_signed_url(self, file_url, expiration=3600):
+        self.calls.append((file_url, expiration))
+        return f"https://signed.example.com/{file_url}?exp={expiration}"
+
+
+class _FakeFileServiceForViewUrl:
+    def __init__(self):
+        self.private_storage = _FakePrivateStorage()
+
+
+@pytest.mark.asyncio
+async def test_get_document_view_url_allows_owner():
+    doc = _FakeDocument(user_id="EP1")
+    service = PropertyService(_FakeDocumentRepository(doc), file_service=_FakeFileServiceForViewUrl())
+
+    url = await service.get_document_view_url(doc.id, {"user_id": "EP1", "role": "vendor"})
+
+    assert url.startswith("https://signed.example.com/")
+    assert service.file_service.private_storage.calls == [(doc.file_url, 600)]
+
+
+@pytest.mark.asyncio
+async def test_get_document_view_url_allows_admin_for_someone_elses_document():
+    doc = _FakeDocument(user_id="EP1")
+    service = PropertyService(_FakeDocumentRepository(doc), file_service=_FakeFileServiceForViewUrl())
+
+    url = await service.get_document_view_url(doc.id, {"user_id": "ADMIN1", "role": "admin"})
+
+    assert url.startswith("https://signed.example.com/")
+
+
+@pytest.mark.asyncio
+async def test_get_document_view_url_rejects_non_owner_non_admin():
+    from app.schemas.property_error import PropertyError
+
+    doc = _FakeDocument(user_id="EP1")
+    service = PropertyService(_FakeDocumentRepository(doc), file_service=_FakeFileServiceForViewUrl())
+
+    with pytest.raises(PropertyError) as exc_info:
+        await service.get_document_view_url(doc.id, {"user_id": "EP2", "role": "vendor"})
+    assert exc_info.value.status_code == 403
+    assert service.file_service.private_storage.calls == []
+
+
+@pytest.mark.asyncio
+async def test_get_document_view_url_404_for_missing_document():
+    from app.schemas.property_error import PropertyError
+
+    service = PropertyService(_FakeDocumentRepository(None), file_service=_FakeFileServiceForViewUrl())
+
+    with pytest.raises(PropertyError) as exc_info:
+        await service.get_document_view_url(999, {"user_id": "EP1", "role": "vendor"})
+    assert exc_info.value.status_code == 404
+
+
+def test_file_service_splits_public_and_private_storage_instances():
+    from app.services.file_service import FileService
+    from app.core.storage_factory import StorageFactory
+
+    StorageFactory.reset()
+    try:
+        fs = FileService()
+        assert fs.public_storage is not None
+        assert fs.private_storage is not None
+    finally:
+        StorageFactory.reset()
 
 
 def test_strip_none_values_removes_null_fields_from_payloads():

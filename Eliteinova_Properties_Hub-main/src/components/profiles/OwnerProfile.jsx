@@ -30,6 +30,8 @@ import {
   deleteProfilePhoto,
   uploadDocument,
   deleteDocument,
+  getVendorDocumentsByField,
+  getVendorDocumentViewUrl,
   updateVendorProperty,
   deleteVendorProperty,
   updateVendorPropertyStatus,
@@ -37,10 +39,17 @@ import {
   deletePropertyImage,
   uploadPropertyVideo,
   deletePropertyVideo,
+  addPropertyDocuments,
   mapPropertyToFrontend,
   mapPropertyToBackend,
 } from '../../services/profileService';
+import { useToast } from '../../hooks/useToast';
+import Toast from '../common/Toast';
 
+// Self-contained "No Image" fallback - via.placeholder.com is an external
+// network call that can time out/be unreachable, leaving a blank box with
+// nothing rendered at all when a property has no photos.
+const NO_IMAGE_PLACEHOLDER = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="100%" height="100%" fill="#CCCCCC"/><text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" fill="#666666" font-family="Arial, sans-serif" font-size="20">No Image</text></svg>')}`;
 
 // Rent Options for Property Details & Pricing
 const bedroomOptions = ["Studio", "1 BHK", "2 BHK", "3 BHK", "4+ BHK"];
@@ -268,11 +277,1103 @@ const PdfFileCard = ({ file, onDelete, onView }) => {
   );
 };
 
+// ============ EDIT PROPERTY MODAL ============
+const EditPropertyModal = ({ property, onSave, onCancel }) => {
+  if (!property) return null;
+
+  const editSteps = ['Property Details', 'Pricing & Amenities', 'Media Upload'];
+
+  const [localStep, setLocalStep] = useState(0);
+  const [localProperty, setLocalProperty] = useState({ ...property });
+  const [localCustomAmenities, setLocalCustomAmenities] = useState([]);
+  
+  const [localImagePreviews, setLocalImagePreviews] = useState([]);
+  const [localCoverPreview, setLocalCoverPreview] = useState(null);
+  const [localVideoPreview, setLocalVideoPreview] = useState(null);
+  const [localFloorPlanPreview, setLocalFloorPlanPreview] = useState(null);
+  const [localCoverImage, setLocalCoverImage] = useState(null);
+  const [localVideoFile, setLocalVideoFile] = useState(null);
+  const [localFloorPlanFile, setLocalFloorPlanFile] = useState(null);
+  const [newImageFiles, setNewImageFiles] = useState([]);
+
+  useEffect(() => {
+    setLocalProperty({ ...property });
+    if (property.selectedAmenities) {
+      const custom = property.selectedAmenities.filter(a => !availableAmenities.includes(a));
+      setLocalCustomAmenities(custom);
+    }
+    // coverImage and images (gallery) are separate concepts from the
+    // backend now - the cover is only ever whatever is actually flagged
+    // primary, never inferred from images[0].
+    setLocalCoverPreview(property.coverImage || null);
+    setLocalImagePreviews(property.images || []);
+  }, [property]);
+
+  const handleLocalImageUpload = (e) => {
+    const files = Array.from(e.target.files);
+    // The 3-image cap covers property gallery photos only - the cover image
+    // has its own dedicated slot and never counts against it.
+    const remainingSlots = Math.max(0, 3 - localImagePreviews.length);
+    if (files.length > remainingSlots) {
+      alert(`You can only upload ${remainingSlots} more image(s). Maximum 3 property photos allowed.`);
+    }
+    const limitedFiles = files.slice(0, remainingSlots);
+    const newPreviews = limitedFiles.map(file => URL.createObjectURL(file));
+    setLocalImagePreviews([...localImagePreviews, ...newPreviews]);
+    setNewImageFiles([...newImageFiles, ...limitedFiles]);
+  };
+
+  const removeLocalImage = (index) => {
+    const preview = localImagePreviews[index];
+    const newPreviews = localImagePreviews.filter((_, i) => i !== index);
+    setLocalImagePreviews(newPreviews);
+    // Existing (already-uploaded) photos are plain URLs; only newly-picked
+    // files produce blob: previews and have a matching entry in
+    // newImageFiles - map by blob position, not by raw index, since the
+    // two arrays aren't 1:1 once an existing photo sits ahead of a new one.
+    if (preview && preview.startsWith('blob:')) {
+      const blobPosition = localImagePreviews.slice(0, index).filter(p => p.startsWith('blob:')).length;
+      setNewImageFiles(newImageFiles.filter((_, i) => i !== blobPosition));
+      URL.revokeObjectURL(preview);
+    }
+  };
+
+  const handleLocalCoverImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        alert('Cover image must be less than 2MB');
+        return;
+      }
+      setLocalCoverPreview(URL.createObjectURL(file));
+      setLocalCoverImage(file);
+    }
+  };
+
+  const removeLocalCoverImage = () => {
+    if (localCoverPreview) URL.revokeObjectURL(localCoverPreview);
+    setLocalCoverPreview(null);
+    setLocalCoverImage(null);
+  };
+
+  const handleLocalVideoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        alert('Video must be less than 10MB');
+        return;
+      }
+      setLocalVideoPreview(URL.createObjectURL(file));
+      setLocalVideoFile(file);
+    }
+  };
+
+  const removeLocalVideo = () => {
+    if (localVideoPreview) URL.revokeObjectURL(localVideoPreview);
+    setLocalVideoPreview(null);
+    setLocalVideoFile(null);
+  };
+
+  const handleLocalFloorPlanUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.type !== 'application/pdf') {
+        alert('Floor plan must be a PDF file');
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Floor plan must be less than 5MB');
+        return;
+      }
+      setLocalFloorPlanPreview(URL.createObjectURL(file));
+      setLocalFloorPlanFile(file);
+    }
+  };
+
+  const removeLocalFloorPlan = () => {
+    if (localFloorPlanPreview) URL.revokeObjectURL(localFloorPlanPreview);
+    setLocalFloorPlanPreview(null);
+    setLocalFloorPlanFile(null);
+  };
+
+  const handleLocalChange = (field, value) => {
+    setLocalProperty(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleLocalAmenityToggle = (amenity) => {
+    const current = localProperty.selectedAmenities || [];
+    if (current.includes(amenity)) {
+      setLocalProperty(prev => ({
+        ...prev,
+        selectedAmenities: prev.selectedAmenities.filter(a => a !== amenity)
+      }));
+    } else {
+      setLocalProperty(prev => ({
+        ...prev,
+        selectedAmenities: [...(prev.selectedAmenities || []), amenity]
+      }));
+    }
+  };
+
+  const handleLocalAddCustomAmenity = () => {
+    if (localProperty.otherAmenities) {
+      const newAmenity = localProperty.otherAmenities.trim();
+      if (newAmenity && !localProperty.selectedAmenities.includes(newAmenity) && !localCustomAmenities.includes(newAmenity)) {
+        setLocalCustomAmenities(prev => [...prev, newAmenity]);
+        setLocalProperty(prev => ({
+          ...prev,
+          selectedAmenities: [...(prev.selectedAmenities || []), newAmenity],
+          otherAmenities: ''
+        }));
+      }
+    }
+  };
+
+  const handleLocalRemoveCustomAmenity = (amenity) => {
+    setLocalCustomAmenities(prev => prev.filter(a => a !== amenity));
+    setLocalProperty(prev => ({
+      ...prev,
+      selectedAmenities: prev.selectedAmenities.filter(a => a !== amenity)
+    }));
+  };
+
+  const handleLocalNext = () => {
+    setLocalStep(prev => prev + 1);
+  };
+
+  const handleLocalBack = () => {
+    setLocalStep(prev => prev - 1);
+  };
+
+  const handleLocalSave = () => {
+    const updatedProperty = {
+      ...localProperty,
+    };
+
+    // Hand the raw cover/photo/video pieces up so the actual save handler
+    // can upload the real files via the multipart endpoints and use the
+    // backend-returned URLs - not local blob: previews, which are never
+    // persisted and vanish on reload.
+    updatedProperty._media = {
+      coverFile: localCoverImage,
+      coverUrl: localCoverImage ? null : localCoverPreview,
+      existingPhotoUrls: localImagePreviews.filter(p => !p.startsWith('blob:')),
+      newPhotoFiles: newImageFiles,
+      videoFile: localVideoFile,
+      floorPlanFile: localFloorPlanFile,
+    };
+
+    onSave(updatedProperty);
+  };
+
+  const handleLocalCancel = () => {
+    onCancel();
+    setLocalStep(0);
+    setLocalCustomAmenities([]);
+    localImagePreviews.forEach(preview => {
+      if (preview.startsWith('blob:')) URL.revokeObjectURL(preview);
+    });
+    if (localCoverPreview) URL.revokeObjectURL(localCoverPreview);
+    if (localVideoPreview) URL.revokeObjectURL(localVideoPreview);
+    if (localFloorPlanPreview) URL.revokeObjectURL(localFloorPlanPreview);
+  };
+
+  const renderStepContent = () => {
+    if (localStep === 0) {
+      return (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Property Title</label>
+              <input
+                type="text"
+                value={localProperty.propertyTitle || localProperty.name || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setLocalProperty(prev => ({ ...prev, propertyTitle: val, name: val }));
+                }}
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+                placeholder="e.g. Green Valley 3BHK Apartment"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Property ID</label>
+              <input
+                type="text"
+                value={localProperty.id}
+                disabled
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 text-gray-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Property Type</label>
+              <select
+                value={localProperty.propertyType || localProperty.type || 'Apartment'}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setLocalProperty(prev => ({ ...prev, propertyType: val, type: val }));
+                }}
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+              >
+                {propertyTypeOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Status</label>
+              <select
+                value={localProperty.status}
+                onChange={(e) => setLocalProperty(prev => ({ ...prev, status: e.target.value }))}
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+              >
+                {statusOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Property Address</label>
+              <textarea
+                value={localProperty.propertyAddress || localProperty.location || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setLocalProperty(prev => ({ ...prev, propertyAddress: val, location: val }));
+                }}
+                rows="2"
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all resize-y"
+                placeholder="Enter complete property address"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">City</label>
+              <input
+                type="text"
+                value={localProperty.propertyCity || ''}
+                onChange={(e) => setLocalProperty(prev => ({ ...prev, propertyCity: e.target.value }))}
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+                placeholder="Enter city name"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Area Details</label>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  value={localProperty.builtUpArea || ''}
+                  onChange={(e) => setLocalProperty(prev => ({ ...prev, builtUpArea: e.target.value }))}
+                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+                  placeholder="Built-up (sq ft)"
+                />
+                <input
+                  type="number"
+                  value={localProperty.carpetArea || ''}
+                  onChange={(e) => setLocalProperty(prev => ({ ...prev, carpetArea: e.target.value }))}
+                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+                  placeholder="Carpet (sq ft)"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Bedrooms</label>
+              <select
+                value={localProperty.bedrooms || '2 BHK'}
+                onChange={(e) => setLocalProperty(prev => ({ ...prev, bedrooms: e.target.value }))}
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+              >
+                {bedroomOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Bathrooms</label>
+              <select
+                value={localProperty.bathrooms || '2'}
+                onChange={(e) => setLocalProperty(prev => ({ ...prev, bathrooms: e.target.value }))}
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+              >
+                {bathroomOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Furnishing Status</label>
+              <select
+                value={localProperty.furnishing || 'Fully Furnished'}
+                onChange={(e) => setLocalProperty(prev => ({ ...prev, furnishing: e.target.value }))}
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+              >
+                {furnishingOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Parking</label>
+              <select
+                value={localProperty.parking || '2 Cars'}
+                onChange={(e) => setLocalProperty(prev => ({ ...prev, parking: e.target.value }))}
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+              >
+                {parkingOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Listing Purpose</label>
+              <select
+                value={localProperty.listingPurpose || 'For Sale'}
+                onChange={(e) => setLocalProperty(prev => ({ ...prev, listingPurpose: e.target.value }))}
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+              >
+                {listingPurposeOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-0.5">Description</label>
+            <textarea
+              value={localProperty.description || ''}
+              onChange={(e) => setLocalProperty(prev => ({ ...prev, description: e.target.value }))}
+              rows="3"
+              className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all resize-y"
+              placeholder="Enter property description..."
+            />
+          </div>
+        </div>
+      );
+    } else if (localStep === 1) {
+      return (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Expected Price</label>
+              <input
+                type="text"
+                value={localProperty.expectedPrice || localProperty.price?.replace(/[^0-9]/g, '') || ''}
+                onChange={(e) => setLocalProperty(prev => ({ ...prev, expectedPrice: e.target.value }))}
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+                placeholder="e.g. 4500000"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Maintenance (₹/month)</label>
+              <input
+                type="text"
+                value={localProperty.maintenance || ''}
+                onChange={(e) => setLocalProperty(prev => ({ ...prev, maintenance: e.target.value }))}
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+                placeholder="e.g. 2000"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Available From</label>
+              <input
+                type="date"
+                value={localProperty.availableFrom || ''}
+                onChange={(e) => setLocalProperty(prev => ({ ...prev, availableFrom: e.target.value }))}
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-0.5">Price Display</label>
+              <input
+                type="text"
+                value={localProperty.price || ''}
+                onChange={(e) => setLocalProperty(prev => ({ ...prev, price: e.target.value }))}
+                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+                placeholder="e.g. ₹45,00,000"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-0.5">Area Display</label>
+            <input
+              type="text"
+              value={localProperty.area || ''}
+              onChange={(e) => setLocalProperty(prev => ({ ...prev, area: e.target.value }))}
+              className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+              placeholder="e.g. 1200 sq ft"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Select Amenities</label>
+            <div className="flex flex-wrap gap-1.5">
+              {availableAmenities.map(a => (
+                <span
+                  key={a}
+                  onClick={() => handleLocalAmenityToggle(a)}
+                  className={`px-2.5 py-1 text-xs rounded-full border cursor-pointer transition-all ${
+                    localProperty.selectedAmenities?.includes(a)
+                      ? 'bg-[#00695C] text-white border-[#00695C]'
+                      : 'bg-teal-50 text-[#00695C] border-teal-200 hover:bg-teal-100'
+                  }`}
+                >
+                  {a}
+                </span>
+              ))}
+              {localCustomAmenities.map(a => (
+                <span key={a} className="px-2.5 py-1 text-xs bg-[#00695C] text-white rounded-full border border-[#00695C] flex items-center gap-1">
+                  {a}
+                  <X className="w-3 h-3 cursor-pointer hover:text-red-200" onClick={() => handleLocalRemoveCustomAmenity(a)} />
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={localProperty.otherAmenities || ''}
+              onChange={(e) => setLocalProperty(prev => ({ ...prev, otherAmenities: e.target.value }))}
+              className="flex-1 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+              placeholder="e.g. Clubhouse, CCTV, Solar Panel..."
+              onKeyPress={(e) => e.key === 'Enter' && handleLocalAddCustomAmenity()}
+            />
+            <button
+              onClick={handleLocalAddCustomAmenity}
+              className="px-4 py-2 text-sm bg-[#00695C] text-white rounded-xl hover:bg-[#005A4F] transition-colors"
+            >
+              Add
+            </button>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-0.5">Features (comma separated)</label>
+            <input
+              type="text"
+              value={localProperty.features?.join(', ') || ''}
+              onChange={(e) => {
+                const features = e.target.value.split(',').map(f => f.trim());
+                setLocalProperty(prev => ({ ...prev, features }));
+              }}
+              className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
+              placeholder="2 BHK, Sea View, Parking, etc."
+            />
+          </div>
+        </div>
+      );
+    } else {
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 mb-2 pb-2 border-b-2 border-green-50">
+            <div className="w-1 h-4 bg-[#00695C] rounded" />
+            <h3 className="text-sm font-bold text-[#00695C]">Media Upload</h3>
+          </div>
+          <p className="text-xs text-gray-400 mb-3">📸 Upload property images and media</p>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Upload Cover Image</label>
+            <div className="border-2 border-dashed border-teal-300 rounded-xl p-4 text-center hover:bg-green-50 transition-colors">
+              <input type="file" accept="image/*" className="hidden" id="edit-cover" onChange={handleLocalCoverImageUpload} />
+              <label htmlFor="edit-cover" className="cursor-pointer flex flex-col items-center">
+                <ImagePlus className="mx-auto mb-2 w-8 h-8 text-[#00695C]" />
+                <span className="text-sm font-semibold text-[#00695C]">Upload Cover Image</span>
+                <span className="text-xs text-gray-400 mt-1">JPG, PNG (Max 2MB)</span>
+              </label>
+            </div>
+            {localCoverPreview && (
+              <div className="mt-2 relative">
+                <img src={localCoverPreview} alt="Cover" className="w-full h-24 object-cover rounded-lg border border-gray-200" />
+                <button onClick={removeLocalCoverImage} className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600">✕</button>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Upload Property Photos (Max 3)</label>
+            <div className="border-2 border-dashed border-teal-300 rounded-xl p-4 text-center hover:bg-green-50 transition-colors">
+              <input type="file" accept="image/*" multiple className="hidden" id="edit-photos" onChange={handleLocalImageUpload} disabled={localImagePreviews.length >= 3} />
+              <label htmlFor="edit-photos" className={`cursor-pointer flex flex-col items-center ${localImagePreviews.length >= 3 - ((localCoverPreview || localCoverImage) ? 1 : 0) ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                <ImagePlus className="mx-auto mb-2 w-8 h-8 text-[#00695C]" />
+                <span className="text-sm font-semibold text-[#00695C]">Upload Property Photos</span>
+                <span className="text-xs text-gray-400 mt-1">Max 3 photos</span>
+              </label>
+            </div>
+            {localImagePreviews.length > 0 && (
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {localImagePreviews.map((preview, idx) => (
+                  <div key={idx} className="relative">
+                    <img src={preview} alt={`Preview ${idx + 1}`} className="w-full h-20 object-cover rounded-lg border border-gray-200" />
+                    <button onClick={() => removeLocalImage(idx)} className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600">✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Upload Property Video (Optional)</label>
+            <div className="border-2 border-dashed border-teal-300 rounded-xl p-4 text-center hover:bg-green-50 transition-colors">
+              <input type="file" accept="video/mp4,video/mov" className="hidden" id="edit-video" onChange={handleLocalVideoUpload} />
+              <label htmlFor="edit-video" className="cursor-pointer flex flex-col items-center">
+                <Video className="mx-auto mb-2 w-8 h-8 text-[#00695C]" />
+                <span className="text-sm font-semibold text-[#00695C]">Upload Property Video Tour</span>
+                <span className="text-xs text-gray-400 mt-1">MP4/MOV (Max 10MB)</span>
+              </label>
+            </div>
+            {localVideoPreview && (
+              <div className="mt-2 relative">
+                <video src={localVideoPreview} controls className="w-full h-32 object-cover rounded-lg border border-gray-200" />
+                <button onClick={removeLocalVideo} className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full text-sm flex items-center justify-center hover:bg-red-600">✕</button>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Upload Floor Plan (PDF)</label>
+            <div className="border-2 border-dashed border-teal-300 rounded-xl p-4 text-center hover:bg-green-50 transition-colors">
+              <input type="file" accept=".pdf" className="hidden" id="edit-floorplan" onChange={handleLocalFloorPlanUpload} />
+              <label htmlFor="edit-floorplan" className="cursor-pointer flex flex-col items-center">
+                <FileText className="mx-auto mb-2 w-8 h-8 text-[#00695C]" />
+                <span className="text-sm font-semibold text-[#00695C]">Upload Floor Plan</span>
+                <span className="text-xs text-gray-400 mt-1">PDF (Max 5MB)</span>
+              </label>
+            </div>
+            {localFloorPlanPreview && (
+              <div className="mt-2 relative">
+                <p className="text-sm text-green-600">✓ {localFloorPlanFile?.name}</p>
+                <button onClick={removeLocalFloorPlan} className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600">✕</button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fadeIn p-2 sm:p-4 md:p-6">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[90%] sm:max-w-[95%]
+       lg:max-w-3xl max-h-[80vh] flex flex-col animate-scaleIn">
+        <div className="bg-gradient-to-r from-[#00695C] to-[#26A69A] px-4 sm:px-6 md:px-8 py-3 sm:py-4 md:py-5 flex items-center justify-between rounded-t-3xl flex-shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Edit2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+            <h2 className="text-white text-lg sm:text-xl font-bold">Edit Property</h2>
+          </div>
+          <button 
+            onClick={handleLocalCancel}
+            className="text-white/80 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110"
+          >
+            <X className="w-5 h-5 sm:w-6 sm:h-6" />
+          </button>
+        </div>
+
+        <div className="flex border-b border-gray-100 flex-shrink-0 px-3 sm:px-4 pt-2 overflow-x-auto">
+          {editSteps.map((stepName, idx) => (
+            <button
+              key={idx}
+              onClick={() => setLocalStep(idx)}
+              className={`px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-bold border-b-2 transition-all whitespace-nowrap ${
+                localStep === idx
+                  ? 'border-[#00695C] text-[#00695C]'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {stepName}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1">
+          {renderStepContent()}
+        </div>
+
+        <div className="px-4 sm:px-6 py-3 sm:py-4 bg-gray-50 border-t border-gray-100 rounded-b-3xl flex flex-wrap justify-between items-center gap-3 flex-shrink-0">
+          <div className="flex gap-2">
+            {localStep > 0 && (
+              <button
+                onClick={handleLocalBack}
+                className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-bold text-[#00695C] bg-teal-50 rounded-xl hover:bg-teal-100 transition-all"
+              >
+                ← Back
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2 sm:gap-3">
+            <button
+              onClick={handleLocalCancel}
+              className="px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl border-2 border-gray-300 text-gray-700 text-xs sm:text-sm font-bold hover:bg-gray-100 transition-all duration-300"
+            >
+              Cancel
+            </button>
+            {localStep < editSteps.length - 1 ? (
+              <button
+                onClick={handleLocalNext}
+                className="px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-[#00695C] to-[#26A69A] text-white text-xs sm:text-sm font-bold hover:shadow-lg transition-all duration-300 flex items-center gap-1 sm:gap-2"
+              >
+                Next →
+              </button>
+            ) : (
+              <button
+                onClick={handleLocalSave}
+                className="px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-[#00695C] to-[#26A69A] text-white text-xs sm:text-sm font-bold hover:shadow-lg transition-all duration-300 flex items-center gap-1 sm:gap-2"
+              >
+                <Save className="w-3 h-3 sm:w-4 sm:h-4" />
+                Save Changes
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============ PROPERTY DETAILS MODAL ============
+const PropertyDetailsModal = ({ property, onClose, onAddImages, onRemoveImage, onRemoveCover, onEdit, onDelete }) => {
+  if (!property) return null;
+
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const detailImageInputRef = useRef(null);
+  const rawImages = property.images || [];
+  const hasImages = rawImages.length > 0;
+  const images = hasImages ? rawImages : [NO_IMAGE_PLACEHOLDER];
+
+  useEffect(() => {
+    if (currentImageIndex >= images.length) {
+      setCurrentImageIndex(Math.max(0, images.length - 1));
+    }
+  }, [images.length]);
+
+  const nextImage = () => {
+    setCurrentImageIndex((prev) => (prev + 1) % images.length);
+  };
+
+  const prevImage = () => {
+    setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
+  };
+
+  const handleAddImagesChange = (e) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      onAddImages(property.id, files);
+    }
+    e.target.value = '';
+  };
+
+  const handleDeleteImage = (idx) => {
+    onRemoveImage(property.id, idx);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fadeIn p-2 sm:p-4 md:p-6">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[90%]  sm:max-w-[95%]  lg:max-w-2xl h-[80vh] flex flex-col animate-scaleIn">
+        <div className="bg-gradient-to-r from-[#00695C] to-[#26A69A] px-3 sm:px-4 md:px-5 py-2 sm:py-3 flex items-center justify-between rounded-t-2xl flex-shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+            <div className="bg-white/20 p-1 sm:p-1.5 rounded-lg">
+              <Home className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+            </div>
+            <h2 className="text-white text-base sm:text-lg md:text-xl font-bold truncate">
+              {property.name}
+            </h2>
+          </div>
+          <button 
+            onClick={onClose}
+            className="text-white/80 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110 flex-shrink-0"
+          >
+            <X className="w-4 h-4 sm:w-5 sm:h-5" />
+          </button>
+        </div>
+
+        <div className="p-3 sm:p-4 overflow-y-auto flex-1 space-y-3 sm:space-y-4">
+          {/* <div>
+            <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Cover Image</p>
+            <div className="relative rounded-xl overflow-hidden bg-gray-100 h-32 sm:h-36">
+              <img
+                src={property.coverImage || NO_IMAGE_PLACEHOLDER}
+                alt={`${property.name} cover`}
+                className="w-full h-full object-cover"
+                onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }}
+              />
+              {property.coverImage && (
+                <button
+                  onClick={() => onRemoveCover(property.id)}
+                  title="Delete cover image"
+                  className="absolute bottom-1.5 sm:bottom-2 left-1.5 sm:left-2 flex items-center gap-1 bg-red-500/90 hover:bg-red-600 text-white text-[9px] sm:text-[10px] font-bold px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg shadow-lg transition-all duration-300 hover:scale-105"
+                >
+                  <Trash2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                  Delete
+                </button>
+              )}
+            </div>
+          </div> */}
+
+          <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Property Photos</p>
+          <div className="relative rounded-xl overflow-hidden bg-gray-100 h-48 sm:h-56 md:h-64">
+            <img
+              src={images[currentImageIndex]}
+              alt={property.name}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                e.target.src = NO_IMAGE_PLACEHOLDER;
+              }}
+            />
+
+            {images.length > 1 && (
+              <>
+                <button
+                  onClick={prevImage}
+                  className="absolute left-1.5 sm:left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5 sm:p-2 transition-all duration-300"
+                >
+                  <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+                <button
+                  onClick={nextImage}
+                  className="absolute right-1.5 sm:right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5 sm:p-2 transition-all duration-300"
+                >
+                  <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+                <div className="absolute bottom-1.5 sm:bottom-2 right-1.5 sm:right-2 bg-black/60 text-white text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full">
+                  {currentImageIndex + 1} / {images.length}
+                </div>
+              </>
+            )}
+
+            {hasImages && (
+              <button
+                onClick={() => handleDeleteImage(currentImageIndex)}
+                title="Delete this image"
+                className="absolute bottom-1.5 sm:bottom-2 left-1.5 sm:left-2 flex items-center gap-1 bg-red-500/90 hover:bg-red-600 text-white text-[9px] sm:text-[10px] font-bold px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg shadow-lg transition-all duration-300 hover:scale-105"
+              >
+                <Trash2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                Delete
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between">
+            <p className="text-[9px] sm:text-[10px] text-gray-500 font-medium">
+              {hasImages ? `${images.length} image${images.length > 1 ? 's' : ''}` : 'No images uploaded yet'}
+            </p>
+            <button
+              onClick={() => detailImageInputRef.current?.click()}
+              className="flex items-center gap-1 sm:gap-1.5 bg-gradient-to-r from-[#00695C] to-[#26A69A] text-white text-[9px] sm:text-[10px] font-bold px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105"
+            >
+              <Upload className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+              Add Image
+            </button>
+            <input
+              ref={detailImageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handleAddImagesChange}
+            />
+          </div>
+
+          {images.length > 1 && (
+            <div className="flex gap-1 sm:gap-1.5 overflow-x-auto pb-1 sm:pb-1.5">
+              {images.map((img, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setCurrentImageIndex(idx)}
+                  className={`flex-shrink-0 w-12 sm:w-14 md:w-16 h-9 sm:h-10 md:h-12 rounded-lg overflow-hidden border-2 transition-all duration-300 ${
+                    currentImageIndex === idx ? 'border-[#00695C] shadow-md' : 'border-gray-200 hover:border-gray-400'
+                  }`}
+                >
+                  <img 
+                    src={img} 
+                    alt={`Thumbnail ${idx + 1}`}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.target.src = NO_IMAGE_PLACEHOLDER;
+                    }}
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+              <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg">
+                <Building className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" />
+              </div>
+              <div>
+                <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Property ID</p>
+                <p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.id}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+              <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg">
+                <CreditCard className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" />
+              </div>
+              <div>
+                <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Price</p>
+                <p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.price}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+              <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg">
+                <Bed className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" />
+              </div>
+              <div>
+                <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Bedrooms</p>
+                <p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.bedrooms || 'N/A'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+              <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg">
+                <Bath className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" />
+              </div>
+              <div>
+                <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Bathrooms</p>
+                <p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.bathrooms || 'N/A'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+              <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg">
+                <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" />
+              </div>
+              <div>
+                <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Location</p>
+                <p className="text-[10px] sm:text-xs font-bold text-gray-800 truncate">{property.location}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+              <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg">
+                <Calendar className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" />
+              </div>
+              <div>
+                <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Posted</p>
+                <p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.postedDate}</p>
+              </div>
+            </div>
+          </div>
+
+          {property.description && (
+            <div className="bg-gray-50 rounded-lg p-2 sm:p-3">
+              <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-0.5 sm:mb-1">Description</h3>
+              <p className="text-[10px] sm:text-xs text-gray-600 leading-relaxed">{property.description}</p>
+            </div>
+          )}
+
+          {property.features && property.features.length > 0 && (
+            <div>
+              <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-1 sm:mb-1.5">Features</h3>
+              <div className="flex flex-wrap gap-1 sm:gap-1.5">
+                {property.features.map((feature, index) => (
+                  <span key={index} className="px-2 sm:px-2.5 py-0.5 sm:py-1 bg-[#00695C]/10 text-[#00695C] rounded-lg text-[9px] sm:text-[10px] font-bold">
+                    {feature}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {property.selectedAmenities && property.selectedAmenities.length > 0 && (
+            <div>
+              <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-1 sm:mb-1.5">Amenities</h3>
+              <div className="flex flex-wrap gap-1 sm:gap-1.5">
+                {property.selectedAmenities.map((amenity, index) => (
+                  <span key={index} className="px-2 sm:px-2.5 py-0.5 sm:py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] sm:text-[10px] font-bold">
+                    {amenity}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {property.contactPersonDetails && (property.contactPersonDetails.name || property.contactPersonDetails.mobile) && (
+            <div>
+              <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-1 sm:mb-1.5">Contact Person</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2">
+                {property.contactPersonDetails.name && (
+                  <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+                    <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><User className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
+                    <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Name</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.name}</p></div>
+                  </div>
+                )}
+                {property.contactPersonDetails.mobile && (
+                  <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+                    <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
+                    <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Mobile</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.mobile}</p></div>
+                  </div>
+                )}
+                {property.contactPersonDetails.emailId && (
+                  <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+                    <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><Mail className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
+                    <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Email</p><p className="text-[10px] sm:text-xs font-bold text-gray-800 truncate">{property.contactPersonDetails.emailId}</p></div>
+                  </div>
+                )}
+                {property.contactPersonDetails.companyName && (
+                  <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+                    <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><Building className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
+                    <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Company</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.companyName}</p></div>
+                  </div>
+                )}
+                {property.contactPersonDetails.reraRegistrationNumber && (
+                  <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+                    <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><FileCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
+                    <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">RERA No.</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.reraRegistrationNumber}</p></div>
+                  </div>
+                )}
+                {property.contactPersonDetails.experience && (
+                  <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
+                    <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><Award className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
+                    <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Experience</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.experience} yrs</p></div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {property.documents && property.documents.length > 0 && (
+            <div>
+              <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-1 sm:mb-1.5">Documents</h3>
+              <div className="flex flex-wrap gap-1 sm:gap-1.5">
+                {property.documents.map((doc, index) => (
+                  <a
+                    key={doc.id || index}
+                    href={doc.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 bg-[#00695C]/10 text-[#00695C] rounded-lg text-[9px] sm:text-[10px] font-bold hover:bg-[#00695C]/20 transition-colors"
+                  >
+                    <FileText className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                    {doc.name}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {images.length > 0 && (
+            <div>
+              <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-1.5 sm:mb-2">All Property Images</h3>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1.5 sm:gap-2">
+                {images.map((img, idx) => (
+                  <div 
+                    key={idx} 
+                    className={`group/thumb relative rounded-lg overflow-hidden bg-gray-100 aspect-square cursor-pointer border-2 transition-all duration-300 hover:scale-105 ${
+                      currentImageIndex === idx ? 'border-[#00695C] shadow-md' : 'border-gray-200 hover:border-gray-400'
+                    }`}
+                    onClick={() => setCurrentImageIndex(idx)}
+                  >
+                    <img 
+                      src={img} 
+                      alt={`Property Image ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.target.src = NO_IMAGE_PLACEHOLDER;
+                      }}
+                    />
+                    {currentImageIndex === idx && (
+                      <div className="absolute inset-0 bg-[#00695C]/20 flex items-center justify-center">
+                        <div className="bg-[#00695C] text-white text-[8px] sm:text-[10px] font-bold px-1 sm:px-2 py-0.5 rounded-full">
+                          Active
+                        </div>
+                      </div>
+                    )}
+                    {hasImages && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteImage(idx);
+                        }}
+                        title="Delete image"
+                        className="absolute top-0.5 sm:top-1 right-0.5 sm:right-1 bg-red-500/90 hover:bg-red-600 text-white p-0.5 sm:p-1 rounded-md shadow-lg opacity-0 group-hover/thumb:opacity-100 transition-all duration-300"
+                      >
+                        <Trash2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="px-3 sm:px-4 py-2 sm:py-3 bg-gray-50 border-t border-gray-100 rounded-b-2xl flex flex-wrap gap-2 sm:gap-2.5 flex-shrink-0">
+          <button 
+            onClick={() => {
+              onClose();
+              onEdit(property);
+            }}
+            className="flex-1 min-w-[80px] sm:min-w-[100px] px-3 sm:px-4 py-2 sm:py-2.5 bg-gradient-to-r from-[#00695C] to-[#26A69A] text-white rounded-xl text-xs sm:text-sm font-bold hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center justify-center gap-1 sm:gap-2"
+          >
+            <Edit2 className="w-3 h-3 sm:w-4 sm:h-4" />
+            Edit Property
+          </button>
+          <button 
+            onClick={() => {
+              onClose();
+              onDelete(property);
+            }}
+            className="flex-1 min-w-[80px] sm:min-w-[100px] px-3 sm:px-4 py-2 sm:py-2.5 bg-red-500 text-white rounded-xl text-xs sm:text-sm font-bold hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center justify-center gap-1 sm:gap-2"
+          >
+            <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============ DELETE PROPERTY CONFIRM MODAL ============
+const DeletePropertyConfirmModal = ({ property, onConfirm, onCancel }) => {
+  if (!property) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fadeIn p-3 sm:p-4 md:p-6">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full animate-scaleIn p-4 sm:p-6 md:p-8">
+        <div className="flex items-center gap-3 sm:gap-4 mb-3 sm:mb-4">
+          <div className="bg-red-100 p-2 sm:p-3 rounded-2xl">
+            <AlertTriangle className="w-6 h-6 sm:w-8 sm:h-8 text-red-500 animate-pulse" />
+          </div>
+          <h3 className="text-lg sm:text-xl font-bold text-gray-800">Delete Property</h3>
+        </div>
+        <p className="text-sm sm:text-base text-gray-600 mb-2">
+          Are you sure you want to delete <span className="font-bold text-[#00695C]">{property.name}</span>?
+        </p>
+        <p className="text-xs sm:text-sm text-red-500 mb-4 sm:mb-6">This action cannot be undone.</p>
+        <div className="flex justify-end gap-2 sm:gap-3">
+          <button
+            onClick={onCancel}
+            className="px-4 sm:px-6 py-2 sm:py-3 rounded-2xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-100 transition-all duration-300 hover:scale-105 text-sm sm:text-base"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 sm:px-6 py-2 sm:py-3 rounded-2xl bg-gradient-to-r from-red-500 to-rose-500 text-white font-bold hover:from-red-600 hover:to-rose-600 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 text-sm sm:text-base"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const OwnerProfile = () => {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('personal');
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
+  const { toast, showToast, hideToast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteItem, setDeleteItem] = useState(null);
   const [showProfilePhotoDeleteConfirm, setShowProfilePhotoDeleteConfirm] = useState(false);
@@ -393,6 +1494,13 @@ const OwnerProfile = () => {
         });
       });
       
+      let vendorDocs = {};
+      try {
+        vendorDocs = await getVendorDocumentsByField('owner');
+      } catch (docError) {
+        console.error('⚠️ Failed to load vendor documents:', docError);
+      }
+
       setDocuments({
         aadhaarCard: null, panCard: null, passportPhoto: profilePhotoUrl,
         coverImage: allImages.length > 0 ? allImages[0] : null,
@@ -402,8 +1510,9 @@ const OwnerProfile = () => {
         encumbranceCertificate: null, propertyTaxReceipt: null,
         buildingApprovalPlan: null, completionCertificate: null,
         occupancyCertificate: null, rentalAgreement: null, otherDocuments: allDocuments,
+        ...vendorDocs,
       });
-      
+
     } catch (error) {
       console.error('❌ Error fetching profile data:', error);
       setError(error.message || 'Failed to load profile data');
@@ -424,7 +1533,7 @@ const OwnerProfile = () => {
         try {
           await uploadDocument({ role: 'owner', field, file, propertyId: null });
           setDocuments(prev => ({ ...prev, [field]: file }));
-          showSuccessToast();
+          showSuccessToast('Document uploaded successfully!');
         } catch (error) {
           console.error('❌ Error uploading document:', error);
           alert('Failed to upload document. Please try again.');
@@ -437,11 +1546,24 @@ const OwnerProfile = () => {
     }
   };
 
-  const handlePdfView = (field) => {
+  const handlePdfView = async (field) => {
     const file = documents[field];
-    if (file) {
+    if (!file) return;
+
+    if (file instanceof window.File || typeof file === 'string') {
       setPdfToView(file);
       setShowPdfViewer(true);
+      return;
+    }
+
+    // Metadata-only entry loaded from the server (private document) -
+    // mint a fresh signed URL only now, at view time.
+    try {
+      const viewUrl = await getVendorDocumentViewUrl('owner', field);
+      setPdfToView(viewUrl);
+      setShowPdfViewer(true);
+    } catch (error) {
+      alert('Failed to open document. Please try again.');
     }
   };
 
@@ -481,7 +1603,7 @@ const handleToggleStatus = async (property) => {
         propertyStatus: newStatus,
       }));
     }
-    showSuccessToast();
+    showSuccessToast('Property status updated successfully!');
   } catch (error) {
     console.error('❌ Error updating property status:', error);
     alert(error.response?.data?.detail || 'Failed to update property status. Please try again.');
@@ -537,8 +1659,8 @@ const handleToggleStatus = async (property) => {
           setProperties(updatedProperties);
         }
       }
-      
-      showSuccessToast();
+
+      showSuccessToast('File uploaded successfully!');
     }
   };
 
@@ -573,8 +1695,8 @@ const handleToggleStatus = async (property) => {
           setProperties(updatedProperties);
         }
       }
-      
-      showSuccessToast();
+
+      showSuccessToast('Files uploaded successfully!');
     }
   };
 
@@ -600,7 +1722,7 @@ const handleToggleStatus = async (property) => {
         }
         setShowDeleteConfirm(false);
         setDeleteItem(null);
-        showSuccessToast();
+        showSuccessToast('Document deleted successfully!');
       } catch (error) {
         console.error('❌ Error deleting document:', error);
         alert('Failed to delete document. Please try again.');
@@ -621,7 +1743,7 @@ const handleToggleStatus = async (property) => {
       setDocuments(prev => ({ ...prev, passportPhoto: null }));
       if (profilePhotoInputRef.current) profilePhotoInputRef.current.value = '';
       setShowProfilePhotoDeleteConfirm(false);
-      showSuccessToast();
+      showSuccessToast('Profile photo deleted successfully!');
       await fetchProfileData();
     } catch (error) {
       console.error('❌ Error deleting profile photo:', error);
@@ -656,7 +1778,7 @@ const handleToggleStatus = async (property) => {
         const response = await uploadProfilePhoto('owner', file);
         if (response.data?.fileUrl) {
           setDocuments(prev => ({ ...prev, passportPhoto: response.data.fileUrl }));
-          showSuccessToast();
+          showSuccessToast('Profile photo uploaded successfully!');
           await fetchProfileData();
         }
       } catch (error) {
@@ -704,7 +1826,7 @@ const handleToggleStatus = async (property) => {
       };
       await updateMyProfile('owner', profileData);
       setShowEditModal(false);
-      showSuccessToast();
+      showSuccessToast('Profile updated successfully!');
       await fetchProfileData();
     } catch (error) {
       console.error('❌ Error updating profile:', error);
@@ -714,9 +1836,8 @@ const handleToggleStatus = async (property) => {
     }
   };
 
-  const showSuccessToast = () => {
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+  const showSuccessToast = (message = 'Operation completed successfully!') => {
+    showToast(message, 'success');
   };
 
   const getFileSize = (bytes) => {
@@ -787,7 +1908,7 @@ const handleToggleStatus = async (property) => {
       return newItems;
     });
 
-    showSuccessToast();
+    showSuccessToast('Item deleted successfully!');
   };
 
   // ============ INVOICE PDF HANDLER ============
@@ -927,9 +2048,81 @@ const handleToggleStatus = async (property) => {
     if (!updatedProperty) return;
     setIsLoading(true);
     try {
+      const propertyId = updatedProperty.id;
+      const media = updatedProperty._media || {};
       const backendData = mapPropertyToBackend(updatedProperty);
-      await updateVendorProperty('owner', updatedProperty.id, backendData);
-      setProperties(prev => prev.map(p => p.id === updatedProperty.id ? updatedProperty : p));
+      await updateVendorProperty('owner', propertyId, backendData);
+
+      // images/coverImage on updatedProperty are never touched by local edit
+      // state (see EditPropertyModal) - they still reflect what the backend
+      // had before this save (coverImage and images/gallery are already
+      // separate concepts there), so they're a safe source for the original
+      // order layout used to reconcile deletions below.
+      const originalCover = updatedProperty.coverImage || null;
+      const originalGalleryPhotos = updatedProperty.images || [];
+      const hadCoverOriginally = !!originalCover;
+
+      let finalImages = [...(media.existingPhotoUrls || [])];
+      let finalCoverUrl = media.coverUrl || null;
+
+      // Cover replaced with a new file, or explicitly removed with no
+      // replacement: either way the old cover row must be deleted. Only
+      // upload a new one if a file was actually picked - a removed cover
+      // stays empty, it is never backfilled from the gallery.
+      if (hadCoverOriginally && (media.coverFile || !media.coverUrl)) {
+        await deletePropertyImage('owner', propertyId, 0);
+      }
+      if (media.coverFile) {
+        const coverResult = await uploadPropertyImage('owner', propertyId, media.coverFile, 0, true);
+        finalCoverUrl = coverResult?.data?.file_url || null;
+      }
+
+      // Reconcile the gallery: any original (non-cover) photo the vendor
+      // removed in the edit form must actually be deleted server-side too -
+      // otherwise it silently stays on the property and keeps counting
+      // against the 3-photo cap even though the UI no longer shows it. This
+      // makes editing replace the gallery rather than just append to it.
+      // `order` matches array position, same convention "Remove Image" in
+      // view mode already relies on.
+      const coverOrderOffset = hadCoverOriginally ? 1 : 0;
+      const keptSet = new Set(media.existingPhotoUrls || []);
+      const freedOrders = [];
+      for (let i = 0; i < originalGalleryPhotos.length; i++) {
+        if (!keptSet.has(originalGalleryPhotos[i])) {
+          const order = i + coverOrderOffset;
+          await deletePropertyImage('owner', propertyId, order);
+          freedOrders.push(order);
+        }
+      }
+
+      if (media.newPhotoFiles && media.newPhotoFiles.length > 0) {
+        let nextFallbackOrder = coverOrderOffset + originalGalleryPhotos.length;
+        for (const file of media.newPhotoFiles) {
+          const order = freedOrders.length > 0 ? freedOrders.shift() : nextFallbackOrder++;
+          const result = await uploadPropertyImage('owner', propertyId, file, order);
+          if (result?.data?.file_url) finalImages.push(result.data.file_url);
+        }
+      }
+
+      if (media.videoFile) {
+        await uploadPropertyVideo('owner', propertyId, media.videoFile);
+      }
+
+      // The floor plan picked in the edit form was only ever held in local
+      // state - it never made it into the JSON save payload, so it silently
+      // vanished on save. Upload it through the property-documents endpoint.
+      if (media.floorPlanFile) {
+        await addPropertyDocuments(propertyId, [media.floorPlanFile], ['floor_plan']);
+      }
+
+      const finalProperty = {
+        ...updatedProperty,
+        images: finalCoverUrl ? [finalCoverUrl, ...finalImages] : finalImages,
+        coverImage: finalCoverUrl,
+      };
+      delete finalProperty._media;
+
+      setProperties(prev => prev.map(p => p.id === propertyId ? finalProperty : p));
       setShowEditPropertyModal(false);
       setEditingProperty(null);
       setEditPropertyStep(0);
@@ -938,10 +2131,10 @@ const handleToggleStatus = async (property) => {
       setFloorPlanPreview(null);
       setVideoPreview(null);
       setCustomAmenitiesList([]);
-      showSuccessToast();
+      showSuccessToast('Property updated successfully!');
     } catch (error) {
       console.error('❌ Error updating property:', error);
-      alert('Failed to update property. Please try again.');
+      alert(error?.response?.data?.detail || 'Failed to update property. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -959,7 +2152,7 @@ const handleToggleStatus = async (property) => {
       setProperties(prev => prev.filter(p => p.id !== propertyToDelete.id));
       setShowDeletePropertyConfirm(false);
       setPropertyToDelete(null);
-      showSuccessToast();
+      showSuccessToast('Property deleted successfully!');
     } catch (error) {
       console.error('❌ Error deleting property:', error);
       alert('Failed to delete property. Please try again.');
@@ -972,27 +2165,40 @@ const handleToggleStatus = async (property) => {
   const handleAddPropertyDetailImages = async (propertyId, files) => {
     const fileArray = Array.from(files);
     if (fileArray.length === 0) return;
+
+    const existingProperty = properties.find(p => p.id === propertyId);
+    // images is gallery-only (coverImage is separate) - the 3-image cap
+    // covers gallery photos only, the cover has its own dedicated slot.
+    const existingCount = existingProperty?.images?.length || 0;
+    const coverOffset = existingProperty?.coverImage ? 1 : 0;
+    const remainingSlots = Math.max(0, 3 - existingCount);
+    if (fileArray.length > remainingSlots) {
+      alert(`You can only upload ${remainingSlots} more image(s). Maximum 3 property photos allowed.`);
+    }
+    const limitedFiles = fileArray.slice(0, remainingSlots);
+    if (limitedFiles.length === 0) return;
+
     setIsLoading(true);
     try {
-      for (const file of fileArray) {
-        await uploadPropertyImage('owner', propertyId, file);
+      const newImageUrls = [];
+      for (let i = 0; i < limitedFiles.length; i++) {
+        const result = await uploadPropertyImage('owner', propertyId, limitedFiles[i], coverOffset + existingCount + i);
+        if (result?.data?.file_url) newImageUrls.push(result.data.file_url);
       }
       const updatedProperties = properties.map(p => {
         if (p.id === propertyId) {
-          const newImageUrls = fileArray.map(f => URL.createObjectURL(f));
           return { ...p, images: [...(p.images || []), ...newImageUrls] };
         }
         return p;
       });
       setProperties(updatedProperties);
       if (selectedProperty && selectedProperty.id === propertyId) {
-        const newImageUrls = fileArray.map(f => URL.createObjectURL(f));
         setSelectedProperty({
           ...selectedProperty,
           images: [...(selectedProperty.images || []), ...newImageUrls]
         });
       }
-      showSuccessToast();
+      showSuccessToast('Property image uploaded successfully!');
     } catch (error) {
       console.error('❌ Error uploading property images:', error);
       alert('Failed to upload images. Please try again.');
@@ -1004,22 +2210,49 @@ const handleToggleStatus = async (property) => {
   const handleRemovePropertyDetailImage = async (propertyId, imageIndex) => {
     setIsLoading(true);
     try {
-      await deletePropertyImage('owner', propertyId, imageIndex);
+      // imageIndex is a position within the gallery-only images array - the
+      // cover (if any) sits at backend order 0, ahead of every gallery slot.
+      const existingProperty = properties.find(p => p.id === propertyId);
+      const coverOffset = existingProperty?.coverImage ? 1 : 0;
+      await deletePropertyImage('owner', propertyId, coverOffset + imageIndex);
       setProperties(prev =>
-        prev.map(p => p.id === propertyId 
+        prev.map(p => p.id === propertyId
           ? { ...p, images: (p.images || []).filter((_, i) => i !== imageIndex) }
           : p
         )
       );
       setSelectedProperty(prev =>
-        prev && prev.id === propertyId 
+        prev && prev.id === propertyId
           ? { ...prev, images: (prev.images || []).filter((_, i) => i !== imageIndex) }
           : prev
       );
-      showSuccessToast();
+      showSuccessToast('Property image deleted successfully!');
     } catch (error) {
       console.error('❌ Error deleting property image:', error);
       alert('Failed to delete image. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Deletes the cover only - the cover slot is left empty afterwards, it is
+  // never backfilled from the gallery. A new cover must be set explicitly
+  // (edit form / dedicated set-cover action), matching how the backend
+  // now tracks coverImage and gallery images as separate concepts.
+  const handleRemovePropertyCover = async (propertyId) => {
+    setIsLoading(true);
+    try {
+      await deletePropertyImage('owner', propertyId, 0);
+      setProperties(prev =>
+        prev.map(p => p.id === propertyId ? { ...p, coverImage: null } : p)
+      );
+      setSelectedProperty(prev =>
+        prev && prev.id === propertyId ? { ...prev, coverImage: null } : prev
+      );
+      showSuccessToast('Cover image removed successfully!');
+    } catch (error) {
+      console.error('❌ Error deleting cover image:', error);
+      alert('Failed to delete cover image. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -1045,11 +2278,11 @@ const handleToggleStatus = async (property) => {
     
     if (filterStatus && filterStatus !== 'all') {
       const statusLower = filterStatus.toLowerCase();
-      filtered = filtered.filter(prop => 
-        prop.status.toLowerCase() === statusLower
+      filtered = filtered.filter(prop =>
+        (prop.propertyStatus || 'ACTIVE').toLowerCase() === statusLower
       );
     }
-    
+
     return filtered;
   };
 
@@ -1107,1072 +2340,6 @@ const handleToggleStatus = async (property) => {
     );
   };
 
-  // ============ EDIT PROPERTY MODAL ============
-  const EditPropertyModal = ({ property, onSave, onCancel }) => {
-    if (!property) return null;
-
-    const editSteps = ['Property Details', 'Pricing & Amenities', 'Media Upload'];
-
-    const [localStep, setLocalStep] = useState(0);
-    const [localProperty, setLocalProperty] = useState({ ...property });
-    const [localCustomAmenities, setLocalCustomAmenities] = useState([]);
-    
-    const [localImagePreviews, setLocalImagePreviews] = useState([]);
-    const [localCoverPreview, setLocalCoverPreview] = useState(null);
-    const [localVideoPreview, setLocalVideoPreview] = useState(null);
-    const [localFloorPlanPreview, setLocalFloorPlanPreview] = useState(null);
-    const [localCoverImage, setLocalCoverImage] = useState(null);
-    const [localVideoFile, setLocalVideoFile] = useState(null);
-    const [localFloorPlanFile, setLocalFloorPlanFile] = useState(null);
-    const [newImageFiles, setNewImageFiles] = useState([]);
-
-    useEffect(() => {
-      setLocalProperty({ ...property });
-      if (property.selectedAmenities) {
-        const custom = property.selectedAmenities.filter(a => !availableAmenities.includes(a));
-        setLocalCustomAmenities(custom);
-      }
-      if (property.images && property.images.length > 0) {
-        setLocalImagePreviews(property.images.map(img => img));
-      }
-    }, [property]);
-
-    const handleLocalImageUpload = (e) => {
-      const files = Array.from(e.target.files);
-      const remainingSlots = Math.max(0, 3 - localImagePreviews.length);
-      if (files.length > remainingSlots) {
-        alert(`You can only upload ${remainingSlots} more image(s). Maximum 3 images allowed.`);
-      }
-      const limitedFiles = files.slice(0, remainingSlots);
-      const newPreviews = limitedFiles.map(file => URL.createObjectURL(file));
-      setLocalImagePreviews([...localImagePreviews, ...newPreviews]);
-      setNewImageFiles([...newImageFiles, ...limitedFiles]);
-    };
-
-    const removeLocalImage = (index) => {
-      const newPreviews = localImagePreviews.filter((_, i) => i !== index);
-      setLocalImagePreviews(newPreviews);
-      const newFiles = newImageFiles.filter((_, i) => i !== index);
-      setNewImageFiles(newFiles);
-    };
-
-    const handleLocalCoverImageUpload = (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        if (file.size > 2 * 1024 * 1024) {
-          alert('Cover image must be less than 2MB');
-          return;
-        }
-        setLocalCoverPreview(URL.createObjectURL(file));
-        setLocalCoverImage(file);
-      }
-    };
-
-    const removeLocalCoverImage = () => {
-      if (localCoverPreview) URL.revokeObjectURL(localCoverPreview);
-      setLocalCoverPreview(null);
-      setLocalCoverImage(null);
-    };
-
-    const handleLocalVideoUpload = (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        if (file.size > 10 * 1024 * 1024) {
-          alert('Video must be less than 10MB');
-          return;
-        }
-        setLocalVideoPreview(URL.createObjectURL(file));
-        setLocalVideoFile(file);
-      }
-    };
-
-    const removeLocalVideo = () => {
-      if (localVideoPreview) URL.revokeObjectURL(localVideoPreview);
-      setLocalVideoPreview(null);
-      setLocalVideoFile(null);
-    };
-
-    const handleLocalFloorPlanUpload = (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        if (file.type !== 'application/pdf') {
-          alert('Floor plan must be a PDF file');
-          return;
-        }
-        if (file.size > 5 * 1024 * 1024) {
-          alert('Floor plan must be less than 5MB');
-          return;
-        }
-        setLocalFloorPlanPreview(URL.createObjectURL(file));
-        setLocalFloorPlanFile(file);
-      }
-    };
-
-    const removeLocalFloorPlan = () => {
-      if (localFloorPlanPreview) URL.revokeObjectURL(localFloorPlanPreview);
-      setLocalFloorPlanPreview(null);
-      setLocalFloorPlanFile(null);
-    };
-
-    const handleLocalChange = (field, value) => {
-      setLocalProperty(prev => ({ ...prev, [field]: value }));
-    };
-
-    const handleLocalAmenityToggle = (amenity) => {
-      const current = localProperty.selectedAmenities || [];
-      if (current.includes(amenity)) {
-        setLocalProperty(prev => ({
-          ...prev,
-          selectedAmenities: prev.selectedAmenities.filter(a => a !== amenity)
-        }));
-      } else {
-        setLocalProperty(prev => ({
-          ...prev,
-          selectedAmenities: [...(prev.selectedAmenities || []), amenity]
-        }));
-      }
-    };
-
-    const handleLocalAddCustomAmenity = () => {
-      if (localProperty.otherAmenities) {
-        const newAmenity = localProperty.otherAmenities.trim();
-        if (newAmenity && !localProperty.selectedAmenities.includes(newAmenity) && !localCustomAmenities.includes(newAmenity)) {
-          setLocalCustomAmenities(prev => [...prev, newAmenity]);
-          setLocalProperty(prev => ({
-            ...prev,
-            selectedAmenities: [...(prev.selectedAmenities || []), newAmenity],
-            otherAmenities: ''
-          }));
-        }
-      }
-    };
-
-    const handleLocalRemoveCustomAmenity = (amenity) => {
-      setLocalCustomAmenities(prev => prev.filter(a => a !== amenity));
-      setLocalProperty(prev => ({
-        ...prev,
-        selectedAmenities: prev.selectedAmenities.filter(a => a !== amenity)
-      }));
-    };
-
-    const handleLocalNext = () => {
-      setLocalStep(prev => prev + 1);
-    };
-
-    const handleLocalBack = () => {
-      setLocalStep(prev => prev - 1);
-    };
-
-    const handleLocalSave = () => {
-      const updatedProperty = {
-        ...localProperty,
-      };
-      
-      let finalImages = [...localImagePreviews];
-      
-      if (newImageFiles.length > 0) {
-        const newUrls = newImageFiles.map(f => URL.createObjectURL(f));
-        finalImages = [...finalImages, ...newUrls];
-      }
-      
-      if (localCoverImage) {
-        const coverUrl = URL.createObjectURL(localCoverImage);
-        finalImages = [coverUrl, ...finalImages.filter((_, i) => i !== 0)];
-        updatedProperty.coverImage = localCoverImage;
-      }
-      
-      updatedProperty.images = finalImages;
-      
-      if (localVideoFile) {
-        updatedProperty.propertyVideo = localVideoFile;
-      }
-      
-      if (localFloorPlanFile) {
-        updatedProperty.floorPlan = localFloorPlanFile;
-      }
-      
-      onSave(updatedProperty);
-    };
-
-    const handleLocalCancel = () => {
-      onCancel();
-      setLocalStep(0);
-      setLocalCustomAmenities([]);
-      localImagePreviews.forEach(preview => {
-        if (preview.startsWith('blob:')) URL.revokeObjectURL(preview);
-      });
-      if (localCoverPreview) URL.revokeObjectURL(localCoverPreview);
-      if (localVideoPreview) URL.revokeObjectURL(localVideoPreview);
-      if (localFloorPlanPreview) URL.revokeObjectURL(localFloorPlanPreview);
-    };
-
-    const renderStepContent = () => {
-      if (localStep === 0) {
-        return (
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Property Title</label>
-                <input
-                  type="text"
-                  value={localProperty.propertyTitle || localProperty.name || ''}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setLocalProperty(prev => ({ ...prev, propertyTitle: val, name: val }));
-                  }}
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                  placeholder="e.g. Green Valley 3BHK Apartment"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Property ID</label>
-                <input
-                  type="text"
-                  value={localProperty.id}
-                  disabled
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 text-gray-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Property Type</label>
-                <select
-                  value={localProperty.propertyType || localProperty.type || 'Apartment'}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setLocalProperty(prev => ({ ...prev, propertyType: val, type: val }));
-                  }}
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                >
-                  {propertyTypeOptions.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Status</label>
-                <select
-                  value={localProperty.status}
-                  onChange={(e) => setLocalProperty(prev => ({ ...prev, status: e.target.value }))}
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                >
-                  {statusOptions.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Property Address</label>
-                <textarea
-                  value={localProperty.propertyAddress || localProperty.location || ''}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setLocalProperty(prev => ({ ...prev, propertyAddress: val, location: val }));
-                  }}
-                  rows="2"
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all resize-y"
-                  placeholder="Enter complete property address"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">City</label>
-                <input
-                  type="text"
-                  value={localProperty.propertyCity || ''}
-                  onChange={(e) => setLocalProperty(prev => ({ ...prev, propertyCity: e.target.value }))}
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                  placeholder="Enter city name"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Area Details</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="number"
-                    value={localProperty.builtUpArea || ''}
-                    onChange={(e) => setLocalProperty(prev => ({ ...prev, builtUpArea: e.target.value }))}
-                    className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                    placeholder="Built-up (sq ft)"
-                  />
-                  <input
-                    type="number"
-                    value={localProperty.carpetArea || ''}
-                    onChange={(e) => setLocalProperty(prev => ({ ...prev, carpetArea: e.target.value }))}
-                    className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                    placeholder="Carpet (sq ft)"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Bedrooms</label>
-                <select
-                  value={localProperty.bedrooms || '2 BHK'}
-                  onChange={(e) => setLocalProperty(prev => ({ ...prev, bedrooms: e.target.value }))}
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                >
-                  {bedroomOptions.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Bathrooms</label>
-                <select
-                  value={localProperty.bathrooms || '2'}
-                  onChange={(e) => setLocalProperty(prev => ({ ...prev, bathrooms: e.target.value }))}
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                >
-                  {bathroomOptions.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Furnishing Status</label>
-                <select
-                  value={localProperty.furnishing || 'Fully Furnished'}
-                  onChange={(e) => setLocalProperty(prev => ({ ...prev, furnishing: e.target.value }))}
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                >
-                  {furnishingOptions.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Parking</label>
-                <select
-                  value={localProperty.parking || '2 Cars'}
-                  onChange={(e) => setLocalProperty(prev => ({ ...prev, parking: e.target.value }))}
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                >
-                  {parkingOptions.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Listing Purpose</label>
-                <select
-                  value={localProperty.listingPurpose || 'For Sale'}
-                  onChange={(e) => setLocalProperty(prev => ({ ...prev, listingPurpose: e.target.value }))}
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                >
-                  {listingPurposeOptions.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-0.5">Description</label>
-              <textarea
-                value={localProperty.description || ''}
-                onChange={(e) => setLocalProperty(prev => ({ ...prev, description: e.target.value }))}
-                rows="3"
-                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all resize-y"
-                placeholder="Enter property description..."
-              />
-            </div>
-          </div>
-        );
-      } else if (localStep === 1) {
-        return (
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Expected Price</label>
-                <input
-                  type="text"
-                  value={localProperty.expectedPrice || localProperty.price?.replace(/[^0-9]/g, '') || ''}
-                  onChange={(e) => setLocalProperty(prev => ({ ...prev, expectedPrice: e.target.value }))}
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                  placeholder="e.g. 4500000"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Maintenance (₹/month)</label>
-                <input
-                  type="text"
-                  value={localProperty.maintenance || ''}
-                  onChange={(e) => setLocalProperty(prev => ({ ...prev, maintenance: e.target.value }))}
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                  placeholder="e.g. 2000"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Available From</label>
-                <input
-                  type="date"
-                  value={localProperty.availableFrom || ''}
-                  onChange={(e) => setLocalProperty(prev => ({ ...prev, availableFrom: e.target.value }))}
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-0.5">Price Display</label>
-                <input
-                  type="text"
-                  value={localProperty.price || ''}
-                  onChange={(e) => setLocalProperty(prev => ({ ...prev, price: e.target.value }))}
-                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                  placeholder="e.g. ₹45,00,000"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-0.5">Area Display</label>
-              <input
-                type="text"
-                value={localProperty.area || ''}
-                onChange={(e) => setLocalProperty(prev => ({ ...prev, area: e.target.value }))}
-                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                placeholder="e.g. 1200 sq ft"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Select Amenities</label>
-              <div className="flex flex-wrap gap-1.5">
-                {availableAmenities.map(a => (
-                  <span
-                    key={a}
-                    onClick={() => handleLocalAmenityToggle(a)}
-                    className={`px-2.5 py-1 text-xs rounded-full border cursor-pointer transition-all ${
-                      localProperty.selectedAmenities?.includes(a)
-                        ? 'bg-[#00695C] text-white border-[#00695C]'
-                        : 'bg-teal-50 text-[#00695C] border-teal-200 hover:bg-teal-100'
-                    }`}
-                  >
-                    {a}
-                  </span>
-                ))}
-                {localCustomAmenities.map(a => (
-                  <span key={a} className="px-2.5 py-1 text-xs bg-[#00695C] text-white rounded-full border border-[#00695C] flex items-center gap-1">
-                    {a}
-                    <X className="w-3 h-3 cursor-pointer hover:text-red-200" onClick={() => handleLocalRemoveCustomAmenity(a)} />
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={localProperty.otherAmenities || ''}
-                onChange={(e) => setLocalProperty(prev => ({ ...prev, otherAmenities: e.target.value }))}
-                className="flex-1 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                placeholder="e.g. Clubhouse, CCTV, Solar Panel..."
-                onKeyPress={(e) => e.key === 'Enter' && handleLocalAddCustomAmenity()}
-              />
-              <button
-                onClick={handleLocalAddCustomAmenity}
-                className="px-4 py-2 text-sm bg-[#00695C] text-white rounded-xl hover:bg-[#005A4F] transition-colors"
-              >
-                Add
-              </button>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-0.5">Features (comma separated)</label>
-              <input
-                type="text"
-                value={localProperty.features?.join(', ') || ''}
-                onChange={(e) => {
-                  const features = e.target.value.split(',').map(f => f.trim());
-                  setLocalProperty(prev => ({ ...prev, features }));
-                }}
-                className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 outline-none transition-all"
-                placeholder="2 BHK, Sea View, Parking, etc."
-              />
-            </div>
-          </div>
-        );
-      } else {
-        return (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 mb-2 pb-2 border-b-2 border-green-50">
-              <div className="w-1 h-4 bg-[#00695C] rounded" />
-              <h3 className="text-sm font-bold text-[#00695C]">Media Upload</h3>
-            </div>
-            <p className="text-xs text-gray-400 mb-3">📸 Upload property images and media</p>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Upload Cover Image</label>
-              <div className="border-2 border-dashed border-teal-300 rounded-xl p-4 text-center hover:bg-green-50 transition-colors">
-                <input type="file" accept="image/*" className="hidden" id="edit-cover" onChange={handleLocalCoverImageUpload} />
-                <label htmlFor="edit-cover" className="cursor-pointer flex flex-col items-center">
-                  <ImagePlus className="mx-auto mb-2 w-8 h-8 text-[#00695C]" />
-                  <span className="text-sm font-semibold text-[#00695C]">Upload Cover Image</span>
-                  <span className="text-xs text-gray-400 mt-1">JPG, PNG (Max 2MB)</span>
-                </label>
-              </div>
-              {localCoverPreview && (
-                <div className="mt-2 relative">
-                  <img src={localCoverPreview} alt="Cover" className="w-full h-24 object-cover rounded-lg border border-gray-200" />
-                  <button onClick={removeLocalCoverImage} className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600">✕</button>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Upload Property Photos (Max 3)</label>
-              <div className="border-2 border-dashed border-teal-300 rounded-xl p-4 text-center hover:bg-green-50 transition-colors">
-                <input type="file" accept="image/*" multiple className="hidden" id="edit-photos" onChange={handleLocalImageUpload} disabled={localImagePreviews.length >= 3} />
-                <label htmlFor="edit-photos" className={`cursor-pointer flex flex-col items-center ${localImagePreviews.length >= 3 ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                  <ImagePlus className="mx-auto mb-2 w-8 h-8 text-[#00695C]" />
-                  <span className="text-sm font-semibold text-[#00695C]">Upload Property Photos</span>
-                  <span className="text-xs text-gray-400 mt-1">Max 3 photos</span>
-                </label>
-              </div>
-              {localImagePreviews.length > 0 && (
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  {localImagePreviews.map((preview, idx) => (
-                    <div key={idx} className="relative">
-                      <img src={preview} alt={`Preview ${idx + 1}`} className="w-full h-20 object-cover rounded-lg border border-gray-200" />
-                      <button onClick={() => removeLocalImage(idx)} className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600">✕</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Upload Property Video (Optional)</label>
-              <div className="border-2 border-dashed border-teal-300 rounded-xl p-4 text-center hover:bg-green-50 transition-colors">
-                <input type="file" accept="video/mp4,video/mov" className="hidden" id="edit-video" onChange={handleLocalVideoUpload} />
-                <label htmlFor="edit-video" className="cursor-pointer flex flex-col items-center">
-                  <Video className="mx-auto mb-2 w-8 h-8 text-[#00695C]" />
-                  <span className="text-sm font-semibold text-[#00695C]">Upload Property Video Tour</span>
-                  <span className="text-xs text-gray-400 mt-1">MP4/MOV (Max 10MB)</span>
-                </label>
-              </div>
-              {localVideoPreview && (
-                <div className="mt-2 relative">
-                  <video src={localVideoPreview} controls className="w-full h-32 object-cover rounded-lg border border-gray-200" />
-                  <button onClick={removeLocalVideo} className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full text-sm flex items-center justify-center hover:bg-red-600">✕</button>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Upload Floor Plan (PDF)</label>
-              <div className="border-2 border-dashed border-teal-300 rounded-xl p-4 text-center hover:bg-green-50 transition-colors">
-                <input type="file" accept=".pdf" className="hidden" id="edit-floorplan" onChange={handleLocalFloorPlanUpload} />
-                <label htmlFor="edit-floorplan" className="cursor-pointer flex flex-col items-center">
-                  <FileText className="mx-auto mb-2 w-8 h-8 text-[#00695C]" />
-                  <span className="text-sm font-semibold text-[#00695C]">Upload Floor Plan</span>
-                  <span className="text-xs text-gray-400 mt-1">PDF (Max 5MB)</span>
-                </label>
-              </div>
-              {localFloorPlanPreview && (
-                <div className="mt-2 relative">
-                  <p className="text-sm text-green-600">✓ {localFloorPlanFile?.name}</p>
-                  <button onClick={removeLocalFloorPlan} className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600">✕</button>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      }
-    };
-
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fadeIn p-2 sm:p-4 md:p-6">
-        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[90%] sm:max-w-[95%]
-         lg:max-w-3xl max-h-[80vh] flex flex-col animate-scaleIn">
-          <div className="bg-gradient-to-r from-[#00695C] to-[#26A69A] px-4 sm:px-6 md:px-8 py-3 sm:py-4 md:py-5 flex items-center justify-between rounded-t-3xl flex-shrink-0">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <Edit2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-              <h2 className="text-white text-lg sm:text-xl font-bold">Edit Property</h2>
-            </div>
-            <button 
-              onClick={handleLocalCancel}
-              className="text-white/80 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110"
-            >
-              <X className="w-5 h-5 sm:w-6 sm:h-6" />
-            </button>
-          </div>
-
-          <div className="flex border-b border-gray-100 flex-shrink-0 px-3 sm:px-4 pt-2 overflow-x-auto">
-            {editSteps.map((stepName, idx) => (
-              <button
-                key={idx}
-                onClick={() => setLocalStep(idx)}
-                className={`px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-bold border-b-2 transition-all whitespace-nowrap ${
-                  localStep === idx
-                    ? 'border-[#00695C] text-[#00695C]'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                {stepName}
-              </button>
-            ))}
-          </div>
-
-          <div className="p-4 sm:p-6 overflow-y-auto flex-1">
-            {renderStepContent()}
-          </div>
-
-          <div className="px-4 sm:px-6 py-3 sm:py-4 bg-gray-50 border-t border-gray-100 rounded-b-3xl flex flex-wrap justify-between items-center gap-3 flex-shrink-0">
-            <div className="flex gap-2">
-              {localStep > 0 && (
-                <button
-                  onClick={handleLocalBack}
-                  className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-bold text-[#00695C] bg-teal-50 rounded-xl hover:bg-teal-100 transition-all"
-                >
-                  ← Back
-                </button>
-              )}
-            </div>
-            <div className="flex gap-2 sm:gap-3">
-              <button
-                onClick={handleLocalCancel}
-                className="px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl border-2 border-gray-300 text-gray-700 text-xs sm:text-sm font-bold hover:bg-gray-100 transition-all duration-300"
-              >
-                Cancel
-              </button>
-              {localStep < editSteps.length - 1 ? (
-                <button
-                  onClick={handleLocalNext}
-                  className="px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-[#00695C] to-[#26A69A] text-white text-xs sm:text-sm font-bold hover:shadow-lg transition-all duration-300 flex items-center gap-1 sm:gap-2"
-                >
-                  Next →
-                </button>
-              ) : (
-                <button
-                  onClick={handleLocalSave}
-                  className="px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-[#00695C] to-[#26A69A] text-white text-xs sm:text-sm font-bold hover:shadow-lg transition-all duration-300 flex items-center gap-1 sm:gap-2"
-                >
-                  <Save className="w-3 h-3 sm:w-4 sm:h-4" />
-                  Save Changes
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // ============ PROPERTY DETAILS MODAL ============
-  const PropertyDetailsModal = ({ property, onClose, onAddImages, onRemoveImage }) => {
-    if (!property) return null;
-
-    const [currentImageIndex, setCurrentImageIndex] = useState(0);
-    const detailImageInputRef = useRef(null);
-    const rawImages = property.images || [];
-    const hasImages = rawImages.length > 0;
-    const images = hasImages ? rawImages : ['https://via.placeholder.com/400x300/CCCCCC/666666?text=No+Image'];
-
-    useEffect(() => {
-      if (currentImageIndex >= images.length) {
-        setCurrentImageIndex(Math.max(0, images.length - 1));
-      }
-    }, [images.length]);
-
-    const nextImage = () => {
-      setCurrentImageIndex((prev) => (prev + 1) % images.length);
-    };
-
-    const prevImage = () => {
-      setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
-    };
-
-    const handleAddImagesChange = (e) => {
-      const files = e.target.files;
-      if (files && files.length > 0) {
-        onAddImages(property.id, files);
-      }
-      e.target.value = '';
-    };
-
-    const handleDeleteImage = (idx) => {
-      onRemoveImage(property.id, idx);
-    };
-
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fadeIn p-2 sm:p-4 md:p-6">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[90%]  sm:max-w-[95%]  lg:max-w-2xl h-[80vh] flex flex-col animate-scaleIn">
-          <div className="bg-gradient-to-r from-[#00695C] to-[#26A69A] px-3 sm:px-4 md:px-5 py-2 sm:py-3 flex items-center justify-between rounded-t-2xl flex-shrink-0">
-            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-              <div className="bg-white/20 p-1 sm:p-1.5 rounded-lg">
-                <Home className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-              </div>
-              <h2 className="text-white text-base sm:text-lg md:text-xl font-bold truncate">
-                {property.name}
-              </h2>
-            </div>
-            <button 
-              onClick={onClose}
-              className="text-white/80 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110 flex-shrink-0"
-            >
-              <X className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-          </div>
-
-          <div className="p-3 sm:p-4 overflow-y-auto flex-1 space-y-3 sm:space-y-4">
-            <div className="relative rounded-xl overflow-hidden bg-gray-100 h-48 sm:h-56 md:h-64">
-              <img 
-                src={images[currentImageIndex]} 
-                alt={property.name}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  e.target.src = 'https://via.placeholder.com/400x300/CCCCCC/666666?text=No+Image';
-                }}
-              />
-              
-              {images.length > 1 && (
-                <>
-                  <button
-                    onClick={prevImage}
-                    className="absolute left-1.5 sm:left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5 sm:p-2 transition-all duration-300"
-                  >
-                    <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </button>
-                  <button
-                    onClick={nextImage}
-                    className="absolute right-1.5 sm:right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5 sm:p-2 transition-all duration-300"
-                  >
-                    <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </button>
-                  <div className="absolute bottom-1.5 sm:bottom-2 right-1.5 sm:right-2 bg-black/60 text-white text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full">
-                    {currentImageIndex + 1} / {images.length}
-                  </div>
-                </>
-              )}
-
-              {hasImages && (
-                <button
-                  onClick={() => handleDeleteImage(currentImageIndex)}
-                  title="Delete this image"
-                  className="absolute bottom-1.5 sm:bottom-2 left-1.5 sm:left-2 flex items-center gap-1 bg-red-500/90 hover:bg-red-600 text-white text-[9px] sm:text-[10px] font-bold px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg shadow-lg transition-all duration-300 hover:scale-105"
-                >
-                  <Trash2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                  Delete
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between">
-              <p className="text-[9px] sm:text-[10px] text-gray-500 font-medium">
-                {hasImages ? `${images.length} image${images.length > 1 ? 's' : ''}` : 'No images uploaded yet'}
-              </p>
-              <button
-                onClick={() => detailImageInputRef.current?.click()}
-                className="flex items-center gap-1 sm:gap-1.5 bg-gradient-to-r from-[#00695C] to-[#26A69A] text-white text-[9px] sm:text-[10px] font-bold px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105"
-              >
-                <Upload className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                Add Image
-              </button>
-              <input
-                ref={detailImageInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={handleAddImagesChange}
-              />
-            </div>
-
-            {images.length > 1 && (
-              <div className="flex gap-1 sm:gap-1.5 overflow-x-auto pb-1 sm:pb-1.5">
-                {images.map((img, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setCurrentImageIndex(idx)}
-                    className={`flex-shrink-0 w-12 sm:w-14 md:w-16 h-9 sm:h-10 md:h-12 rounded-lg overflow-hidden border-2 transition-all duration-300 ${
-                      currentImageIndex === idx ? 'border-[#00695C] shadow-md' : 'border-gray-200 hover:border-gray-400'
-                    }`}
-                  >
-                    <img 
-                      src={img} 
-                      alt={`Thumbnail ${idx + 1}`}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.target.src = 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image';
-                      }}
-                    />
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2">
-              <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
-                <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg">
-                  <Building className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" />
-                </div>
-                <div>
-                  <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Property ID</p>
-                  <p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.id}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
-                <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg">
-                  <CreditCard className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" />
-                </div>
-                <div>
-                  <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Price</p>
-                  <p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.price}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
-                <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg">
-                  <Bed className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" />
-                </div>
-                <div>
-                  <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Bedrooms</p>
-                  <p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.bedrooms || 'N/A'}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
-                <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg">
-                  <Bath className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" />
-                </div>
-                <div>
-                  <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Bathrooms</p>
-                  <p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.bathrooms || 'N/A'}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
-                <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg">
-                  <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" />
-                </div>
-                <div>
-                  <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Location</p>
-                  <p className="text-[10px] sm:text-xs font-bold text-gray-800 truncate">{property.location}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
-                <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg">
-                  <Calendar className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" />
-                </div>
-                <div>
-                  <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Posted</p>
-                  <p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.postedDate}</p>
-                </div>
-              </div>
-            </div>
-
-            {property.description && (
-              <div className="bg-gray-50 rounded-lg p-2 sm:p-3">
-                <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-0.5 sm:mb-1">Description</h3>
-                <p className="text-[10px] sm:text-xs text-gray-600 leading-relaxed">{property.description}</p>
-              </div>
-            )}
-
-            {property.features && property.features.length > 0 && (
-              <div>
-                <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-1 sm:mb-1.5">Features</h3>
-                <div className="flex flex-wrap gap-1 sm:gap-1.5">
-                  {property.features.map((feature, index) => (
-                    <span key={index} className="px-2 sm:px-2.5 py-0.5 sm:py-1 bg-[#00695C]/10 text-[#00695C] rounded-lg text-[9px] sm:text-[10px] font-bold">
-                      {feature}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {property.selectedAmenities && property.selectedAmenities.length > 0 && (
-              <div>
-                <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-1 sm:mb-1.5">Amenities</h3>
-                <div className="flex flex-wrap gap-1 sm:gap-1.5">
-                  {property.selectedAmenities.map((amenity, index) => (
-                    <span key={index} className="px-2 sm:px-2.5 py-0.5 sm:py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] sm:text-[10px] font-bold">
-                      {amenity}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {property.contactPersonDetails && (property.contactPersonDetails.name || property.contactPersonDetails.mobile) && (
-              <div>
-                <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-1 sm:mb-1.5">Contact Person</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2">
-                  {property.contactPersonDetails.name && (
-                    <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
-                      <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><User className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
-                      <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Name</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.name}</p></div>
-                    </div>
-                  )}
-                  {property.contactPersonDetails.mobile && (
-                    <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
-                      <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
-                      <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Mobile</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.mobile}</p></div>
-                    </div>
-                  )}
-                  {property.contactPersonDetails.emailId && (
-                    <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
-                      <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><Mail className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
-                      <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Email</p><p className="text-[10px] sm:text-xs font-bold text-gray-800 truncate">{property.contactPersonDetails.emailId}</p></div>
-                    </div>
-                  )}
-                  {property.contactPersonDetails.companyName && (
-                    <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
-                      <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><Building className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
-                      <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Company</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.companyName}</p></div>
-                    </div>
-                  )}
-                  {property.contactPersonDetails.reraRegistrationNumber && (
-                    <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
-                      <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><FileCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
-                      <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">RERA No.</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.reraRegistrationNumber}</p></div>
-                    </div>
-                  )}
-                  {property.contactPersonDetails.experience && (
-                    <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg">
-                      <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg"><Award className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" /></div>
-                      <div><p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">Experience</p><p className="text-[10px] sm:text-xs font-bold text-gray-800">{property.contactPersonDetails.experience} yrs</p></div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {property.documents && property.documents.length > 0 && (
-              <div>
-                <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-1 sm:mb-1.5">Documents</h3>
-                <div className="flex flex-wrap gap-1 sm:gap-1.5">
-                  {property.documents.map((doc, index) => (
-                    <a
-                      key={doc.id || index}
-                      href={doc.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 bg-[#00695C]/10 text-[#00695C] rounded-lg text-[9px] sm:text-[10px] font-bold hover:bg-[#00695C]/20 transition-colors"
-                    >
-                      <FileText className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                      {doc.name}
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {images.length > 0 && (
-              <div>
-                <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-1.5 sm:mb-2">All Property Images</h3>
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1.5 sm:gap-2">
-                  {images.map((img, idx) => (
-                    <div 
-                      key={idx} 
-                      className={`group/thumb relative rounded-lg overflow-hidden bg-gray-100 aspect-square cursor-pointer border-2 transition-all duration-300 hover:scale-105 ${
-                        currentImageIndex === idx ? 'border-[#00695C] shadow-md' : 'border-gray-200 hover:border-gray-400'
-                      }`}
-                      onClick={() => setCurrentImageIndex(idx)}
-                    >
-                      <img 
-                        src={img} 
-                        alt={`Property Image ${idx + 1}`}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.target.src = 'https://via.placeholder.com/200x200/CCCCCC/666666?text=No+Image';
-                        }}
-                      />
-                      {currentImageIndex === idx && (
-                        <div className="absolute inset-0 bg-[#00695C]/20 flex items-center justify-center">
-                          <div className="bg-[#00695C] text-white text-[8px] sm:text-[10px] font-bold px-1 sm:px-2 py-0.5 rounded-full">
-                            Active
-                          </div>
-                        </div>
-                      )}
-                      {hasImages && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteImage(idx);
-                          }}
-                          title="Delete image"
-                          className="absolute top-0.5 sm:top-1 right-0.5 sm:right-1 bg-red-500/90 hover:bg-red-600 text-white p-0.5 sm:p-1 rounded-md shadow-lg opacity-0 group-hover/thumb:opacity-100 transition-all duration-300"
-                        >
-                          <Trash2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="px-3 sm:px-4 py-2 sm:py-3 bg-gray-50 border-t border-gray-100 rounded-b-2xl flex flex-wrap gap-2 sm:gap-2.5 flex-shrink-0">
-            <button 
-              onClick={() => {
-                onClose();
-                handleEditProperty(property);
-              }}
-              className="flex-1 min-w-[80px] sm:min-w-[100px] px-3 sm:px-4 py-2 sm:py-2.5 bg-gradient-to-r from-[#00695C] to-[#26A69A] text-white rounded-xl text-xs sm:text-sm font-bold hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center justify-center gap-1 sm:gap-2"
-            >
-              <Edit2 className="w-3 h-3 sm:w-4 sm:h-4" />
-              Edit Property
-            </button>
-            <button 
-              onClick={() => {
-                onClose();
-                handleDeleteProperty(property);
-              }}
-              className="flex-1 min-w-[80px] sm:min-w-[100px] px-3 sm:px-4 py-2 sm:py-2.5 bg-red-500 text-white rounded-xl text-xs sm:text-sm font-bold hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center justify-center gap-1 sm:gap-2"
-            >
-              <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // ============ DELETE PROPERTY CONFIRM MODAL ============
-  const DeletePropertyConfirmModal = ({ property, onConfirm, onCancel }) => {
-    if (!property) return null;
-
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fadeIn p-3 sm:p-4 md:p-6">
-        <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full animate-scaleIn p-4 sm:p-6 md:p-8">
-          <div className="flex items-center gap-3 sm:gap-4 mb-3 sm:mb-4">
-            <div className="bg-red-100 p-2 sm:p-3 rounded-2xl">
-              <AlertTriangle className="w-6 h-6 sm:w-8 sm:h-8 text-red-500 animate-pulse" />
-            </div>
-            <h3 className="text-lg sm:text-xl font-bold text-gray-800">Delete Property</h3>
-          </div>
-          <p className="text-sm sm:text-base text-gray-600 mb-2">
-            Are you sure you want to delete <span className="font-bold text-[#00695C]">{property.name}</span>?
-          </p>
-          <p className="text-xs sm:text-sm text-red-500 mb-4 sm:mb-6">This action cannot be undone.</p>
-          <div className="flex justify-end gap-2 sm:gap-3">
-            <button
-              onClick={onCancel}
-              className="px-4 sm:px-6 py-2 sm:py-3 rounded-2xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-100 transition-all duration-300 hover:scale-105 text-sm sm:text-base"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={onConfirm}
-              className="px-4 sm:px-6 py-2 sm:py-3 rounded-2xl bg-gradient-to-r from-red-500 to-rose-500 text-white font-bold hover:from-red-600 hover:to-rose-600 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 text-sm sm:text-base"
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   // ============ RENDER FUNCTIONS ============
   const renderSectionContent = () => {
@@ -2484,7 +2651,7 @@ const handleToggleStatus = async (property) => {
                             className="flex-1 text-[9px] sm:text-[10px] text-[#00695C] font-medium hover:underline truncate text-left flex items-center gap-0.5 sm:gap-1"
                           >
                             <FileText className="w-2.5 h-2.5 sm:w-3 sm:h-3 flex-shrink-0" />
-                            <span className="truncate">{typeof file === 'string' ? file.split('/').pop() : file.name}</span>
+                            <span className="truncate">{typeof file === 'string' ? file.split('/').pop() : (file.fileName || file.name)}</span>
                           </button>
                           <button
                             onClick={() => handlePdfDelete(doc.field)}
@@ -2582,9 +2749,9 @@ const handleToggleStatus = async (property) => {
                             Upload Multiple
                           </span>
                         </div>
-                        <input 
-                          type="file" 
-                          className="hidden" 
+                        <input
+                          type="file"
+                          className="hidden"
                           accept=".pdf"
                           multiple
                           onChange={(e) => {
@@ -2595,7 +2762,7 @@ const handleToggleStatus = async (property) => {
                                 ...prev,
                                 otherDocuments: [...prev.otherDocuments, ...fileArray]
                               }));
-                              showSuccessToast();
+                              showSuccessToast('Documents uploaded successfully!');
                             }
                             e.target.value = '';
                           }} 
@@ -3065,9 +3232,9 @@ const handleToggleStatus = async (property) => {
                         <Upload className="w-3 h-3 sm:w-4 sm:h-4" />
                         <span>Upload Multiple PDFs</span>
                       </div>
-                      <input 
-                        type="file" 
-                        className="hidden" 
+                      <input
+                        type="file"
+                        className="hidden"
                         accept=".pdf"
                         multiple
                         onChange={(e) => {
@@ -3078,7 +3245,7 @@ const handleToggleStatus = async (property) => {
                               ...prev,
                               otherDocuments: [...prev.otherDocuments, ...fileArray]
                             }));
-                            showSuccessToast();
+                            showSuccessToast('Documents uploaded successfully!');
                           }
                           e.target.value = '';
                         }} 
@@ -3163,7 +3330,7 @@ const handleToggleStatus = async (property) => {
                               const file = e.target.files[0];
                               if (file) {
                                 setDocuments(prev => ({ ...prev, aadhaarCard: file }));
-                                showSuccessToast();
+                                showSuccessToast('Aadhaar Card uploaded successfully!');
                               }
                             }} 
                           />
@@ -3188,7 +3355,7 @@ const handleToggleStatus = async (property) => {
                               const file = e.target.files[0];
                               if (file) {
                                 setDocuments(prev => ({ ...prev, panCard: file }));
-                                showSuccessToast();
+                                showSuccessToast('PAN Card uploaded successfully!');
                               }
                             }} 
                           />
@@ -3315,6 +3482,9 @@ const handleToggleStatus = async (property) => {
           }}
           onAddImages={handleAddPropertyDetailImages}
           onRemoveImage={handleRemovePropertyDetailImage}
+          onRemoveCover={handleRemovePropertyCover}
+          onEdit={handleEditProperty}
+          onDelete={handleDeleteProperty}
         />
       )}
 
@@ -3364,20 +3534,7 @@ const handleToggleStatus = async (property) => {
       )}
 
       {/* Success Message */}
-      {showSuccess && (
-        <div className="fixed top-20 sm:top-24 md:top-28 right-2 sm:right-4 z-50 bg-gradient-to-r from-[#00695C]/10 to-[#26A69A]/10 border-2 border-[#00695C]/30 rounded-2xl p-2 sm:p-3 flex items-center gap-3 sm:gap-4 shadow-xl animate-slideDown max-w-xs sm:max-w-md backdrop-blur-sm">
-          <div className="bg-gradient-to-r from-[#00695C] to-[#26A69A] p-2 sm:p-3 rounded-2xl animate-bounce-in">
-            <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-          </div>
-          <div>
-            <p className="text-[#00695C] font-bold text-base sm:text-lg">Success!</p>
-            <p className="text-[#00695C]/80 text-[10px] sm:text-sm">Operation completed successfully!</p>
-          </div>
-          <button onClick={() => setShowSuccess(false)} className="text-[#00695C] hover:text-[#004D40] ml-auto hover:rotate-90 transition-transform duration-300 hover:scale-110">
-            <X className="w-4 h-4 sm:w-5 sm:h-5" />
-          </button>
-        </div>
-      )}
+      <Toast toast={toast} onClose={hideToast} />
 
       {/* MAIN CONTENT */}
       <div className="container mx-auto px-2 sm:px-4 md:px-6 max-w-full w-full relative z-10 -mt-12 sm:-mt-15">
@@ -3661,11 +3818,11 @@ const handleToggleStatus = async (property) => {
                     >
                       <div className="relative w-full h-40 sm:h-46 bg-gray-100 overflow-hidden">
                         <img 
-                          src={property.images?.[0] || 'https://via.placeholder.com/400x400/CCCCCC/666666?text=No+Image'} 
+                          src={property.coverImage || NO_IMAGE_PLACEHOLDER}
                           alt={property.name}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           onError={(e) => {
-                            e.target.src = 'https://via.placeholder.com/400x400/CCCCCC/666666?text=No+Image';
+                            e.target.src = NO_IMAGE_PLACEHOLDER;
                           }}
                         />
                         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent p-2 sm:p-3">
@@ -3678,6 +3835,19 @@ const handleToggleStatus = async (property) => {
                             <Image className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                             {property.images.length}
                           </div>
+                        )}
+                        {property.videoUrl && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setLightboxItems([{ type: 'video', url: property.videoUrl, name: property.name }]);
+                              setLightboxIndex(0);
+                              setShowMediaLightbox(true);
+                            }}
+                            className="absolute bottom-2 sm:bottom-3 left-2 sm:left-3 bg-black/70 hover:bg-black/90 text-white text-[9px] sm:text-xs font-bold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full flex items-center gap-1 sm:gap-1.5 transition-all hover:scale-105"
+                          >
+                            <span className="text-[10px] sm:text-xs">▶</span> Watch Video
+                          </button>
                         )}
                       </div>
 
@@ -3785,10 +3955,10 @@ const handleToggleStatus = async (property) => {
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <div className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
                 <img
-                  src={property.images?.[0] || 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image'}
+                  src={property.coverImage || NO_IMAGE_PLACEHOLDER}
                   alt={property.name}
                   className="w-full h-full object-cover"
-                  onError={(e) => { e.target.src = 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image'; }}
+                  onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }}
                 />
               </div>
               <div className="min-w-0">
@@ -6068,7 +6238,7 @@ export default OwnerProfile;
 //     const detailImageInputRef = useRef(null);
 //     const rawImages = property.images || [];
 //     const hasImages = rawImages.length > 0;
-//     const images = hasImages ? rawImages : ['https://via.placeholder.com/400x300/CCCCCC/666666?text=No+Image'];
+//     const images = hasImages ? rawImages : [NO_IMAGE_PLACEHOLDER];
 
 //     useEffect(() => {
 //       if (currentImageIndex >= images.length) {
@@ -6123,7 +6293,7 @@ export default OwnerProfile;
 //                 alt={property.name}
 //                 className="w-full h-full object-cover"
 //                 onError={(e) => {
-//                   e.target.src = 'https://via.placeholder.com/400x300/CCCCCC/666666?text=No+Image';
+//                   e.target.src = NO_IMAGE_PLACEHOLDER;
 //                 }}
 //               />
               
@@ -6195,7 +6365,7 @@ export default OwnerProfile;
 //                       alt={`Thumbnail ${idx + 1}`}
 //                       className="w-full h-full object-cover"
 //                       onError={(e) => {
-//                         e.target.src = 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image';
+//                         e.target.src = NO_IMAGE_PLACEHOLDER;
 //                       }}
 //                     />
 //                   </button>
@@ -6310,7 +6480,7 @@ export default OwnerProfile;
 //                         alt={`Property Image ${idx + 1}`}
 //                         className="w-full h-full object-cover"
 //                         onError={(e) => {
-//                           e.target.src = 'https://via.placeholder.com/200x200/CCCCCC/666666?text=No+Image';
+//                           e.target.src = NO_IMAGE_PLACEHOLDER;
 //                         }}
 //                       />
 //                       {currentImageIndex === idx && (
@@ -7889,11 +8059,11 @@ export default OwnerProfile;
 //                     >
 //                       <div className="relative w-full h-40 sm:h-46 bg-gray-100 overflow-hidden">
 //                         <img 
-//                           src={property.images?.[0] || 'https://via.placeholder.com/400x400/CCCCCC/666666?text=No+Image'} 
+//                           src={property.images?.[0] || NO_IMAGE_PLACEHOLDER}
 //                           alt={property.name}
 //                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
 //                           onError={(e) => {
-//                             e.target.src = 'https://via.placeholder.com/400x400/CCCCCC/666666?text=No+Image';
+//                             e.target.src = NO_IMAGE_PLACEHOLDER;
 //                           }}
 //                         />
 //                         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent p-2 sm:p-3">
@@ -8013,10 +8183,10 @@ export default OwnerProfile;
 //             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
 //               <div className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
 //                 <img
-//                   src={property.images?.[0] || 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image'}
+//                   src={property.images?.[0] || NO_IMAGE_PLACEHOLDER}
 //                   alt={property.name}
 //                   className="w-full h-full object-cover"
-//                   onError={(e) => { e.target.src = 'https://via.placeholder.com/100x100/CCCCCC/666666?text=No+Image'; }}
+//                   onError={(e) => { e.target.src = NO_IMAGE_PLACEHOLDER; }}
 //                 />
 //               </div>
 //               <div className="min-w-0">

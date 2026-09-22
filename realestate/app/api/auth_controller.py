@@ -281,7 +281,7 @@ async def test_email_endpoint(
     """Test endpoint with detailed error reporting"""
     
     try:
-        print("📧 Testing email configuration...")
+        print("Testing email configuration...")
         
         # Attempt to send a test email
         result = await email_service.send_email(

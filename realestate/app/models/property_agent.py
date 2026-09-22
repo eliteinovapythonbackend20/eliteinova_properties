@@ -26,13 +26,15 @@ class PropertyAgentDetails(Base):
     email_id = Column(String(255), nullable=True)
 
     office_address = Column(Text, nullable=True)
-
+    address_line1 = Column(Text, nullable=True)
+    address_line2 = Column(Text, nullable=True)
     agency_name = Column(String(255), nullable=True)
     rera_registration_number = Column(String(255), nullable=True)
     gst_number = Column(String(50), nullable=True)
     experience = Column(Integer, nullable=True)
     active_listing = Column(Integer, nullable=True)
     service_area = Column(JSONB, default=[])
+    aadhaar_number = Column(String(20), nullable=True)
 
     website = Column(Text, nullable=True)
     facebook = Column(Text, nullable=True)

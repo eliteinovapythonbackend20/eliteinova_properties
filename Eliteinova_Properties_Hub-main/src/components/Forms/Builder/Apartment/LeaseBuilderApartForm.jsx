@@ -115,13 +115,15 @@ export default function LeaseBuilderApartForm({ isOpen, onClose }) {
     // Identity & Business Verification (Step 3)
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, companyRegCert: null, gstCert: null, reraCert: null, companyPanCard: null,
     
+    // Property Category & Posted By
+    propertyCategory: "apartment", postedBy: "builder", listingPurpose: "lease",
     // Property Details (Step 4) - Apartment style
-    propertyType: "Apartment",
+    propertyType: "",
     city: "", area: "", landmark: "", pinCode: "", nearbyConnectivity: "",
     builtUpArea: "", carpetArea: "",
     bedrooms: "", bathrooms: "", floorNumber: "", totalFloors: "",
     facingDirection: "", balcony: "", propertyAge: "", cornerUnit: "",
-    furnishing: "", interiorFeatures: [], appliancesIncluded: "",
+    furnishing: "", interiorFeatures: [], appliancesIncluded: [], otherAppliances: "",
     
     // Pricing & Amenities (Step 5) - Apartment style
     leaseAmount: "", budgetRange: { min: "", max: "" }, securityDeposit: "",
@@ -360,6 +362,19 @@ export default function LeaseBuilderApartForm({ isOpen, onClose }) {
     updateForm("selectedAmenities", formData.selectedAmenities.filter(a => a !== amenity));
   };
 
+  const addAppliance = () => {
+    const newAppliance = formData.otherAppliances.trim();
+    const current = formData.appliancesIncluded || [];
+    if (newAppliance && !current.some(a => a.toLowerCase() === newAppliance.toLowerCase())) {
+      updateForm("appliancesIncluded", [...current, newAppliance]);
+      updateForm("otherAppliances", "");
+    }
+  };
+
+  const removeAppliance = (appliance) => {
+    updateForm("appliancesIncluded", (formData.appliancesIncluded || []).filter(a => a !== appliance));
+  };
+
   const toggleArrayItem = (field, value) => {
     const current = formData[field] || [];
     if (current.includes(value)) {
@@ -576,6 +591,8 @@ export default function LeaseBuilderApartForm({ isOpen, onClose }) {
               customAmenitiesList={customAmenitiesList}
               addCustomAmenity={addCustomAmenity}
               removeCustomAmenity={removeCustomAmenity}
+              addAppliance={addAppliance}
+              removeAppliance={removeAppliance}
               yesNoOptions={yesNoOptions}
               bankOptions={bankOptions}
               handleCoverImageUpload={handleCoverImageUpload}
@@ -700,6 +717,8 @@ export default function LeaseBuilderApartForm({ isOpen, onClose }) {
               customAmenitiesList={customAmenitiesList}
               addCustomAmenity={addCustomAmenity}
               removeCustomAmenity={removeCustomAmenity}
+              addAppliance={addAppliance}
+              removeAppliance={removeAppliance}
               yesNoOptions={yesNoOptions}
               bankOptions={bankOptions}
               handleCoverImageUpload={handleCoverImageUpload}
@@ -782,7 +801,7 @@ function MobContentLeaseBuilder({
   imagePreviews, handleImageUpload, removeImage, 
   handleVideoUpload, videoPreview, removeVideo, 
   handleDocumentUpload, toggleApartmentAmenity,
-  customAmenitiesList, addCustomAmenity, removeCustomAmenity, 
+  customAmenitiesList, addCustomAmenity, removeCustomAmenity, addAppliance, removeAppliance, 
   yesNoOptions, bankOptions, handleCoverImageUpload, handleFloorPlanUpload, 
   coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, 
   handleAuthPhotoUpload, authPhotoPreview, removeAuthPhoto,
@@ -1153,7 +1172,18 @@ function MobContentLeaseBuilder({
         </div>
       </Field>
       <Field label="Appliances Included">
-        <input className={inp} placeholder="e.g., Refrigerator, AC, Washing Machine, Microwave" value={formData.appliancesIncluded} onChange={(e) => updateForm("appliancesIncluded", e.target.value)} />
+        <div className="flex gap-1">
+          <input className={`${inp} flex-1`} placeholder="e.g., Refrigerator, AC, Washing Machine, Microwave" value={formData.otherAppliances} onChange={(e) => updateForm("otherAppliances", e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addAppliance()} />
+          <button onClick={addAppliance} className="px-2 py-1 text-[11px] bg-[#00695C] text-white rounded-lg">Add</button>
+        </div>
+        <div className="flex flex-wrap gap-1 mt-1">
+          {(formData.appliancesIncluded || []).map(a => (
+            <span key={a} className="px-1.5 py-0.5 text-[10px] bg-[#00695C] text-white rounded-full border border-[#00695C] flex items-center gap-1">
+              {a}
+              <X className="w-2.5 h-2.5 cursor-pointer hover:text-red-200" onClick={() => removeAppliance(a)} />
+            </span>
+          ))}
+        </div>
       </Field>
     </>
   );
@@ -1676,7 +1706,7 @@ function DtContentLeaseBuilder({
   imagePreviews, handleImageUpload, removeImage, 
   handleVideoUpload, videoPreview, removeVideo, 
   handleDocumentUpload, toggleApartmentAmenity,
-  customAmenitiesList, addCustomAmenity, removeCustomAmenity, 
+  customAmenitiesList, addCustomAmenity, removeCustomAmenity, addAppliance, removeAppliance, 
   yesNoOptions, bankOptions, handleCoverImageUpload, handleFloorPlanUpload, 
   coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, 
   handleAuthPhotoUpload, authPhotoPreview, removeAuthPhoto,
@@ -2051,7 +2081,18 @@ function DtContentLeaseBuilder({
         </div>
       </FieldDt>
       <FieldDt label="Appliances Included">
-        <input className={inp} placeholder="e.g., Refrigerator, AC, Washing Machine, Microwave" value={formData.appliancesIncluded} onChange={(e) => updateForm("appliancesIncluded", e.target.value)} />
+        <div className="flex gap-2">
+          <input className={`${inp} flex-1`} placeholder="e.g., Refrigerator, AC, Washing Machine, Microwave" value={formData.otherAppliances} onChange={(e) => updateForm("otherAppliances", e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addAppliance()} />
+          <button onClick={addAppliance} className="px-3 py-1.5 text-[13px] bg-[#00695C] text-white rounded-lg hover:bg-[#004d42] transition-colors">Add</button>
+        </div>
+        <div className="flex flex-wrap gap-1.5 mt-1">
+          {(formData.appliancesIncluded || []).map(a => (
+            <span key={a} className="px-2.5 py-1.5 text-[13px] bg-[#00695C] text-white rounded-full border border-[#00695C] flex items-center gap-1">
+              {a}
+              <X className="w-3.5 h-3.5 cursor-pointer hover:text-red-200" onClick={() => removeAppliance(a)} />
+            </span>
+          ))}
+        </div>
       </FieldDt>
     </>
   );

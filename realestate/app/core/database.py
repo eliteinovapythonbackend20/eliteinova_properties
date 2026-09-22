@@ -55,9 +55,9 @@ engine = create_async_engine(
     echo=settings.DATABASE_ECHO,
     poolclass=NullPool,
     pool_pre_ping=True,
-    connect_args={
-        "ssl": ssl_context,
-    },
+    # connect_args={
+    #     "ssl": ssl_context,
+    # },
 )
 
 

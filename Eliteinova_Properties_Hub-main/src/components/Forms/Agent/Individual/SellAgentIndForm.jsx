@@ -306,8 +306,10 @@ export default function SellAgentIndForm({ isOpen, onClose }) {
     // Property Details (Step 2) - Updated with validation fields
     propertyTitle: "", propertyType: "", propertyArea: "", propertyLandmark: "", propertyCity: "", pincode: "", state: "", district: "",
     builtUpArea: "", carpetArea: "", bedrooms: "", bathrooms: "", furnishingStatus: "", parking: "", parkingCount: "",
+    // Property Category & Posted By
+    propertyCategory: "individual", postedBy: "agent",
     // Pricing & Amenities (Step 3)
-    listingPurpose: "sale", expectedPrice: "", budgetRange: { min: "", max: "" }, priceType: "", maintenance: "", availableFrom: "", selectedAmenities: [], otherAmenities: "",
+    listingPurpose: "sell", expectedPrice: "", budgetRange: { min: "", max: "" }, priceType: "", maintenance: "", availableFrom: "", selectedAmenities: [], otherAmenities: "",
     securityDeposit: "",
     // Sell Preferences (integrated in step 2)
     sellBedrooms: [],

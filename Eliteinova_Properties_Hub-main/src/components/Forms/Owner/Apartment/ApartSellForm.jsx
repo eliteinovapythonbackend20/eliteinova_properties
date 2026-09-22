@@ -88,9 +88,9 @@ export default function ApartSellForm({ isOpen, onClose }) {
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, passportPhoto: null,
     addressLine1: "", addressLine2: "", ownerCity: "", district: "", state: "", ownerPinCode: "",
     // Property Details (Step 2)
-    propertyType: "Apartment", purpose: "Sell",
+    propertyType: "", purpose: "Sell",
     propertyArea: "", propertyLandmark: "", nearbyConnectivity: "",
-    propertyCategory: "individual",
+    propertyCategory: "apartment",
     postedBy: "owner",
     builtUpArea: "", carpetArea: "",
     bedrooms: "", bathrooms: "", floorNumber: "", totalFloors: "",

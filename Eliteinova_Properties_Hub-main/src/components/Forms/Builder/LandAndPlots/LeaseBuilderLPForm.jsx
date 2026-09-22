@@ -158,6 +158,8 @@ export default function LeaseBuilderLPForm({ isOpen, onClose }) {
     // Identity & Business Verification (Step 3)
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, companyRegCert: null, gstCert: null, reraCert: null, companyPanCard: null,
     
+    // Property Category & Posted By
+    propertyCategory: "land_plot", postedBy: "builder", listingPurpose: "lease",
     // Land Details (Step 4)
     landTitle: "", landType: "", landCategory: "", landAddress: "", landCity: "",
     landArea: "", landAreaMin: "", landAreaMax: "", areaUnit: "sqft",

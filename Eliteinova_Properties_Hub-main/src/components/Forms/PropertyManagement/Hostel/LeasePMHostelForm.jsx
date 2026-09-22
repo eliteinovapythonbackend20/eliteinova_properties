@@ -404,15 +404,17 @@ export default function LeasePMHostelForm({ isOpen, onClose }) {
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, 
     pmBusinessRegCert: null, pmGstCert: null, pmReraCert: null, officeAddressProof: null,
     
+    // Property Category & Posted By
+    propertyCategory: "hostel", postedBy: "property_management", listingPurpose: "lease",
     // Property Details (Step 4)
     city: "", area: "", landmark: "", pinCode: "", nearbyConnectivity: "",
-    hostelType: "", roomType: "", sharingType: "", totalCapacity: "",
+    hostelType: "", roomType: [], sharingType: [], totalCapacity: "",
     bathrooms: "", furnishedStatus: "", totalFloors: "", floorNumber: "",
     facingDirection: "", balcony: "",
     builtUpArea: "", carpetArea: "",
     hostelCategory: "", genderType: "",
     modularKitchen: "no", wardrobes: "no", airConditioning: "no",
-    utilityArea: "no", smartHomeFeatures: "no", appliancesIncluded: "no",
+    utilityArea: "no", smartHomeFeatures: "no", appliancesIncluded: [],
     propertyAge: "", ownershipType: "",
     nearbyPlaces: [],
     
@@ -625,11 +627,11 @@ export default function LeasePMHostelForm({ isOpen, onClose }) {
           newErrors.totalCapacity = "Total capacity is required";
           isValid = false;
         }
-        if (!formData.roomType) {
+        if (!formData.roomType.length) {
           newErrors.roomType = "Please select room type";
           isValid = false;
         }
-        if (!formData.sharingType) {
+        if (!formData.sharingType.length) {
           newErrors.sharingType = "Please select sharing type";
           isValid = false;
         }
@@ -858,8 +860,11 @@ export default function LeasePMHostelForm({ isOpen, onClose }) {
   const handleDocumentUpload = (docType, e, maxSize = 5) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.type !== 'application/pdf') {
-        alert(`${docType} must be a PDF file`);
+      // logo / photo uploads are images (the input says JPG/PNG); everything else is a PDF document
+      const isImageUpload = /logo|photo/i.test(docType);
+      const validTypes = isImageUpload ? ['image/jpeg', 'image/jpg', 'image/png'] : ['application/pdf'];
+      if (!validTypes.includes(file.type)) {
+        alert(isImageUpload ? `${docType} must be a JPG or PNG image` : `${docType} must be a PDF file`);
         return;
       }
       if (file.size > maxSize * 1024 * 1024) {
@@ -1683,7 +1688,7 @@ function MobContentLeasePMHostel({
         <div className="grid grid-cols-2 gap-1">
           {roomTypeOptions.map(rt => (
             <label key={rt} className="flex items-center gap-1 text-[10px] cursor-pointer">
-              <input type="radio" name="mob-room-type-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType === rt} onChange={() => updateForm("roomType", rt)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType.includes(rt)} onChange={() => toggleArrayItem("roomType", rt)} />
               {rt}
             </label>
           ))}
@@ -1694,7 +1699,7 @@ function MobContentLeasePMHostel({
         <div className="grid grid-cols-2 gap-1">
           {["Single", "Double", "Triple", "4-Sharing", "Dormitory", "Bunk Bed"].map(sh => (
             <label key={sh} className="flex items-center gap-1 text-[10px] cursor-pointer">
-              <input type="radio" name="mob-sharing-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType === sh} onChange={() => updateForm("sharingType", sh)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType.includes(sh)} onChange={() => toggleArrayItem("sharingType", sh)} />
               {sh}
             </label>
           ))}
@@ -2756,7 +2761,7 @@ function DtContentLeasePMHostel({
         <div className="grid grid-cols-2 gap-2">
           {roomTypeOptions.map(rt => (
             <label key={rt} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-room-type-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType === rt} onChange={() => updateForm("roomType", rt)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType.includes(rt)} onChange={() => toggleArrayItem("roomType", rt)} />
               {rt}
             </label>
           ))}
@@ -2767,7 +2772,7 @@ function DtContentLeasePMHostel({
         <div className="grid grid-cols-2 gap-2">
           {["Single", "Double", "Triple", "4-Sharing", "Dormitory", "Bunk Bed"].map(sh => (
             <label key={sh} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-sharing-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType === sh} onChange={() => updateForm("sharingType", sh)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType.includes(sh)} onChange={() => toggleArrayItem("sharingType", sh)} />
               {sh}
             </label>
           ))}

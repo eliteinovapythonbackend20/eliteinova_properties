@@ -4,7 +4,6 @@ import unittest
 
 from app.core.config import settings
 from app.core.storage.local_storage import LocalStorage
-from app.core.storage.cloudinary_storage import CloudinaryStorage
 from app.core.storage.gcs_storage import GCSStorage
 from app.core.storage_factory import StorageFactory
 
@@ -19,18 +18,23 @@ class LocalStorageTests(unittest.TestCase):
             try:
                 storage = LocalStorage()
 
-                stored_path = asyncio.run(
+                stored_url = asyncio.run(
                     storage.upload_file(
                         file=io.BytesIO(b"hello world"),
                         destination_path="demo/test.txt",
                     )
                 )
 
-                self.assertEqual(stored_path, "demo/test.txt")
-                self.assertTrue(asyncio.run(storage.file_exists("demo/test.txt")))
+                # upload_file returns a full absolute URL (the frontend is a
+                # different origin than the API), not the bare disk path.
+                self.assertEqual(
+                    stored_url,
+                    f"{settings.BACKEND_BASE_URL}/uploads/demo/test.txt",
+                )
+                self.assertTrue(asyncio.run(storage.file_exists(stored_url)))
 
-                asyncio.run(storage.delete_file("demo/test.txt"))
-                self.assertFalse(asyncio.run(storage.file_exists("demo/test.txt")))
+                asyncio.run(storage.delete_file(stored_url))
+                self.assertFalse(asyncio.run(storage.file_exists(stored_url)))
             finally:
                 settings.LOCAL_STORAGE_PATH = original_path
 
@@ -50,18 +54,10 @@ class StorageFactoryTests(unittest.TestCase):
         finally:
             settings.STORAGE_TYPE = original
 
-    def test_selects_cloudinary_storage(self):
-        original = settings.STORAGE_TYPE
-        settings.STORAGE_TYPE = "cloudinary"
-        try:
-            self.assertIsInstance(StorageFactory.get_storage(), CloudinaryStorage)
-        finally:
-            settings.STORAGE_TYPE = original
-
     # GCSStorage.__init__ makes a real network call (bucket.exists()), so it
     # isn't safe to instantiate in a unit test without mocking the google
     # cloud client - just confirm it implements the same interface the
-    # factory expects, matching LocalStorage/CloudinaryStorage.
+    # factory expects, matching LocalStorage.
     def test_gcs_storage_implements_storage_provider(self):
         from app.core.storage.base import StorageProvider
 

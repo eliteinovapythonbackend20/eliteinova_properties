@@ -89,6 +89,7 @@ export default function LeaseLPForm({ isOpen, onClose }) {
     ownerName: "", contactNumber: "", emailId: "", gender: "",
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, passportPhoto: null,
     addressLine1: "", addressLine2: "", city: "", district: "", state: "", pinCode: "",
+    propertyCategory: "land_plot", postedBy: "owner", listingPurpose: "lease",
     landTitle: "", landType: "", landCategory: "", landAddress: "", landCity: "",
     landArea: "", landAreaMin: "", landAreaMax: "", areaUnit: "sqft",
     landFacing: "", landShape: "", roadWidth: "", waterSource: "", soilType: "",

@@ -10,8 +10,6 @@ import {
   CheckSquare, PenTool, Search, ChevronDown
 } from "lucide-react";
 import { createProperty } from "../../../../services/propertyService";
-import { usePayment } from '../../../../hooks/usePayment.js';
-import { loadRazorpayScript } from '../../../../utils/razorpayLoader.js';
 import { storage } from "../../../../utils/storage.js";
 
 const steps = [
@@ -23,7 +21,6 @@ const steps = [
   "Upload Documents", 
   "Bank Details",
   "Social Media",
-  "Payment",
   "Declaration"
 ];
 
@@ -36,7 +33,6 @@ const subtitles = [
   "Upload required documents",
   "Enter your bank details",
   "Social media & online presence",
-  "Complete payment to list your property",
   "Confirm & submit"
 ];
 
@@ -391,11 +387,6 @@ export default function LeaseAgentApartForm({ isOpen, onClose }) {
 
     // Social Media (Step 7)
     website: "", facebook: "", instagram: "", linkedin: "", youtube: "",
-    paymentId: null,
-    paymentOrderId: null,
-    paymentSignature: null,
-    paymentAmount: null,
-    paymentStatus: 'idle',
     
     // Declaration & Signature (Step 8)
     declarationAccepted1: false,
@@ -419,16 +410,6 @@ export default function LeaseAgentApartForm({ isOpen, onClose }) {
 
   const user = storage.get("user");
 
-
-  useEffect(() => {
-    if (isOpen) {
-      loadRazorpayScript().then(loaded => {
-        if (!loaded) {
-          console.warn('Razorpay script failed to load');
-        }
-      });
-    }
-  }, [isOpen]);
 
 
   
@@ -544,8 +525,11 @@ export default function LeaseAgentApartForm({ isOpen, onClose }) {
   const handleDocumentUpload = (docType, e, maxSize = 5) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.type !== 'application/pdf') {
-        alert(`${docType} must be a PDF file`);
+      // logo / photo uploads are images (the input says JPG/PNG); everything else is a PDF document
+      const isImageUpload = /logo|photo/i.test(docType);
+      const validTypes = isImageUpload ? ['image/jpeg', 'image/jpg', 'image/png'] : ['application/pdf'];
+      if (!validTypes.includes(file.type)) {
+        alert(isImageUpload ? `${docType} must be a JPG or PNG image` : `${docType} must be a PDF file`);
         return;
       }
       if (file.size > maxSize * 1024 * 1024) {
@@ -722,17 +706,7 @@ export default function LeaseAgentApartForm({ isOpen, onClose }) {
     if (s === 7) {
       // No required fields in social media step
     }
-    if (s === 8) { // Payment step
-      if (paymentStatus !== 'success') {
-        errors.payment = 'Please complete the payment first';
-      }
-    }
-    if (s === 9) {
-
-      if (formData.paymentStatus !== 'paid') {
-        e.payment = "Please complete the payment first";
-      }
-
+    if (s === 8) {
       if (!formData.signature) e.signature = "Please draw your signature";
       if (!formData.signatureDate) e.signatureDate = "Date is required";
       if (!formData.signaturePlace.trim()) e.signaturePlace = "Place is required";
@@ -746,29 +720,15 @@ export default function LeaseAgentApartForm({ isOpen, onClose }) {
 
   const handleSubmit = async () => {
     if (step === 8) {
-      initiatePayment();
-      return;
-    }
-    if (step === 9) {
-      const stepErrors = validateStep(9);
+      const stepErrors = validateStep(8);
       if (Object.keys(stepErrors).length > 0) {
         setErrors(stepErrors);
-        return;
-      }
-      if (formData.paymentStatus !== 'paid') {
-        setErrors({ payment: 'Please complete the payment first' });
-        setStep(8);
         return;
       }
 
       try {
         const submitData = {
-          ...formData,
-          payment_id: formData.paymentId,
-          payment_order_id: formData.paymentOrderId,
-          payment_signature: formData.paymentSignature,
-          payment_amount: formData.paymentAmount,
-          payment_status: 'paid'
+          ...formData
         };
 
         const response = await createProperty(submitData);
@@ -1061,70 +1021,6 @@ export default function LeaseAgentApartForm({ isOpen, onClose }) {
   );
 }
 
-
-const PaymentStep = () => (
-    <>
-      <div className="flex items-center gap-1.5 mb-2 pb-1.5 border-b-2 border-green-50">
-        <div className="w-1 h-3 bg-[#00695C] rounded" />
-        <h3 className="text-[11px] font-bold text-[#00695C]">💳 Complete Payment</h3>
-      </div>
-      
-      <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-xl p-4 mb-4 text-center">
-        <p className="text-[13px] font-semibold text-[#00695C]">
-          Listing Fee:
-        </p>
-        <p className="text-[10px] text-gray-500">
-         
-        </p>
-      </div>
-
-      {paymentStatus === 'idle' && (
-        <button
-          onClick={initiatePayment}
-          disabled={paymentProcessing}
-          className="w-full py-3 bg-gradient-to-r from-[#00695C] to-[#00897B] text-white rounded-xl font-semibold text-[14px] flex items-center justify-center gap-2 disabled:opacity-60 hover:shadow-lg transition-all"
-        >
-          💳 Pay Now
-        </button>
-      )}
-
-      {paymentStatus === 'processing' && (
-        <div className="text-center py-4">
-          <div className="animate-spin text-3xl mb-2">⏳</div>
-          <p className="text-[13px] text-gray-600">Processing payment...</p>
-          <p className="text-[10px] text-gray-400 mt-1">Please don't close this window</p>
-        </div>
-      )}
-
-      {paymentStatus === 'success' && (
-        <div className="text-center py-4 bg-green-50 rounded-xl border border-green-200">
-          <div className="text-3xl mb-2">✅</div>
-          <p className="text-[13px] font-semibold text-green-600">Payment Successful!</p>
-          <p className="text-[11px] text-gray-500 mt-1">Submitting your property...</p>
-        </div>
-      )}
-
-      {paymentStatus === 'failed' && (
-        <div className="text-center py-4 bg-red-50 rounded-xl border border-red-200">
-          <div className="text-3xl mb-2">❌</div>
-          <p className="text-[13px] font-semibold text-red-600">Payment Failed</p>
-          {paymentError && (
-            <p className="text-[11px] text-red-500 mt-1">{paymentError}</p>
-          )}
-          <button
-            onClick={initiatePayment}
-            className="mt-3 px-6 py-2 bg-[#00695C] text-white rounded-lg text-[12px] hover:bg-[#004d42] transition-colors"
-          >
-            Retry Payment
-          </button>
-        </div>
-      )}
-
-      <p className="text-[9px] text-gray-400 text-center mt-3">
-        🔒 Secure payment via Razorpay
-      </p>
-    </>
-  );
 
 // MOBILE CONTENT - Lease Agent Apartment
 function MobContentLeaseAgentApart({ 
@@ -1873,10 +1769,8 @@ function MobContentLeaseAgentApart({
       </Field>
     </>
   );
-  if(step === 8 ) return <PaymentStep />;
-
   // STEP 8: Declaration & Signature
-  if (step === 9) return (
+  if (step === 8) return (
     <>
 
       {/* Signature Section */}

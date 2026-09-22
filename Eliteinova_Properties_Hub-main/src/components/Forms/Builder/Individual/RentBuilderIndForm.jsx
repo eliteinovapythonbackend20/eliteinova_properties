@@ -95,6 +95,8 @@ export default function RentBuilderIndForm({ isOpen, onClose }) {
     // Identity & Business Verification (Step 3)
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, companyRegCert: null, gstCert: null, reraCert: null, companyPanCard: null,
     
+    // Property Category & Posted By
+    propertyCategory: "individual", postedBy: "builder",
     // Property Details (Step 4)
     propertyTitle: "", propertyType: "", propertyAddress: "", propertyCity: "", builtUpArea: "", carpetArea: "", bedrooms: "", bathrooms: "", furnishingStatus: "", parking: "",
     rentalDuration: "", occupancyDetails: "", petFriendly: "", gardenSpace: "", terrace: "",

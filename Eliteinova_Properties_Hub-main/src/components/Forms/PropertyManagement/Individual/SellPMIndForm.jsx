@@ -115,14 +115,16 @@ export default function SellPMIndForm({ isOpen, onClose }) {
     // Identity & Business Verification (Step 3)
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, pmBusinessRegCert: null, pmGstCert: null, pmReraCert: null, officeAddressProof: null,
     
+    // Property Category & Posted By
+    propertyCategory: "individual", postedBy: "property_management",
     // Property Details (Step 4)
     propertyTitle: "", propertyType: "", propertyArea: "", propertyCity: "", builtUpArea: "", carpetArea: "", bedrooms: "", bathrooms: "", furnishingStatus: "", parking: "", parkingCount: "",
-    
+
     // Sell Preferences (Step 4)
     preferredLocation: "", expectedPriceRange: { min: "", max: "" }, negotiable: "", propertyAge: "", propertyCondition: "", ownershipType: "", loanOutstanding: "", gardenSpace: "", terrace: "",
     
     // Pricing & Amenities (Step 5)
-    listingPurpose: "sale", expectedPrice: "", budgetRange: { min: "", max: "" }, securityDeposit: "", priceType: "", maintenance: "", availableFrom: "", selectedAmenities: [], otherAmenities: "",
+    listingPurpose: "sell", expectedPrice: "", budgetRange: { min: "", max: "" }, securityDeposit: "", priceType: "", maintenance: "", availableFrom: "", selectedAmenities: [], otherAmenities: "",
     
     // Bank Details (Step 6)
     accountHolderName: "", bankName: "", accountNumber: "", ifscCode: "", upiId: "",
@@ -484,8 +486,11 @@ export default function SellPMIndForm({ isOpen, onClose }) {
   const handleDocumentUpload = (docType, e, maxSize = 5) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.type !== 'application/pdf') {
-        alert(`${docType} must be a PDF file`);
+      // logo / photo uploads are images (the input says JPG/PNG); everything else is a PDF document
+      const isImageUpload = /logo|photo/i.test(docType);
+      const validTypes = isImageUpload ? ['image/jpeg', 'image/jpg', 'image/png'] : ['application/pdf'];
+      if (!validTypes.includes(file.type)) {
+        alert(isImageUpload ? `${docType} must be a JPG or PNG image` : `${docType} must be a PDF file`);
         return;
       }
       if (file.size > maxSize * 1024 * 1024) {

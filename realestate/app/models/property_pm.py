@@ -27,7 +27,7 @@ class PropertyManagementProperty(Base):
     rera_registration_number = Column(String(50), nullable=False)
     gst_number = Column(String(50), nullable=True)
     experience = Column(Integer, nullable=True)
-    aadhar_number = Column(String(20), nullable=False)
+    aadhaar_number = Column(String(20), nullable=False)
     pan_number = Column(String(20), nullable=False)
 
     # NEW: profile photo + company logo
@@ -41,6 +41,7 @@ class PropertyManagementProperty(Base):
     pincode = Column(String(20), nullable=False)
     landmark = Column(String(200), nullable=False)
 
+    service_area = Column(JSONB, default=[], nullable=True) 
     # social link
     website = Column(Text, nullable=True)
     facebook = Column(Text, nullable=True)

@@ -82,9 +82,9 @@ export default function ApartRentForm({ isOpen, onClose }) {
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, passportPhoto: null,
     addressLine1: "", addressLine2: "", ownerCity: "", district: "", state: "", ownerPinCode: "",
     // Property Details (Step 2)
-    propertyType: "Apartment", purpose: "Rent",
+    propertyType: "", purpose: "Rent",
     area: "", landmark: "", nearbyConnectivity: "",
-    propertyCategory: "individual",
+    propertyCategory: "apartment",
     postedBy: "owner",
     builtUpArea: "", carpetArea: "",
     bedrooms: "", bathrooms: "", floorNumber: "", totalFloors: "",

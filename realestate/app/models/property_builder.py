@@ -1,5 +1,6 @@
 from sqlalchemy import Boolean, Column, Date, DateTime, Integer, String, ForeignKey, Text, func
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import JSONB
 from app.core.database import Base
 
 class PropertyBuilderDetails(Base):
@@ -20,7 +21,7 @@ class PropertyBuilderDetails(Base):
     rera_registration_number = Column(String(50), nullable=False)
     gst_number = Column(String(50), nullable=True)
     experience = Column(Integer, nullable=True)
-    aadhar_number = Column(String(20), nullable=False)
+    aadhaar_number = Column(String(20), nullable=False)
     pan_number = Column(String(20), nullable=False)
 
     # NEW: profile photo + company logo
@@ -32,6 +33,8 @@ class PropertyBuilderDetails(Base):
     company_reg_number = Column(String(100), nullable=False)
     company_website = Column(Text, nullable=True)
     company_description = Column(Text, nullable=True)
+
+    service_area = Column(JSONB, default=[], nullable=True)  # List of service areas (e.g., cities or regions)
 
     # address
     office_address = Column(Text, nullable=False)

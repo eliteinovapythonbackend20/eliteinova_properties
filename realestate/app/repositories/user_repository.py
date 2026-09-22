@@ -76,7 +76,7 @@ class UserRepository:
             return user
             
         except Exception as e:
-            print(f"❌ Error in create_user: {e}")
+            print(f"Error in create_user: {e}")
             await self.db.rollback()
             raise e
     

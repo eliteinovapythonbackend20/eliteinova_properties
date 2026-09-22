@@ -116,14 +116,15 @@ export default function SellBuilderApartForm({ isOpen, onClose }) {
     // Identity & Business Verification (Step 3)
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, companyRegCert: null, gstCert: null, reraCert: null, companyPanCard: null,
     
+    // Property Category & Posted By
+    propertyCategory: "apartment", postedBy: "builder",
     // Property Details (Step 4)
-    propertyType: "Apartment", purpose: "Sell",
+    propertyType: "", purpose: "Sell",
     city: "", area: "", landmark: "", pinCode: "", nearbyConnectivity: "",
     builtUpArea: "", carpetArea: "",
     bedrooms: "", bathrooms: "", floorNumber: "", totalFloors: "",
     facingDirection: "", balcony: "", propertyAge: "", cornerUnit: "",
-    furnishing: "", modularKitchen: "", wardrobes: "", airConditioning: "",
-    utilityArea: "", smartHomeFeatures: "",
+    furnishing: "", interiorFeatures: [],
     ownershipType: "",
     
     // Pricing & Amenities (Step 5)
@@ -471,6 +472,15 @@ export default function SellBuilderApartForm({ isOpen, onClose }) {
     }
   };
 
+  const toggleArrayItem = (field, value) => {
+    const current = formData[field] || [];
+    if (current.includes(value)) {
+      updateForm(field, current.filter(v => v !== value));
+    } else {
+      updateForm(field, [...current, value]);
+    }
+  };
+
   const addCustomAmenity = () => {
     const newAmenity = formData.otherAmenities.trim();
     if (newAmenity && !formData.selectedAmenities.includes(newAmenity) && !customAmenitiesList.includes(newAmenity)) {
@@ -612,6 +622,7 @@ export default function SellBuilderApartForm({ isOpen, onClose }) {
               customAmenitiesList={customAmenitiesList}
               addCustomAmenity={addCustomAmenity}
               removeCustomAmenity={removeCustomAmenity}
+              toggleArrayItem={toggleArrayItem}
               yesNoOptions={yesNoOptions}
               furnishingOptions={furnishingOptions}
               facingOptions={facingOptions}
@@ -729,6 +740,7 @@ export default function SellBuilderApartForm({ isOpen, onClose }) {
               customAmenitiesList={customAmenitiesList}
               addCustomAmenity={addCustomAmenity}
               removeCustomAmenity={removeCustomAmenity}
+              toggleArrayItem={toggleArrayItem}
               yesNoOptions={yesNoOptions}
               furnishingOptions={furnishingOptions}
               facingOptions={facingOptions}
@@ -802,7 +814,7 @@ function MobContentSellBuilderApart({
   errors, imagePreviews, handleImageUpload, removeImage, 
   handleVideoUpload, videoPreview, removeVideo, 
   handleDocumentUpload, toggleAmenity, toggleNearbyPlace, 
-  customAmenitiesList, addCustomAmenity, removeCustomAmenity, 
+  customAmenitiesList, addCustomAmenity, removeCustomAmenity, toggleArrayItem, 
   yesNoOptions, furnishingOptions, facingOptions, ownershipOptions, 
   contactTimeOptions, apartmentSellAmenities, 
   handleCoverImageUpload, handleFloorPlanUpload, 
@@ -1167,15 +1179,12 @@ function MobContentSellBuilderApart({
       </Field>
       <Field label="Interior Features">
         <div className="grid grid-cols-2 gap-1">
-          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => {
-            const key = feature.toLowerCase().replace(/ /g, '');
-            return (
-              <label key={feature} className="flex items-center gap-1 text-[9px] cursor-pointer">
-                <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData[key] === "yes"} onChange={() => updateForm(key, formData[key] === "yes" ? "no" : "yes")} />
-                {feature}
-              </label>
-            );
-          })}
+          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => (
+            <label key={feature} className="flex items-center gap-1 text-[9px] cursor-pointer">
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={(formData.interiorFeatures || []).includes(feature)} onChange={() => toggleArrayItem("interiorFeatures", feature)} />
+              {feature}
+            </label>
+          ))}
         </div>
       </Field>
     </>
@@ -1686,7 +1695,7 @@ function DtContentSellBuilderApart({
   errors, imagePreviews, handleImageUpload, removeImage, 
   handleVideoUpload, videoPreview, removeVideo, 
   handleDocumentUpload, toggleAmenity, toggleNearbyPlace, 
-  customAmenitiesList, addCustomAmenity, removeCustomAmenity, 
+  customAmenitiesList, addCustomAmenity, removeCustomAmenity, toggleArrayItem, 
   yesNoOptions, furnishingOptions, facingOptions, ownershipOptions, 
   contactTimeOptions, apartmentSellAmenities, 
   handleCoverImageUpload, handleFloorPlanUpload, 
@@ -2055,15 +2064,12 @@ function DtContentSellBuilderApart({
       </FieldDt>
       <FieldDt label="Interior Features">
         <div className="grid grid-cols-2 gap-2">
-          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => {
-            const key = feature.toLowerCase().replace(/ /g, '');
-            return (
-              <label key={feature} className="flex items-center gap-2 text-[13px] cursor-pointer">
-                <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData[key] === "yes"} onChange={() => updateForm(key, formData[key] === "yes" ? "no" : "yes")} />
-                {feature}
-              </label>
-            );
-          })}
+          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => (
+            <label key={feature} className="flex items-center gap-2 text-[13px] cursor-pointer">
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={(formData.interiorFeatures || []).includes(feature)} onChange={() => toggleArrayItem("interiorFeatures", feature)} />
+              {feature}
+            </label>
+          ))}
         </div>
       </FieldDt>
     </>

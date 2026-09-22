@@ -343,6 +343,8 @@ export default function RentAgentLPForm({ isOpen, onClose }) {
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, passportPhoto: null,
     addressLine1: "", addressLine2: "", city: "", district: "", state: "", pinCode: "",
 
+    // Property Category & Posted By
+    propertyCategory: "land_plot", postedBy: "agent", listingPurpose: "rent",
     // Land Details (Step 2)
     landTitle: "", landType: "", landCategory: "", landAddress: "", landCity: "",
     landArea: "", landAreaMin: "", landAreaMax: "", areaUnit: "sqft",
@@ -559,7 +561,9 @@ export default function RentAgentLPForm({ isOpen, onClose }) {
     setIsDrawing(false);
     if (signaturePoints.length > 1) {
       setAllSignaturePoints((prev) => [...prev, signaturePoints]);
-      updateForm("signature", true);
+      // store the drawn signature as an image (the backend column is text), not the boolean `true`
+      const canvas = activeCanvas ? document.getElementById(activeCanvas) : null;
+      updateForm("signature", canvas ? canvas.toDataURL('image/png') : null);
     }
     setSignaturePoints([]);
   };

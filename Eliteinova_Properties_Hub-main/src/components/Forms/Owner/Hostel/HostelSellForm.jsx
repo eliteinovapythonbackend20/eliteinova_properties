@@ -102,8 +102,8 @@ export default function HostelSellForm({ isOpen, onClose }) {
     // Property Details (Step 2)
     propertyTitle: "", propertyType: "", propertyAddress: "",
     propertyCity: "", builtUpArea: "", carpetArea: "",
-    numberOfRooms: "", numberOfBathrooms: "", roomType: "", bathroomType: "",
-    furnishingStatus: "", sharingType: "", totalCapacity: "",
+    numberOfRooms: "", numberOfBathrooms: "", roomType: [], bathroomType: "",
+    furnishingStatus: "", sharingType: [], totalCapacity: "",
     // Hostel-specific (Step 2)
     hostelCategory: "", genderType: "", ageGroup: "", foodIncluded: "",
     foodType: "", mealsPerDay: "", kitchenAccess: "",
@@ -111,8 +111,10 @@ export default function HostelSellForm({ isOpen, onClose }) {
     propertyAge: "", constructionStatus: "", possessionTimeline: "",
     ownershipType: "", readyToBuy: "", underConstruction: "",
     immediatePossession: "",
+    // Property Category & Posted By
+    propertyCategory: "hostel", postedBy: "owner",
     // Pricing & Amenities (Step 3)
-    listingPurpose: "sell", expectedPrice: "", budgetRange: { min: "", max: "" }, 
+    listingPurpose: "sell", expectedPrice: "", budgetRange: { min: "", max: "" },
     priceType: "", priceNegotiable: "",
     availableFrom: "", selectedAmenities: [], otherAmenities: "",
     // Media (Step 4)
@@ -323,6 +325,24 @@ export default function HostelSellForm({ isOpen, onClose }) {
     }
   };
 
+  const toggleRoomType = (rt) => {
+    const current = formData.roomType;
+    if (current.includes(rt)) {
+      updateForm("roomType", current.filter(r => r !== rt));
+    } else {
+      updateForm("roomType", [...current, rt]);
+    }
+  };
+
+  const toggleSharingType = (sh) => {
+    const current = formData.sharingType;
+    if (current.includes(sh)) {
+      updateForm("sharingType", current.filter(s => s !== sh));
+    } else {
+      updateForm("sharingType", [...current, sh]);
+    }
+  };
+
   const addCustomAmenity = () => {
     const newAmenity = formData.otherAmenities.trim();
     if (newAmenity && !formData.selectedAmenities.includes(newAmenity) && !customAmenitiesList.includes(newAmenity)) {
@@ -431,8 +451,8 @@ export default function HostelSellForm({ isOpen, onClose }) {
       else if (!isOnlyNumbers(formData.numberOfRooms)) e.numberOfRooms = "Number of rooms must be a number";
       if (!formData.totalCapacity) e.totalCapacity = "Total capacity is required";
       else if (!isOnlyNumbers(formData.totalCapacity)) e.totalCapacity = "Total capacity must be a number";
-      if (!formData.roomType) e.roomType = "Please select a room type";
-      if (!formData.sharingType) e.sharingType = "Please select a sharing type";
+      if (!formData.roomType.length) e.roomType = "Please select at least one room type";
+      if (!formData.sharingType.length) e.sharingType = "Please select at least one sharing type";
       if (!formData.bathroomType) e.bathroomType = "Please select a bathroom type";
       if (!formData.furnishingStatus) e.furnishingStatus = "Please select furnishing status";
       if (!formData.propertyAge) e.propertyAge = "Please select property age";
@@ -583,6 +603,8 @@ export default function HostelSellForm({ isOpen, onClose }) {
               removeCoverImage={removeCoverImage}
               removeFloorPlan={removeFloorPlan}
               toggleContactMethod={toggleContactMethod}
+              toggleRoomType={toggleRoomType}
+              toggleSharingType={toggleSharingType}
               startDrawing={startDrawing}
               draw={draw}
               stopDrawing={stopDrawing}
@@ -706,6 +728,8 @@ export default function HostelSellForm({ isOpen, onClose }) {
               removeCoverImage={removeCoverImage}
               removeFloorPlan={removeFloorPlan}
               toggleContactMethod={toggleContactMethod}
+              toggleRoomType={toggleRoomType}
+              toggleSharingType={toggleSharingType}
               startDrawing={startDrawing}
               draw={draw}
               stopDrawing={stopDrawing}
@@ -770,7 +794,7 @@ function MobContentSell({
   bankOptions,
   foodTypeOptions, mealOptions,
   handleCoverImageUpload, handleFloorPlanUpload, coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan,
-  toggleContactMethod, startDrawing, draw, stopDrawing, clearSignature, 
+  toggleContactMethod, toggleRoomType, toggleSharingType, startDrawing, draw, stopDrawing, clearSignature,
   signaturePoints, allSignaturePoints, setAllSignaturePoints,
   errors
 }) {
@@ -990,7 +1014,7 @@ function MobContentSell({
         <div className="grid grid-cols-2 gap-1.5">
           {roomTypeOptions.map(rt => (
             <label key={rt} className="flex items-center gap-1.5 text-[10px] cursor-pointer">
-              <input type="radio" name="mob-room-type" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType === rt} onChange={() => updateForm("roomType", rt)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType.includes(rt)} onChange={() => toggleRoomType(rt)} />
               {rt}
             </label>
           ))}
@@ -1001,7 +1025,7 @@ function MobContentSell({
         <div className="grid grid-cols-2 gap-1.5">
           {sharingOptions.map(sh => (
             <label key={sh} className="flex items-center gap-1.5 text-[10px] cursor-pointer">
-              <input type="radio" name="mob-sharing" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType === sh} onChange={() => updateForm("sharingType", sh)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType.includes(sh)} onChange={() => toggleSharingType(sh)} />
               {sh}
             </label>
           ))}
@@ -1633,7 +1657,7 @@ function DtContentSell({
   bankOptions,
   foodTypeOptions, mealOptions,
   handleCoverImageUpload, handleFloorPlanUpload, coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan,
-  toggleContactMethod, startDrawing, draw, stopDrawing, clearSignature, 
+  toggleContactMethod, toggleRoomType, toggleSharingType, startDrawing, draw, stopDrawing, clearSignature,
   signaturePoints, allSignaturePoints, setAllSignaturePoints,
   errors
 }) {
@@ -1855,7 +1879,7 @@ function DtContentSell({
         <div className="grid grid-cols-2 gap-1">
           {roomTypeOptions.map(rt => (
             <label key={rt} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-room-type" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType === rt} onChange={() => updateForm("roomType", rt)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.roomType.includes(rt)} onChange={() => toggleRoomType(rt)} />
               {rt}
             </label>
           ))}
@@ -1866,7 +1890,7 @@ function DtContentSell({
         <div className="grid grid-cols-2 gap-1">
           {sharingOptions.map(sh => (
             <label key={sh} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-sharing" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType === sh} onChange={() => updateForm("sharingType", sh)} />
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.sharingType.includes(sh)} onChange={() => toggleSharingType(sh)} />
               {sh}
             </label>
           ))}

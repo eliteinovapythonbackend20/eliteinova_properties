@@ -77,6 +77,7 @@ export default function IndRentForm({ isOpen, onClose }) {
     // Property Category & Posted By (Step 2)
     propertyCategory: "individual",
     postedBy: "owner",
+    listingPurpose: "rent",
     // Pricing & Amenities (Step 3)
     expectedPrice: "", budgetRange: { min: "", max: "" }, priceType: "", maintenance: "",
     availableFrom: "", selectedAmenities: [], otherAmenities: "",

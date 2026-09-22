@@ -15,6 +15,7 @@ from app.api.dependencies import (
     get_property_service,
     get_filter_service,
 )
+from app.core.config import settings
 from app.core.response_utils import strip_none_values
 from app.schemas.property_filter import PropertyFilter
 from app.services.filter_service import FilterService
@@ -70,6 +71,40 @@ async def get_properties_by_purpose(
     params["listingPurpose"] = listing_purpose
     return strip_none_values(await service.run(PropertyFilter.model_validate(params)))
 
+@router.get("/documents/{document_id}/view-url")
+async def get_document_view_url(
+    document_id: int,
+    current_user: Dict[str, Any] = Depends(require_authenticated),
+    service: PropertyService = Depends(get_property_service),
+):
+    """Generate a fresh, short-lived signed URL to view a private document.
+
+    Minted only on this call - never in advance, never on listing/property
+    load, never persisted. Authorized for: admin, the document's own
+    owner/uploader, or a user explicitly granted access to the property
+    (PropertySharedAccess) - all resolved from the DB, never from anything
+    the client claims.
+    """
+    try:
+        view_url = await service.get_document_view_url(document_id, current_user)
+        return {
+            "success": True,
+            "data": {
+                "viewUrl": view_url,
+                "expiresInSeconds": settings.PRIVATE_DOCUMENT_SIGNED_URL_EXPIRE_SECONDS,
+            },
+        }
+    except PropertyError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate document view URL: {str(e)}"
+        )
+
+
 # ============================================
 # MAIN PROPERTY CRUD ENDPOINTS
 # ============================================
@@ -81,6 +116,9 @@ async def create_property(
     video: Optional[UploadFile] = File(None),
     documents: Optional[List[UploadFile]] = File(None),
     document_types: Optional[str] = Form(None),
+    profile_photo: Optional[UploadFile] = File(None),
+    company_logo: Optional[UploadFile] = File(None),
+    agency_logo: Optional[UploadFile] = File(None),
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: PropertyService = Depends(get_property_service)
 ):
@@ -108,6 +146,15 @@ async def create_property(
         data['documents'] = documents
     if document_types:
         data['document_types'] = [t.strip() for t in document_types.split(',') if t.strip()]
+    # Lister photo / logos: each maps to its own column on the role detail table
+    # (profile_photo_url / company_logo_url / agency_logo_url) via the existing
+    # vendor-profile-image handling - they are neither property images nor documents.
+    if profile_photo:
+        data['profilePhoto'] = profile_photo
+    if company_logo:
+        data['companyLogo'] = company_logo
+    if agency_logo:
+        data['agencyLogo'] = agency_logo
 
     extraction_service = FileExtractionService()
     separated_files, cleaned_data, file_metadata = extraction_service.extract_and_separate_files(data)
@@ -134,6 +181,8 @@ async def create_property(
         return strip_none_values(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -152,6 +201,8 @@ async def get_property(
         return strip_none_values(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -166,6 +217,9 @@ async def update_property(
     video: Optional[UploadFile] = File(None),
     documents: Optional[List[UploadFile]] = File(None),
     document_types: Optional[str] = Form(None),
+    profile_photo: Optional[UploadFile] = File(None),
+    company_logo: Optional[UploadFile] = File(None),
+    agency_logo: Optional[UploadFile] = File(None),
     current_user: Dict[str, Any] = Depends(require_authenticated),
     service: PropertyService = Depends(get_property_service)
 ):
@@ -187,6 +241,15 @@ async def update_property(
         data['documents'] = documents
     if document_types:
         data['document_types'] = [t.strip() for t in document_types.split(',') if t.strip()]
+    # Lister photo / logos: each maps to its own column on the role detail table
+    # (profile_photo_url / company_logo_url / agency_logo_url) via the existing
+    # vendor-profile-image handling - they are neither property images nor documents.
+    if profile_photo:
+        data['profilePhoto'] = profile_photo
+    if company_logo:
+        data['companyLogo'] = company_logo
+    if agency_logo:
+        data['agencyLogo'] = agency_logo
 
     extraction_service = FileExtractionService()
     separated_files, cleaned_data, file_metadata = extraction_service.extract_and_separate_files(data)
@@ -208,6 +271,8 @@ async def update_property(
         return strip_none_values(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -228,6 +293,8 @@ async def delete_property(
         )
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -257,6 +324,8 @@ async def get_all_properties(
     try:
         result = await service.get_all_properties(skip=skip, limit=limit)
         return strip_none_values(result)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -289,6 +358,8 @@ async def add_property_images(
         return strip_none_values(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -317,6 +388,8 @@ async def delete_property_image_by_index(
         )
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -346,6 +419,8 @@ async def set_cover_image(
         return strip_none_values(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -374,6 +449,8 @@ async def add_property_video(
         return strip_none_values(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -394,6 +471,8 @@ async def delete_property_video(
         )
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -434,6 +513,8 @@ async def add_property_documents(
         return strip_none_values(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -460,6 +541,8 @@ async def delete_property_document(
         )
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -497,6 +580,8 @@ async def update_vendor_profile_image(
         return strip_none_values(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -524,6 +609,8 @@ async def delete_vendor_profile_image(
         )
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -557,6 +644,8 @@ async def upload_vendor_document(
         return strip_none_values(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -582,6 +671,8 @@ async def delete_vendor_document(
         )
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -601,6 +692,8 @@ async def get_vendor_documents(
         return strip_none_values(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -10247,59 +10247,97 @@
 
 
 
-import React, { useState, useEffect, useRef } from "react";
-import { 
-  User, Menu, ChevronDown, X, Sparkles, Bell, Search, HelpCircle, 
-  Settings, LogOut, Home, Building, Landmark, TrendingUp, Shield, 
-  DollarSign, Wrench, PaintBucket, Droplets, Heart, Star, Zap, 
-  CheckCircle, Award, MapPin, Globe, Phone, Mail, Calendar, Clock, 
+import React, { useState, useEffect, useRef, lazy, Suspense } from "react";
+import {
+  User, Menu, ChevronDown, X, Sparkles, Bell, Search, HelpCircle,
+  Settings, LogOut, Home, Building, Landmark, TrendingUp, Shield,
+  DollarSign, Wrench, PaintBucket, Droplets, Heart, Star, Zap,
+  CheckCircle, Award, MapPin, Globe, Phone, Mail, Calendar, Clock,
   Briefcase, Users, Briefcase as OfficeIcon, Menu as MenuIcon, LogIn, UserPlus,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { jwtDecode } from "jwt-decode";
 import logo from "../../assets/logo1.png";
 
-// Import Login & Register Components
-import CustomerLogin from "../login/CustomerLogin.jsx";
-import CustomerRegister from '../login/CustomerRegister';
-import VendorLogin from '../login/VendorLogin';
-import VendorRegister from '../login/VendorRegister';
+// Login & Register Components - lazy: only ever needed after the user
+// clicks Login/Register, never on first paint.
+const CustomerLogin = lazy(() => import("../login/CustomerLogin.jsx"));
+const CustomerRegister = lazy(() => import('../login/CustomerRegister'));
+const VendorLogin = lazy(() => import('../login/VendorLogin'));
+const VendorRegister = lazy(() => import('../login/VendorRegister'));
 
-// Import Owner Forms
-import { 
-  IndRentForm, IndSellForm, IndLeaseForm,
-  ApartRentForm, ApartSellForm, ApartLeaseForm,
-  ComRentForm, ComSellForm, ComLeaseForm,
-  RentLPForm, SellLPForm, LeaseLPForm,
-  HostelRentForm, HostelSellForm, HostelLeaseForm 
-} from "../Forms/Owner/Index.js";
+// Posting forms (60 total, one per role/category/action) - lazy: each is
+// only needed after the user picks that exact role+category+action from the
+// popups below, never on first paint. Previously these were all imported
+// eagerly here, which put every form's code in the app's initial bundle.
 
-// Import Agent Forms
-import { 
-  RentAgentIndForm, SellAgentIndForm, LeaseAgentIndForm,
-  RentAgentApartForm, SellAgentApartForm, LeaseAgentApartForm,
-  RentAgentComForm, SellAgentComForm, LeaseAgentComForm,
-  RentAgentLPForm, SellAgentLPForm, LeaseAgentLPForm,
-  RentAgentHostelForm, SellAgentHostelForm, LeaseAgentHostelForm 
-} from "../Forms/Agent/Index.js";
+// Owner Forms
+const IndRentForm = lazy(() => import("../Forms/Owner/Individual/IndRentForm.jsx"));
+const IndSellForm = lazy(() => import("../Forms/Owner/Individual/IndSellForm.jsx"));
+const IndLeaseForm = lazy(() => import("../Forms/Owner/Individual/IndLeaseForm.jsx"));
+const ApartRentForm = lazy(() => import("../Forms/Owner/Apartment/ApartRentForm.jsx"));
+const ApartSellForm = lazy(() => import("../Forms/Owner/Apartment/ApartSellForm.jsx"));
+const ApartLeaseForm = lazy(() => import("../Forms/Owner/Apartment/ApartLeaseForm.jsx"));
+const ComRentForm = lazy(() => import("../Forms/Owner/Commercial/ComRentForm.jsx"));
+const ComSellForm = lazy(() => import("../Forms/Owner/Commercial/ComSellForm.jsx"));
+const ComLeaseForm = lazy(() => import("../Forms/Owner/Commercial/ComLeaseForm.jsx"));
+const RentLPForm = lazy(() => import("../Forms/Owner/LandAndPlots/RentLPForm.jsx"));
+const SellLPForm = lazy(() => import("../Forms/Owner/LandAndPlots/SellLPForm.jsx"));
+const LeaseLPForm = lazy(() => import("../Forms/Owner/LandAndPlots/LeaseLPForm.jsx"));
+const HostelRentForm = lazy(() => import("../Forms/Owner/Hostel/HostelRentForm.jsx"));
+const HostelSellForm = lazy(() => import("../Forms/Owner/Hostel/HostelSellForm.jsx"));
+const HostelLeaseForm = lazy(() => import("../Forms/Owner/Hostel/HostelLeaseForm.jsx"));
 
-// Import Builder Forms
-import { 
-  RentBuilderIndForm, SellBuilderIndForm, LeaseBuilderIndForm,
-  RentBuilderApartForm, SellBuilderApartForm, LeaseBuilderApartForm,
-  RentBuilderComForm, SellBuilderComForm, LeaseBuilderComForm,
-  RentBuilderLPForm, SellBuilderLPForm, LeaseBuilderLPForm,
-  RentBuilderHostelForm, SellBuilderHostelForm, LeaseBuilderHostelForm 
-} from "../Forms/Builder/Index.js";
+// Agent Forms
+const RentAgentIndForm = lazy(() => import("../Forms/Agent/Individual/RentAgentIndForm.jsx"));
+const SellAgentIndForm = lazy(() => import("../Forms/Agent/Individual/SellAgentIndForm.jsx"));
+const LeaseAgentIndForm = lazy(() => import("../Forms/Agent/Individual/LeaseAgentIndForm.jsx"));
+const RentAgentApartForm = lazy(() => import("../Forms/Agent/Apartment/RentAgentApartForm.jsx"));
+const SellAgentApartForm = lazy(() => import("../Forms/Agent/Apartment/SellAgentApartForm.jsx"));
+const LeaseAgentApartForm = lazy(() => import("../Forms/Agent/Apartment/LeaseAgentApartForm.jsx"));
+const RentAgentComForm = lazy(() => import("../Forms/Agent/Commercial/RentAgentComForm.jsx"));
+const SellAgentComForm = lazy(() => import("../Forms/Agent/Commercial/SellAgentComForm.jsx"));
+const LeaseAgentComForm = lazy(() => import("../Forms/Agent/Commercial/LeaseAgentComForm.jsx"));
+const RentAgentLPForm = lazy(() => import("../Forms/Agent/LandAndPlots/RentAgentLPForm.jsx"));
+const SellAgentLPForm = lazy(() => import("../Forms/Agent/LandAndPlots/SellAgentLPForm.jsx"));
+const LeaseAgentLPForm = lazy(() => import("../Forms/Agent/LandAndPlots/LeaseAgentLPForm.jsx"));
+const RentAgentHostelForm = lazy(() => import("../Forms/Agent/Hostel/RentAgentHostelForm.jsx"));
+const SellAgentHostelForm = lazy(() => import("../Forms/Agent/Hostel/SellAgentHostelForm.jsx"));
+const LeaseAgentHostelForm = lazy(() => import("../Forms/Agent/Hostel/LeaseAgentHostelForm.jsx"));
 
-// Import Property Management Forms
-import { 
-  RentPMIndForm, SellPMIndForm, LeasePMIndForm,
-  RentPMApartForm, SellPMApartForm, LeasePMApartForm,
-  RentPMComForm, SellPMComForm, LeasePMComForm,
-  RentPMLPForm, SellPMLPForm, LeasePMLPForm,
-  RentPMHostelForm, SellPMHostelForm, LeasePMHostelForm 
-} from "../Forms/PropertyManagement/Index.js";
+// Builder Forms
+const RentBuilderIndForm = lazy(() => import("../Forms/Builder/Individual/RentBuilderIndForm.jsx"));
+const SellBuilderIndForm = lazy(() => import("../Forms/Builder/Individual/SellBuilderIndForm.jsx"));
+const LeaseBuilderIndForm = lazy(() => import("../Forms/Builder/Individual/LeaseBuilderIndForm.jsx"));
+const RentBuilderApartForm = lazy(() => import("../Forms/Builder/Apartment/RentBuilderApartForm.jsx"));
+const SellBuilderApartForm = lazy(() => import("../Forms/Builder/Apartment/SellBuilderApartForm.jsx"));
+const LeaseBuilderApartForm = lazy(() => import("../Forms/Builder/Apartment/LeaseBuilderApartForm.jsx"));
+const RentBuilderComForm = lazy(() => import("../Forms/Builder/Commercial/RentBuilderComForm.jsx"));
+const SellBuilderComForm = lazy(() => import("../Forms/Builder/Commercial/SellBuilderComForm.jsx"));
+const LeaseBuilderComForm = lazy(() => import("../Forms/Builder/Commercial/LeaseBuilderComForm.jsx"));
+const RentBuilderLPForm = lazy(() => import("../Forms/Builder/LandAndPlots/RentBuilderLPForm.jsx"));
+const SellBuilderLPForm = lazy(() => import("../Forms/Builder/LandAndPlots/SellBuilderLPForm.jsx"));
+const LeaseBuilderLPForm = lazy(() => import("../Forms/Builder/LandAndPlots/LeaseBuilderLPForm.jsx"));
+const RentBuilderHostelForm = lazy(() => import("../Forms/Builder/Hostel/RentBuilderHostelForm.jsx"));
+const SellBuilderHostelForm = lazy(() => import("../Forms/Builder/Hostel/SellBuilderHostelForm.jsx"));
+const LeaseBuilderHostelForm = lazy(() => import("../Forms/Builder/Hostel/LeaseBuilderHostelForm.jsx"));
+
+// Property Management Forms
+const RentPMIndForm = lazy(() => import("../Forms/PropertyManagement/Individual/RentPMIndForm.jsx"));
+const SellPMIndForm = lazy(() => import("../Forms/PropertyManagement/Individual/SellPMIndForm.jsx"));
+const LeasePMIndForm = lazy(() => import("../Forms/PropertyManagement/Individual/LeasePMIndForm.jsx"));
+const RentPMApartForm = lazy(() => import("../Forms/PropertyManagement/Apartment/RentPMApartForm.jsx"));
+const SellPMApartForm = lazy(() => import("../Forms/PropertyManagement/Apartment/SellPMApartForm.jsx"));
+const LeasePMApartForm = lazy(() => import("../Forms/PropertyManagement/Apartment/LeasePMApartForm.jsx"));
+const RentPMComForm = lazy(() => import("../Forms/PropertyManagement/Commercial/RentPMComForm.jsx"));
+const SellPMComForm = lazy(() => import("../Forms/PropertyManagement/Commercial/SellPMComForm.jsx"));
+const LeasePMComForm = lazy(() => import("../Forms/PropertyManagement/Commercial/LeasePMComForm.jsx"));
+const RentPMLPForm = lazy(() => import("../Forms/PropertyManagement/LandAndPlots/RentPMLPForm.jsx"));
+const SellPMLPForm = lazy(() => import("../Forms/PropertyManagement/LandAndPlots/SellPMLPForm.jsx"));
+const LeasePMLPForm = lazy(() => import("../Forms/PropertyManagement/LandAndPlots/LeasePMLPForm.jsx"));
+const RentPMHostelForm = lazy(() => import("../Forms/PropertyManagement/Hostel/RentPMHostelForm.jsx"));
+const SellPMHostelForm = lazy(() => import("../Forms/PropertyManagement/Hostel/SellPMHostelForm.jsx"));
+const LeasePMHostelForm = lazy(() => import("../Forms/PropertyManagement/Hostel/LeasePMHostelForm.jsx"));
 
 import {storage} from "../../utils/storage.js";
 
@@ -11764,45 +11802,54 @@ const Header = ({ onPostPropertyClick }) => {
         </div>
       )}
 
-      {/* ============ CUSTOMER LOGIN MODAL ============ */}
-      <CustomerLogin
-        isOpen={showCustomerLogin}
-        onClose={() => setShowCustomerLogin(false)}
-        onSwitchToRegister={() => {
-          setShowCustomerLogin(false);
-          setShowCustomerRegister(true);
-        }}
-      />
+      {/* ============ LOGIN / REGISTER MODALS ============
+          Lazy + conditionally mounted: each modal's chunk is only fetched
+          once the user actually opens it, not on every page load. */}
+      <Suspense fallback={null}>
+        {showCustomerLogin && (
+          <CustomerLogin
+            isOpen={showCustomerLogin}
+            onClose={() => setShowCustomerLogin(false)}
+            onSwitchToRegister={() => {
+              setShowCustomerLogin(false);
+              setShowCustomerRegister(true);
+            }}
+          />
+        )}
 
-      {/* ============ CUSTOMER REGISTER MODAL ============ */}
-      <CustomerRegister
-        isOpen={showCustomerRegister}
-        onClose={() => setShowCustomerRegister(false)}
-        onSwitchToLogin={() => {
-          setShowCustomerRegister(false);
-          setShowCustomerLogin(true);
-        }}
-      />
+        {showCustomerRegister && (
+          <CustomerRegister
+            isOpen={showCustomerRegister}
+            onClose={() => setShowCustomerRegister(false)}
+            onSwitchToLogin={() => {
+              setShowCustomerRegister(false);
+              setShowCustomerLogin(true);
+            }}
+          />
+        )}
 
-      {/* ============ VENDOR LOGIN MODAL ============ */}
-      <VendorLogin
-        isOpen={showVendorLogin}
-        onClose={() => setShowVendorLogin(false)}
-        onSwitchToRegister={() => {
-          setShowVendorLogin(false);
-          setShowVendorRegister(true);
-        }}
-      />
+        {showVendorLogin && (
+          <VendorLogin
+            isOpen={showVendorLogin}
+            onClose={() => setShowVendorLogin(false)}
+            onSwitchToRegister={() => {
+              setShowVendorLogin(false);
+              setShowVendorRegister(true);
+            }}
+          />
+        )}
 
-      {/* ============ VENDOR REGISTER MODAL ============ */}
-      <VendorRegister
-        isOpen={showVendorRegister}
-        onClose={() => setShowVendorRegister(false)}
-        onSwitchToLogin={() => {
-          setShowVendorRegister(false);
-          setShowVendorLogin(true);
-        }}
-      />
+        {showVendorRegister && (
+          <VendorRegister
+            isOpen={showVendorRegister}
+            onClose={() => setShowVendorRegister(false)}
+            onSwitchToLogin={() => {
+              setShowVendorRegister(false);
+              setShowVendorLogin(true);
+            }}
+          />
+        )}
+      </Suspense>
 
       {/* ============ ROLE SELECTION POPUP ============ */}
       {showRoleSelectionPopup && (
@@ -12866,99 +12913,102 @@ const Header = ({ onPostPropertyClick }) => {
         </div>
       )}
 
-      {/* ============ RENDER ALL FORMS ============ */}
-      
+      {/* ============ RENDER ALL FORMS ============
+          Lazy + conditionally mounted: only the one form the user actually
+          picked from the popups above ever gets its chunk fetched/mounted. */}
+      <Suspense fallback={null}>
       {/* Owner Forms */}
-      <IndRentForm isOpen={showOwnerRentForm} onClose={() => setShowOwnerRentForm(false)} />
-      <IndSellForm isOpen={showOwnerSellForm} onClose={() => setShowOwnerSellForm(false)} />
-      <IndLeaseForm isOpen={showOwnerLeaseForm} onClose={() => setShowOwnerLeaseForm(false)} />
+      {showOwnerRentForm && <IndRentForm isOpen onClose={() => setShowOwnerRentForm(false)} />}
+      {showOwnerSellForm && <IndSellForm isOpen onClose={() => setShowOwnerSellForm(false)} />}
+      {showOwnerLeaseForm && <IndLeaseForm isOpen onClose={() => setShowOwnerLeaseForm(false)} />}
 
-      <ApartRentForm isOpen={showApartRentForm} onClose={() => setShowApartRentForm(false)} />
-      <ApartSellForm isOpen={showApartSellForm} onClose={() => setShowApartSellForm(false)} />
-      <ApartLeaseForm isOpen={showApartLeaseForm} onClose={() => setShowApartLeaseForm(false)} />
+      {showApartRentForm && <ApartRentForm isOpen onClose={() => setShowApartRentForm(false)} />}
+      {showApartSellForm && <ApartSellForm isOpen onClose={() => setShowApartSellForm(false)} />}
+      {showApartLeaseForm && <ApartLeaseForm isOpen onClose={() => setShowApartLeaseForm(false)} />}
 
-      <ComRentForm isOpen={showComRentForm} onClose={() => setShowComRentForm(false)} />
-      <ComSellForm isOpen={showComSellForm} onClose={() => setShowComSellForm(false)} />
-      <ComLeaseForm isOpen={showComLeaseForm} onClose={() => setShowComLeaseForm(false)} />
+      {showComRentForm && <ComRentForm isOpen onClose={() => setShowComRentForm(false)} />}
+      {showComSellForm && <ComSellForm isOpen onClose={() => setShowComSellForm(false)} />}
+      {showComLeaseForm && <ComLeaseForm isOpen onClose={() => setShowComLeaseForm(false)} />}
 
       {/* LAND & PLOTS FORMS (OWNER) */}
-      <RentLPForm isOpen={showLPRentForm} onClose={() => setShowLPRentForm(false)} />
-      <SellLPForm isOpen={showLPSellForm} onClose={() => setShowLPSellForm(false)} />
-      <LeaseLPForm isOpen={showLPLeaseForm} onClose={() => setShowLPLeaseForm(false)} />
+      {showLPRentForm && <RentLPForm isOpen onClose={() => setShowLPRentForm(false)} />}
+      {showLPSellForm && <SellLPForm isOpen onClose={() => setShowLPSellForm(false)} />}
+      {showLPLeaseForm && <LeaseLPForm isOpen onClose={() => setShowLPLeaseForm(false)} />}
 
       {/* LAND & PLOTS FORMS (AGENT) */}
-      <RentAgentLPForm isOpen={showAgentLPRentForm} onClose={() => setShowAgentLPRentForm(false)} />
-      <SellAgentLPForm isOpen={showAgentLPSellForm} onClose={() => setShowAgentLPSellForm(false)} />
-      <LeaseAgentLPForm isOpen={showAgentLPLeaseForm} onClose={() => setShowAgentLPLeaseForm(false)} />
+      {showAgentLPRentForm && <RentAgentLPForm isOpen onClose={() => setShowAgentLPRentForm(false)} />}
+      {showAgentLPSellForm && <SellAgentLPForm isOpen onClose={() => setShowAgentLPSellForm(false)} />}
+      {showAgentLPLeaseForm && <LeaseAgentLPForm isOpen onClose={() => setShowAgentLPLeaseForm(false)} />}
 
       {/* LAND & PLOTS FORMS (BUILDER) */}
-      <RentBuilderLPForm isOpen={showBuilderLPRentForm} onClose={() => setShowBuilderLPRentForm(false)} />
-      <SellBuilderLPForm isOpen={showBuilderLPSellForm} onClose={() => setShowBuilderLPSellForm(false)} />
-      <LeaseBuilderLPForm isOpen={showBuilderLPLeaseForm} onClose={() => setShowBuilderLPLeaseForm(false)} />
+      {showBuilderLPRentForm && <RentBuilderLPForm isOpen onClose={() => setShowBuilderLPRentForm(false)} />}
+      {showBuilderLPSellForm && <SellBuilderLPForm isOpen onClose={() => setShowBuilderLPSellForm(false)} />}
+      {showBuilderLPLeaseForm && <LeaseBuilderLPForm isOpen onClose={() => setShowBuilderLPLeaseForm(false)} />}
 
       {/* LAND & PLOTS FORMS (PROPERTY MANAGEMENT) */}
-      <RentPMLPForm isOpen={showPMLPRentForm} onClose={() => setShowPMLPRentForm(false)} />
-      <SellPMLPForm isOpen={showPMLPSellForm} onClose={() => setShowPMLPSellForm(false)} />
-      <LeasePMLPForm isOpen={showPMLPLeaseForm} onClose={() => setShowPMLPLeaseForm(false)} />
+      {showPMLPRentForm && <RentPMLPForm isOpen onClose={() => setShowPMLPRentForm(false)} />}
+      {showPMLPSellForm && <SellPMLPForm isOpen onClose={() => setShowPMLPSellForm(false)} />}
+      {showPMLPLeaseForm && <LeasePMLPForm isOpen onClose={() => setShowPMLPLeaseForm(false)} />}
 
       {/* HOSTEL FORMS (OWNER) */}
-      <HostelRentForm isOpen={showHostelRentForm} onClose={() => setShowHostelRentForm(false)} />
-      <HostelSellForm isOpen={showHostelSellForm} onClose={() => setShowHostelSellForm(false)} />
-      <HostelLeaseForm isOpen={showHostelLeaseForm} onClose={() => setShowHostelLeaseForm(false)} />
+      {showHostelRentForm && <HostelRentForm isOpen onClose={() => setShowHostelRentForm(false)} />}
+      {showHostelSellForm && <HostelSellForm isOpen onClose={() => setShowHostelSellForm(false)} />}
+      {showHostelLeaseForm && <HostelLeaseForm isOpen onClose={() => setShowHostelLeaseForm(false)} />}
 
       {/* HOSTEL FORMS (AGENT) */}
-      <RentAgentHostelForm isOpen={showAgentHostelRentForm} onClose={() => setShowAgentHostelRentForm(false)} />
-      <SellAgentHostelForm isOpen={showAgentHostelSellForm} onClose={() => setShowAgentHostelSellForm(false)} />
-      <LeaseAgentHostelForm isOpen={showAgentHostelLeaseForm} onClose={() => setShowAgentHostelLeaseForm(false)} />
+      {showAgentHostelRentForm && <RentAgentHostelForm isOpen onClose={() => setShowAgentHostelRentForm(false)} />}
+      {showAgentHostelSellForm && <SellAgentHostelForm isOpen onClose={() => setShowAgentHostelSellForm(false)} />}
+      {showAgentHostelLeaseForm && <LeaseAgentHostelForm isOpen onClose={() => setShowAgentHostelLeaseForm(false)} />}
 
       {/* HOSTEL FORMS (BUILDER) */}
-      <RentBuilderHostelForm isOpen={showBuilderHostelRentForm} onClose={() => setShowBuilderHostelRentForm(false)} />
-      <SellBuilderHostelForm isOpen={showBuilderHostelSellForm} onClose={() => setShowBuilderHostelSellForm(false)} />
-      <LeaseBuilderHostelForm isOpen={showBuilderHostelLeaseForm} onClose={() => setShowBuilderHostelLeaseForm(false)} />
+      {showBuilderHostelRentForm && <RentBuilderHostelForm isOpen onClose={() => setShowBuilderHostelRentForm(false)} />}
+      {showBuilderHostelSellForm && <SellBuilderHostelForm isOpen onClose={() => setShowBuilderHostelSellForm(false)} />}
+      {showBuilderHostelLeaseForm && <LeaseBuilderHostelForm isOpen onClose={() => setShowBuilderHostelLeaseForm(false)} />}
 
       {/* HOSTEL FORMS (PROPERTY MANAGEMENT) */}
-      <RentPMHostelForm isOpen={showPMHostelRentForm} onClose={() => setShowPMHostelRentForm(false)} />
-      <SellPMHostelForm isOpen={showPMHostelSellForm} onClose={() => setShowPMHostelSellForm(false)} />
-      <LeasePMHostelForm isOpen={showPMHostelLeaseForm} onClose={() => setShowPMHostelLeaseForm(false)} />
+      {showPMHostelRentForm && <RentPMHostelForm isOpen onClose={() => setShowPMHostelRentForm(false)} />}
+      {showPMHostelSellForm && <SellPMHostelForm isOpen onClose={() => setShowPMHostelSellForm(false)} />}
+      {showPMHostelLeaseForm && <LeasePMHostelForm isOpen onClose={() => setShowPMHostelLeaseForm(false)} />}
 
       {/* Agent Forms */}
-      <RentAgentIndForm isOpen={showAgentRentForm} onClose={() => setShowAgentRentForm(false)} />
-      <SellAgentIndForm isOpen={showAgentSellForm} onClose={() => setShowAgentSellForm(false)} />
-      <LeaseAgentIndForm isOpen={showAgentLeaseForm} onClose={() => setShowAgentLeaseForm(false)} />
+      {showAgentRentForm && <RentAgentIndForm isOpen onClose={() => setShowAgentRentForm(false)} />}
+      {showAgentSellForm && <SellAgentIndForm isOpen onClose={() => setShowAgentSellForm(false)} />}
+      {showAgentLeaseForm && <LeaseAgentIndForm isOpen onClose={() => setShowAgentLeaseForm(false)} />}
 
-      <RentAgentApartForm isOpen={showAgentApartRentForm} onClose={() => setShowAgentApartRentForm(false)} />
-      <SellAgentApartForm isOpen={showAgentApartSellForm} onClose={() => setShowAgentApartSellForm(false)} />
-      <LeaseAgentApartForm isOpen={showAgentApartLeaseForm} onClose={() => setShowAgentApartLeaseForm(false)} />
+      {showAgentApartRentForm && <RentAgentApartForm isOpen onClose={() => setShowAgentApartRentForm(false)} />}
+      {showAgentApartSellForm && <SellAgentApartForm isOpen onClose={() => setShowAgentApartSellForm(false)} />}
+      {showAgentApartLeaseForm && <LeaseAgentApartForm isOpen onClose={() => setShowAgentApartLeaseForm(false)} />}
 
-      <RentAgentComForm isOpen={showAgentComRentForm} onClose={() => setShowAgentComRentForm(false)} />
-      <SellAgentComForm isOpen={showAgentComSellForm} onClose={() => setShowAgentComSellForm(false)} />
-      <LeaseAgentComForm isOpen={showAgentComLeaseForm} onClose={() => setShowAgentComLeaseForm(false)} />
+      {showAgentComRentForm && <RentAgentComForm isOpen onClose={() => setShowAgentComRentForm(false)} />}
+      {showAgentComSellForm && <SellAgentComForm isOpen onClose={() => setShowAgentComSellForm(false)} />}
+      {showAgentComLeaseForm && <LeaseAgentComForm isOpen onClose={() => setShowAgentComLeaseForm(false)} />}
 
       {/* Builder Forms */}
-      <RentBuilderIndForm isOpen={showBuilderRentForm} onClose={() => setShowBuilderRentForm(false)} />
-      <SellBuilderIndForm isOpen={showBuilderSellForm} onClose={() => setShowBuilderSellForm(false)} />
-      <LeaseBuilderIndForm isOpen={showBuilderLeaseForm} onClose={() => setShowBuilderLeaseForm(false)} />
+      {showBuilderRentForm && <RentBuilderIndForm isOpen onClose={() => setShowBuilderRentForm(false)} />}
+      {showBuilderSellForm && <SellBuilderIndForm isOpen onClose={() => setShowBuilderSellForm(false)} />}
+      {showBuilderLeaseForm && <LeaseBuilderIndForm isOpen onClose={() => setShowBuilderLeaseForm(false)} />}
 
-      <RentBuilderApartForm isOpen={showBuilderApartRentForm} onClose={() => setShowBuilderApartRentForm(false)} />
-      <SellBuilderApartForm isOpen={showBuilderApartSellForm} onClose={() => setShowBuilderApartSellForm(false)} />
-      <LeaseBuilderApartForm isOpen={showBuilderApartLeaseForm} onClose={() => setShowBuilderApartLeaseForm(false)} />
+      {showBuilderApartRentForm && <RentBuilderApartForm isOpen onClose={() => setShowBuilderApartRentForm(false)} />}
+      {showBuilderApartSellForm && <SellBuilderApartForm isOpen onClose={() => setShowBuilderApartSellForm(false)} />}
+      {showBuilderApartLeaseForm && <LeaseBuilderApartForm isOpen onClose={() => setShowBuilderApartLeaseForm(false)} />}
 
-      <RentBuilderComForm isOpen={showBuilderComRentForm} onClose={() => setShowBuilderComRentForm(false)} />
-      <SellBuilderComForm isOpen={showBuilderComSellForm} onClose={() => setShowBuilderComSellForm(false)} />
-      <LeaseBuilderComForm isOpen={showBuilderComLeaseForm} onClose={() => setShowBuilderComLeaseForm(false)} />
+      {showBuilderComRentForm && <RentBuilderComForm isOpen onClose={() => setShowBuilderComRentForm(false)} />}
+      {showBuilderComSellForm && <SellBuilderComForm isOpen onClose={() => setShowBuilderComSellForm(false)} />}
+      {showBuilderComLeaseForm && <LeaseBuilderComForm isOpen onClose={() => setShowBuilderComLeaseForm(false)} />}
 
       {/* Property Management Forms */}
-      <RentPMIndForm isOpen={showPMRentForm} onClose={() => setShowPMRentForm(false)} />
-      <SellPMIndForm isOpen={showPMSellForm} onClose={() => setShowPMSellForm(false)} />
-      <LeasePMIndForm isOpen={showPMLeaseForm} onClose={() => setShowPMLeaseForm(false)} />
+      {showPMRentForm && <RentPMIndForm isOpen onClose={() => setShowPMRentForm(false)} />}
+      {showPMSellForm && <SellPMIndForm isOpen onClose={() => setShowPMSellForm(false)} />}
+      {showPMLeaseForm && <LeasePMIndForm isOpen onClose={() => setShowPMLeaseForm(false)} />}
 
-      <RentPMApartForm isOpen={showPMApartRentForm} onClose={() => setShowPMApartRentForm(false)} />
-      <SellPMApartForm isOpen={showPMApartSellForm} onClose={() => setShowPMApartSellForm(false)} />
-      <LeasePMApartForm isOpen={showPMApartLeaseForm} onClose={() => setShowPMApartLeaseForm(false)} />
+      {showPMApartRentForm && <RentPMApartForm isOpen onClose={() => setShowPMApartRentForm(false)} />}
+      {showPMApartSellForm && <SellPMApartForm isOpen onClose={() => setShowPMApartSellForm(false)} />}
+      {showPMApartLeaseForm && <LeasePMApartForm isOpen onClose={() => setShowPMApartLeaseForm(false)} />}
 
-      <RentPMComForm isOpen={showPMComRentForm} onClose={() => setShowPMComRentForm(false)} />
-      <SellPMComForm isOpen={showPMComSellForm} onClose={() => setShowPMComSellForm(false)} />
-      <LeasePMComForm isOpen={showPMComLeaseForm} onClose={() => setShowPMComLeaseForm(false)} />
+      {showPMComRentForm && <RentPMComForm isOpen onClose={() => setShowPMComRentForm(false)} />}
+      {showPMComSellForm && <SellPMComForm isOpen onClose={() => setShowPMComSellForm(false)} />}
+      {showPMComLeaseForm && <LeasePMComForm isOpen onClose={() => setShowPMComLeaseForm(false)} />}
+      </Suspense>
 
       {/* Mobile Menu */}
       {mobileMenuOpen && (

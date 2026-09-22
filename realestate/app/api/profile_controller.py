@@ -4,6 +4,7 @@ import json
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, UploadFile, status, Request
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.services.profile_service import ProfileService, VENDOR_TYPE_MAP
 from app.services.property_service import PropertyService
@@ -315,11 +316,15 @@ async def update_vendor_property_status(
     if status_upper not in ["ACTIVE", "INACTIVE"]:
         raise HTTPException(400, f"Invalid status: {new_status}. Allowed: ACTIVE, INACTIVE")
 
+    canonical_status = (
+        PropertyStatus.ACTIVE.value if status_upper == "ACTIVE" else PropertyStatus.INACTIVE.value
+    )
+
     posted_by = service.resolve_vendor_type(vendor_type.value)
     prop = await property_service.get_property_raw(property_id)
     service.assert_owns_property(prop, current_user.get("user_id"), posted_by)
 
-    updated = await property_service.update_property_status(property_id, status_upper)
+    updated = await property_service.update_property_status(property_id, canonical_status)
     data = {"id": updated.id, "propertyStatus": updated.status}
     return strip_none_values({"success": True, "data": data, "message": "Status updated successfully"})
 
@@ -329,6 +334,7 @@ async def upload_vendor_property_image(
     property_id: str,
     request: Request,
     order: int = Query(0, ge=0),
+    is_cover: bool = Query(False),
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
     property_service: PropertyService = Depends(get_property_service),
@@ -338,9 +344,17 @@ async def upload_vendor_property_image(
     service.assert_owns_property(prop, current_user.get("user_id"), posted_by)
 
     file = await _get_single_file_from_form(request)
-    data = await property_service.add_property_image_raw(
-        property_id=property_id, file=file, user_id=current_user.get("user_id"), is_primary=(order == 0)
-    )
+    try:
+        # "Add Image" only appends to the gallery - it must never assign the
+        # cover image on its own (that's decided at property creation, or
+        # here explicitly via is_cover=true when the edit-property flow is
+        # replacing the cover). Never inferred from order == 0.
+        data = await property_service.add_property_image_raw(
+            property_id=property_id, file=file, user_id=current_user.get("user_id"),
+            is_primary=is_cover, order=order,
+        )
+    except PropertyError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
     return strip_none_values({"success": True, "data": data, "message": "Image uploaded successfully"})
 
 
@@ -426,15 +440,22 @@ async def upload_vendor_document(
     request: Request,
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
-    property_service: PropertyService = Depends(get_property_service),
 ):
-    service.resolve_vendor_type(vendor_type.value)  # validates vendor_type
     file = await _get_single_file_from_form(request)
-    doc_obj = await property_service.upload_vendor_document_raw(
-        user_id=current_user.get("user_id"), doc_type=doc_type, file=file
+    data = await service.upload_vendor_document(
+        user_id=current_user.get("user_id"), vendor_type=vendor_type.value, doc_type=doc_type, file=file
     )
-    data = service.model_to_dict(doc_obj)
     return strip_none_values({"success": True, "data": data, "message": f"{doc_type} uploaded successfully"})
+
+
+@router.get("/{vendor_type}/documents")
+async def get_vendor_documents(
+    vendor_type: VendorType,
+    current_user: Dict[str, Any] = Depends(require_vendor),
+    service: ProfileService = Depends(get_profile_service),
+):
+    data = await service.get_vendor_documents(user_id=current_user.get("user_id"), vendor_type=vendor_type.value)
+    return strip_none_values({"success": True, "data": data})
 
 
 @router.get("/{vendor_type}/documents/{doc_type}")
@@ -443,14 +464,24 @@ async def get_vendor_document(
     doc_type: str,
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
-    property_service: PropertyService = Depends(get_property_service),
 ):
-    service.resolve_vendor_type(vendor_type.value)
-    doc_obj = await property_service.get_vendor_document_raw(current_user.get("user_id"), doc_type)
-    if not doc_obj:
+    data = await service.get_vendor_document(user_id=current_user.get("user_id"), vendor_type=vendor_type.value, doc_type=doc_type)
+    if not data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No '{doc_type}' document found")
-    data = service.model_to_dict(doc_obj)
     return strip_none_values({"success": True, "data": data})
+
+
+@router.get("/{vendor_type}/documents/{doc_type}/view-url")
+async def get_vendor_document_view_url(
+    vendor_type: VendorType,
+    doc_type: str,
+    current_user: Dict[str, Any] = Depends(require_vendor),
+    service: ProfileService = Depends(get_profile_service),
+):
+    view_url = await service.get_vendor_document_view_url(
+        user_id=current_user.get("user_id"), vendor_type=vendor_type.value, doc_type=doc_type
+    )
+    return strip_none_values({"success": True, "data": {"viewUrl": view_url}})
 
 
 @router.delete("/{vendor_type}/documents/{doc_type}")
@@ -459,10 +490,8 @@ async def delete_vendor_document(
     doc_type: str,
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
-    property_service: PropertyService = Depends(get_property_service),
 ):
-    service.resolve_vendor_type(vendor_type.value)
-    deleted = await property_service.delete_vendor_document_raw(current_user.get("user_id"), doc_type)
+    deleted = await service.delete_vendor_document(user_id=current_user.get("user_id"), vendor_type=vendor_type.value, doc_type=doc_type)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No '{doc_type}' document found")
     return strip_none_values({"success": True, "data": {"deleted": deleted}, "message": f"{doc_type} deleted successfully"})
@@ -471,7 +500,10 @@ async def delete_vendor_document(
 async def _get_single_file_from_form(request: Request) -> UploadFile:
     form = await request.form()
     for _key, value in form.multi_items():
-        if isinstance(value, UploadFile):
+        # request.form() yields Starlette's base UploadFile, never FastAPI's
+        # subclass - checking against the FastAPI type here always failed,
+        # rejecting every real upload with a false "no file" 400.
+        if isinstance(value, StarletteUploadFile):
             return value
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,

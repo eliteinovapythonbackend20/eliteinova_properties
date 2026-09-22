@@ -5,24 +5,31 @@ from datetime import datetime
 from app.schemas.property_vendor_schemas import OwnerDetailsSchema, AgentDetailsSchema, BuilderDetailsSchema, PMDetailsSchema
 
 class PropertyMediaResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    
+    # PropertyService._format_card_media builds these dicts in camelCase
+    # (fileUrl/mediaType/isPrimary) - populate_by_name+alias lets this model
+    # accept that shape directly instead of requiring snake_case keys.
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
     id: int
-    media_type: str
-    file_url: str
-    thumbnail_url: Optional[str] = None
-    is_primary: bool = False
+    media_type: str = Field(alias="mediaType")
+    file_url: str = Field(alias="fileUrl")
+    thumbnail_url: Optional[str] = Field(None, alias="thumbnailUrl")
+    is_primary: bool = Field(False, alias="isPrimary")
     order: int = 0
 
 class PropertyDocumentResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    
+    # PropertyFormatter.format_documents builds these dicts in camelCase and
+    # deliberately omits fileUrl - documents live in the private GCS bucket
+    # and never get a permanent URL in a response body (see
+    # GET /properties/documents/{id}/view-url for on-demand access).
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
     id: int
-    document_type: str
-    file_name: str
-    file_url: str
+    document_type: str = Field(alias="documentType")
+    file_name: str = Field(alias="fileName")
+    file_url: Optional[str] = Field(None, alias="fileUrl")
     mime_type: Optional[str] = None
-    file_size_kb: Optional[int] = None
+    file_size_kb: Optional[int] = Field(None, alias="fileSizeKb")
 
 class PropertyResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)

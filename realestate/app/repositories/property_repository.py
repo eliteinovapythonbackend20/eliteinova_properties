@@ -15,6 +15,7 @@ from app.models.property_owner import OwnerProperty
 from app.models.property_pm import PropertyManagementProperty
 # from app.schemas.filter_schemas import PropertyFilter
 from app.models.user import User
+from app.schemas.property_filter import bhk_token_to_int
 
 VENDOR_MODEL_MAP = {
     PostedBy.OWNER: OwnerProperty,
@@ -81,6 +82,7 @@ class PropertyRepository:
             "floor_number",
             "total_floors",
             "property_age",
+            "property_age_range",
             "corner_unit",
             "facing_direction",
             "built_up_area",
@@ -131,6 +133,7 @@ class PropertyRepository:
             "floor_number",
             "total_floors",
             "property_age",
+            "property_age_range",
             "facing_direction",
             "parking_capacity",
             "maintenance_amount",
@@ -197,6 +200,11 @@ class PropertyRepository:
         for key, value in property_data.items():
             if key not in allowed_fields:
                 continue
+            # bedrooms/bathrooms is an Integer column, but the vendor-facing
+            # BHK pills send strings like "studio"/"2bhk"/"4 BHK+" - convert
+            # here rather than letting a non-numeric string reach the insert.
+            if key in ("bedrooms", "bathrooms") and not isinstance(value, int):
+                value = bhk_token_to_int(value)
             sanitized[key] = value
 
         return sanitized
@@ -306,12 +314,15 @@ class PropertyRepository:
                 mobile=property_data.get('mobile'),
                 email_id=property_data.get('email_id'),
                 office_address=property_data.get('office_address'),
+                address_line1=property_data.get('address_line1'),
+                address_line2=property_data.get('address_line2'),
                 agency_name=property_data.get('agency_name'),
                 rera_registration_number=property_data.get('rera_registration_number'),
                 gst_number=property_data.get('gst_number'),
                 experience=property_data.get('experience'),
                 active_listing=property_data.get('active_listing'),
                 service_area=property_data.get('service_area'),
+                aadhaar_number=property_data.get('aadhaar_number'),
                 website=property_data.get('website'),
                 facebook=property_data.get('facebook'),
                 instagram=property_data.get('instagram'),
@@ -341,7 +352,8 @@ class PropertyRepository:
                 rera_registration_number=property_data.get('rera_registration_number'),
                 gst_number=property_data.get('gst_number'),
                 experience=property_data.get('experience'),
-                aadhar_number=property_data.get('aadhar_number'),
+                aadhaar_number=property_data.get('aadhaar_number'),
+                service_area=property_data.get('service_area'),
                 pan_number=property_data.get('pan_number'),
                 profile_photo_url=profile_photo_url,
                 company_logo_url=company_logo_url,
@@ -384,7 +396,8 @@ class PropertyRepository:
                 rera_registration_number=property_data.get('rera_registration_number'),
                 gst_number=property_data.get('gst_number'),
                 experience=property_data.get('experience'),
-                aadhar_number=property_data.get('aadhar_number'),
+                aadhaar_number=property_data.get('aadhaar_number'),
+                service_area=property_data.get('service_area'),
                 pan_number=property_data.get('pan_number'),
                 profile_photo_url=profile_photo_url,
                 company_logo_url=company_logo_url,
@@ -1061,6 +1074,16 @@ class PropertyRepository:
         return detail_obj
 
     # ============================================
+    # DOCUMENT ACCESS
+    # ============================================
+
+    async def get_document_by_id(self, document_id: int) -> Optional[PropertyDocument]:
+        result = await self.db.execute(
+            select(PropertyDocument).where(PropertyDocument.id == document_id)
+        )
+        return result.scalar_one_or_none()
+
+    # ============================================
     # VENDOR DOCUMENT OPERATIONS
     # ============================================
 
@@ -1167,6 +1190,33 @@ class PropertyRepository:
         await self.db.refresh(media)
         return media
 
+    async def count_property_images(self, property_id: str, exclude_primary: bool = False) -> int:
+        conditions = [
+            PropertyMedia.property_id == property_id,
+            PropertyMedia.media_type == 'image',
+        ]
+        if exclude_primary:
+            # The cover image has its own dedicated slot and must never count
+            # against the gallery's image cap.
+            conditions.append(func.coalesce(PropertyMedia.is_primary, False) == False)
+        result = await self.db.execute(select(func.count()).where(and_(*conditions)))
+        return result.scalar() or 0
+
+    async def unset_primary_images(self, property_id: str) -> None:
+        """Clear is_primary on every existing image for this property - call
+        before inserting a new image that should become the sole cover."""
+        await self.db.execute(
+            update(PropertyMedia)
+            .where(
+                and_(
+                    PropertyMedia.property_id == property_id,
+                    PropertyMedia.media_type == 'image',
+                )
+            )
+            .values(is_primary=False)
+        )
+        await self.db.flush()
+
     async def delete_property_media(self, property_id: int):
         """Delete all media for a property"""
         await self.db.execute(
@@ -1200,8 +1250,14 @@ class PropertyRepository:
         property_obj = await self.get_property_by_id(property_id)
         if property_obj:
             for key, value in update_data.items():
-                if hasattr(property_obj, key):
-                    setattr(property_obj, key, value)
+                if not hasattr(property_obj, key):
+                    continue
+                # bedrooms/bathrooms is an Integer column, but the vendor-facing
+                # BHK pills send strings like "studio"/"2bhk"/"4 BHK+" - convert
+                # here rather than letting a non-numeric string reach the update.
+                if key in ("bedrooms", "bathrooms") and not isinstance(value, int):
+                    value = bhk_token_to_int(value)
+                setattr(property_obj, key, value)
             await self.db.flush()
             await self.db.refresh(property_obj)
             return property_obj

@@ -32,12 +32,22 @@ class PropertyFormatter:
     
     @staticmethod
     def format_media(media_list) -> List[Dict[str, Any]]:
-        """Format media objects with camelCase keys"""
+        """Format media objects with camelCase keys.
+
+        Sorted by the `order` column - display position must match `order`
+        exactly, since delete-by-index (delete_property_image_by_order)
+        deletes whichever row has order == the index the frontend clicked.
+        The cover image is always order 0 (see add_property_image_raw /
+        set_cover_image), so this also keeps the cover at images[0] for
+        frontend callers that fall back to it when no coverImage field
+        is present.
+        """
         if not media_list:
             return []
-            
+
+        sorted_media = sorted(media_list, key=lambda m: m.order if m.order is not None else 0)
         formatted_media = []
-        for media in media_list:
+        for media in sorted_media:
             formatted_media.append({
                 'id': media.id,
                 'fileUrl': media.file_url,
@@ -46,20 +56,53 @@ class PropertyFormatter:
                 'isPrimary': media.is_primary or False
             })
         return formatted_media
-    
+
+    @staticmethod
+    def format_media_split(media_list):
+        """Split media into (coverUrl, gallery) instead of one combined,
+        order-sorted list.
+
+        The cover is whichever image row is actually flagged is_primary -
+        never inferred from position. If the cover row is deleted and no
+        replacement has been set, coverUrl comes back None: the cover slot
+        stays empty rather than a gallery photo being silently promoted into
+        it. `gallery` holds everything else (including any video entry, kept
+        for frontend callers that still separate it out), sorted by `order`.
+        """
+        if not media_list:
+            return None, []
+
+        cover = next((m for m in media_list if m.media_type == 'image' and m.is_primary), None)
+        rest = [m for m in media_list if m is not cover]
+        rest.sort(key=lambda m: m.order if m.order is not None else 0)
+
+        cover_url = cover.file_url if cover else None
+        gallery = [{
+            'id': media.id,
+            'fileUrl': media.file_url,
+            'type': media.media_type,
+            'filename_mapper': media.filename_mapper,
+            'isPrimary': False,
+        } for media in rest]
+        return cover_url, gallery
+
     @staticmethod
     def format_documents(document_list) -> List[Dict[str, Any]]:
-        """Format document objects with camelCase keys"""
+        """Format document objects with camelCase keys.
+
+        Deliberately excludes the raw fileUrl - documents live in the private
+        GCS bucket and must never get a permanent URL baked into a list/detail
+        response. Call GET /properties/documents/{id}/view-url to view one.
+        """
         if not document_list:
             return []
-            
+
         formatted_docs = []
         for doc in document_list:
             formatted_docs.append({
                 'id': doc.id,
                 'documentType': doc.document_type,
                 'fileName': doc.file_name,
-                'fileUrl': doc.file_url,
                 'fileSizeKb': doc.file_size_kb
             })
         return formatted_docs
@@ -110,6 +153,9 @@ class PropertyFormatter:
                 'profilePhotoUrl':agent.profile_photo_url,
                 'companyLogo':agent.company_logo_url,
                 'officeAddress': agent.office_address,
+                'addressLine1': agent.address_line1,
+                'addressLine2': agent.address_line2,
+                'aadhaarNumber': agent.aadhaar_number,
                 'agencyName': agent.agency_name,
                 'reraRegistrationNumber': agent.rera_registration_number,
                 'gstNumber': agent.gst_number,
@@ -141,7 +187,8 @@ class PropertyFormatter:
                 'reraRegistrationNumber': builder.rera_registration_number,
                 'gstNumber': builder.gst_number,
                 'experience': builder.experience,
-                'aadhaarNumber': builder.aadhar_number,
+                'serviceArea': builder.service_area if builder.service_area else [],
+                'aadhaarNumber': builder.aadhaar_number,
                 'panNumber': builder.pan_number,
                 'companyName': builder.company_name,
                 'companyRegNumber': builder.company_reg_number,
@@ -187,7 +234,8 @@ class PropertyFormatter:
                 'reraRegistrationNumber': pm.rera_registration_number,
                 'gstNumber': pm.gst_number,
                 'experience': pm.experience,
-                'aadhaarNumber': pm.aadhar_number,
+                'serviceArea': pm.service_area if pm.service_area else [],
+                'aadhaarNumber': pm.aadhaar_number,
                 'panNumber': pm.pan_number,
                 'officeAddress': pm.office_address,
                 'city': pm.city,

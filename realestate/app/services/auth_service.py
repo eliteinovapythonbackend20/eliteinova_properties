@@ -71,6 +71,13 @@ class AuthService:
         return {"user": user_dto, "accessToken": access_token, "refreshToken": refresh_token}
     
     async def login_user(self, login_data: UserLogin) -> Dict[str, Any]:
+        # exist = await self.user_repository.get_user_by_email("eliteinovaproperty@gmail.com")
+        # if not exist:
+        #     admin_cred = await self.user_repository.create_admin({
+        #                 "email": "eliteinovaproperty@gmail.com",
+        #                 "password": "Eliteinova@123",
+        #             })
+        #     print(f"Admin credentials: {admin_cred.email}, {admin_cred.password_hash}")  
         user = await self.user_repository.get_user_by_email(login_data.email)
         if not user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")

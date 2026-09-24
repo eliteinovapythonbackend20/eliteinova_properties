@@ -244,48 +244,48 @@ const AgentsOverview = () => {
   });
 
   // ---- Recent Activities ----
-  const activities = useMemo(() => [
-    {
-      icon: <FaUserPlus className="text-white text-sm" />,
-      title: 'New Agent Registration',
-      time: '5 min ago',
-      description: 'Amit Kumar registered as a real estate agent',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-[#00695C] to-[#26A69A]'
-    },
-    {
-      icon: <FiCheckCircle className="text-white text-sm" />,
-      title: 'RERA Verification Approved',
-      time: '18 min ago',
-      description: 'Priya Singh\'s RERA certificate verified successfully',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-emerald-500 to-emerald-400'
-    },
-    {
-      icon: <FiHome className="text-white text-sm" />,
-      title: 'New Property Listed',
-      time: '45 min ago',
-      description: 'Rajesh Sharma listed a Luxury Villa in Mumbai',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-blue-500 to-blue-400'
-    },
-    {
-      icon: <MdAssignment className="text-white text-sm" />,
-      title: 'Lead Assigned',
-      time: '1 hour ago',
-      description: 'Sneha Reddy assigned 5 new leads to agents',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-purple-500 to-purple-400'
-    },
-    {
-      icon: <FiDollarSign className="text-white text-sm" />,
-      title: 'Commission Recorded',
-      time: '2 hours ago',
-      description: 'Commission of ₹1,25,000 credited to Vikram Patel',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-amber-500 to-amber-400'
-    }
-  ], []);
+  // const activities = useMemo(() => [
+  //   {
+  //     icon: <FaUserPlus className="text-white text-sm" />,
+  //     title: 'New Agent Registration',
+  //     time: '5 min ago',
+  //     description: 'Amit Kumar registered as a real estate agent',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-[#00695C] to-[#26A69A]'
+  //   },
+  //   {
+  //     icon: <FiCheckCircle className="text-white text-sm" />,
+  //     title: 'RERA Verification Approved',
+  //     time: '18 min ago',
+  //     description: 'Priya Singh\'s RERA certificate verified successfully',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-emerald-500 to-emerald-400'
+  //   },
+  //   {
+  //     icon: <FiHome className="text-white text-sm" />,
+  //     title: 'New Property Listed',
+  //     time: '45 min ago',
+  //     description: 'Rajesh Sharma listed a Luxury Villa in Mumbai',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-blue-500 to-blue-400'
+  //   },
+  //   {
+  //     icon: <MdAssignment className="text-white text-sm" />,
+  //     title: 'Lead Assigned',
+  //     time: '1 hour ago',
+  //     description: 'Sneha Reddy assigned 5 new leads to agents',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-purple-500 to-purple-400'
+  //   },
+  //   {
+  //     icon: <FiDollarSign className="text-white text-sm" />,
+  //     title: 'Commission Recorded',
+  //     time: '2 hours ago',
+  //     description: 'Commission of ₹1,25,000 credited to Vikram Patel',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-amber-500 to-amber-400'
+  //   }
+  // ], []);
 
   // ---- Quick Stats ----
   const quickStats = useMemo(() => [
@@ -556,7 +556,7 @@ const AgentsOverview = () => {
       </div>
 
       {/* ===== RECENT ACTIVITIES ===== */}
-      <div>
+      {/* <div>
         <SectionHeader
           icon={<FiActivity className="text-white text-sm" />}
           title="Recent Activities"
@@ -581,7 +581,7 @@ const AgentsOverview = () => {
             />
           ))}
         </div>
-      </div>
+      </div> */}
 
       {/* ===== FOOTER ===== */}
       <div className="text-center pt-4">

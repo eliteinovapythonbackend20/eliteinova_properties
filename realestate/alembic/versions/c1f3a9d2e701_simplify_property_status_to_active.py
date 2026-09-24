@@ -18,10 +18,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Collapse every legacy status value onto Active / Inactive.
+    # NOTE: this migration originally also collapsed every non-Active/
+    # Inactive status back to 'Active'. That's since been superseded -
+    # PropertyStatus now legitimately includes Pending/Sold/Rented/Expired/
+    # Rejected (see app/schemas/property_enums.py) - so only the column's
+    # NOT NULL/default normalization below still applies.
     op.execute(
-        "UPDATE properties SET status = 'Active' "
-        "WHERE status IS NULL OR status NOT IN ('Active', 'Inactive')"
+        "UPDATE properties SET status = 'Active' WHERE status IS NULL"
     )
     op.alter_column(
         'properties',

@@ -413,14 +413,13 @@ export default function LeasePMHostelForm({ isOpen, onClose }) {
     facingDirection: "", balcony: "",
     builtUpArea: "", carpetArea: "",
     hostelCategory: "", genderType: "",
-    modularKitchen: "no", wardrobes: "no", airConditioning: "no",
-    utilityArea: "no", smartHomeFeatures: "no", appliancesIncluded: [],
+    interiorFeatures: [], appliancesIncluded: [],
     propertyAge: "", ownershipType: "",
     nearbyPlaces: [],
     
     // Pricing & Amenities (Step 5)
     leaseAmount: "", securityDeposit: "",
-    leaseDuration: "", maintenanceIncluded: "", leaseNegotiable: "",
+    leaseDuration: "", maintenanceIncluded: "",
     paymentFrequency: "", leaseRenewalOption: "",
     tenantType: [], petFriendly: "", dietaryPreference: "", smokingAllowed: "",
     selectedAmenities: [], otherAmenities: "",
@@ -1727,6 +1726,16 @@ function MobContentLeasePMHostel({
           ))}
         </div>
       </Field>
+      <Field label="Interior Features">
+        <div className="grid grid-cols-2 gap-1">
+          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => (
+            <label key={feature} className="flex items-center gap-1 text-[9px] cursor-pointer">
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={(formData.interiorFeatures || []).includes(feature)} onChange={() => toggleArrayItem("interiorFeatures", feature)} />
+              {feature}
+            </label>
+          ))}
+        </div>
+      </Field>
 
       <Field label="Total Floors">
         <input className={inp} type="number" min="0" placeholder="Enter total floors" value={formData.totalFloors} onChange={(e) => updateForm("totalFloors", e.target.value)} />
@@ -1856,7 +1865,7 @@ function MobContentLeasePMHostel({
         <input className={inp} type="number" min="0" placeholder="Enter security/deposit amount" value={formData.securityDeposit} onChange={(e) => updateForm("securityDeposit", e.target.value)} />
       </Field>
       
-      <Field label="Price Type">
+      <Field label="Lease Negotiable">
         <div className="flex gap-4">
           <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
             <input type="radio" name="mob-priceType-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "fixed"} onChange={() => updateForm("priceType", "fixed")} />
@@ -1868,7 +1877,7 @@ function MobContentLeasePMHostel({
           </label>
         </div>
       </Field>
-      
+
       <Field label="Lease Duration" required error={errors.leaseDuration}>
         <div className="grid grid-cols-2 gap-1">
           {leaseDurationOptions.map(d => (
@@ -1894,16 +1903,6 @@ function MobContentLeasePMHostel({
           {yesNoOptions.map(opt => (
             <label key={opt} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
               <input type="radio" name="mob-maint-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.maintenanceIncluded === opt} onChange={() => updateForm("maintenanceIncluded", opt)} />
-              {opt}
-            </label>
-          ))}
-        </div>
-      </Field>
-      <Field label="Lease Negotiable">
-        <div className="flex gap-4">
-          {yesNoOptions.map(opt => (
-            <label key={opt} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
-              <input type="radio" name="mob-negotiable-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.leaseNegotiable === opt} onChange={() => updateForm("leaseNegotiable", opt)} />
               {opt}
             </label>
           ))}
@@ -2800,6 +2799,16 @@ function DtContentLeasePMHostel({
           ))}
         </div>
       </FieldDt>
+      <FieldDt label="Interior Features">
+        <div className="flex flex-wrap gap-3">
+          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => (
+            <label key={feature} className="flex items-center gap-2 text-[13px] cursor-pointer">
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={(formData.interiorFeatures || []).includes(feature)} onChange={() => toggleArrayItem("interiorFeatures", feature)} />
+              {feature}
+            </label>
+          ))}
+        </div>
+      </FieldDt>
 
       <FieldDt label="Total Floors">
         <input className={inp} type="number" min="0" placeholder="Enter total floors" value={formData.totalFloors} onChange={(e) => updateForm("totalFloors", e.target.value)} />
@@ -2929,7 +2938,7 @@ function DtContentLeasePMHostel({
         <input className={inp} type="number" min="0" placeholder="Enter security/deposit amount" value={formData.securityDeposit} onChange={(e) => updateForm("securityDeposit", e.target.value)} />
       </FieldDt>
       
-      <FieldDt label="Price Type">
+      <FieldDt label="Lease Negotiable">
         <div className="flex gap-5">
           <label className="flex items-center gap-2 text-[13px] cursor-pointer">
             <input type="radio" name="dt-priceType-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "fixed"} onChange={() => updateForm("priceType", "fixed")} />
@@ -2967,16 +2976,6 @@ function DtContentLeasePMHostel({
           {yesNoOptions.map(opt => (
             <label key={opt} className="flex items-center gap-2 text-[13px] cursor-pointer">
               <input type="radio" name="dt-maint-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.maintenanceIncluded === opt} onChange={() => updateForm("maintenanceIncluded", opt)} />
-              {opt}
-            </label>
-          ))}
-        </div>
-      </FieldDt>
-      <FieldDt label="Lease Negotiable">
-        <div className="flex gap-5">
-          {yesNoOptions.map(opt => (
-            <label key={opt} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-negotiable-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.leaseNegotiable === opt} onChange={() => updateForm("leaseNegotiable", opt)} />
               {opt}
             </label>
           ))}

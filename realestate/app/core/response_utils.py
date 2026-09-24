@@ -151,7 +151,7 @@ class PropertyFormatter:
                 'mobileNumber': agent.mobile,
                 'emailId': agent.email_id,
                 'profilePhotoUrl':agent.profile_photo_url,
-                'companyLogo':agent.company_logo_url,
+                'companyLogo':agent.agency_logo_url,
                 'officeAddress': agent.office_address,
                 'addressLine1': agent.address_line1,
                 'addressLine2': agent.address_line2,

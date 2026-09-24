@@ -255,48 +255,48 @@ const BuildersOverview = () => {
   });
 
   // ---- Recent Activities ----
-  const activities = useMemo(() => [
-    {
-      icon: <MdBusiness className="text-white text-sm" />,
-      title: 'New Builder Registration',
-      time: '8 min ago',
-      description: 'Shree Construction Pvt Ltd registered as a builder',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-[#00695C] to-[#26A69A]'
-    },
-    {
-      icon: <FiCheckCircle className="text-white text-sm" />,
-      title: 'RERA Verification Approved',
-      time: '22 min ago',
-      description: 'RERA certificate verified for BuildWell Developers',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-emerald-500 to-emerald-400'
-    },
-    {
-      icon: <MdConstruction className="text-white text-sm" />,
-      title: 'New Project Launched',
-      time: '1 hour ago',
-      description: 'Green Valley Residences - Phase 2 launched in Pune',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-blue-500 to-blue-400'
-    },
-    {
-      icon: <FaCity className="text-white text-sm" />,
-      title: 'Project Approved',
-      time: '2 hours ago',
-      description: 'Luxury Apartments project approved for construction',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-purple-500 to-purple-400'
-    },
-    {
-      icon: <FiDollarSign className="text-white text-sm" />,
-      title: 'Revenue Recorded',
-      time: '3 hours ago',
-      description: '₹2,50,00,000 revenue recorded from recent project sales',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-amber-500 to-amber-400'
-    }
-  ], []);
+  // const activities = useMemo(() => [
+  //   {
+  //     icon: <MdBusiness className="text-white text-sm" />,
+  //     title: 'New Builder Registration',
+  //     time: '8 min ago',
+  //     description: 'Shree Construction Pvt Ltd registered as a builder',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-[#00695C] to-[#26A69A]'
+  //   },
+  //   {
+  //     icon: <FiCheckCircle className="text-white text-sm" />,
+  //     title: 'RERA Verification Approved',
+  //     time: '22 min ago',
+  //     description: 'RERA certificate verified for BuildWell Developers',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-emerald-500 to-emerald-400'
+  //   },
+  //   {
+  //     icon: <MdConstruction className="text-white text-sm" />,
+  //     title: 'New Project Launched',
+  //     time: '1 hour ago',
+  //     description: 'Green Valley Residences - Phase 2 launched in Pune',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-blue-500 to-blue-400'
+  //   },
+  //   {
+  //     icon: <FaCity className="text-white text-sm" />,
+  //     title: 'Project Approved',
+  //     time: '2 hours ago',
+  //     description: 'Luxury Apartments project approved for construction',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-purple-500 to-purple-400'
+  //   },
+  //   {
+  //     icon: <FiDollarSign className="text-white text-sm" />,
+  //     title: 'Revenue Recorded',
+  //     time: '3 hours ago',
+  //     description: '₹2,50,00,000 revenue recorded from recent project sales',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-amber-500 to-amber-400'
+  //   }
+  // ], []);
 
   // ---- Quick Stats ----
   const quickStats = useMemo(() => [
@@ -567,7 +567,7 @@ const BuildersOverview = () => {
       </div>
 
       {/* ===== RECENT ACTIVITIES ===== */}
-      <div>
+      {/* <div>
         <SectionHeader
           icon={<FiActivity className="text-white text-sm" />}
           title="Recent Activities"
@@ -592,7 +592,7 @@ const BuildersOverview = () => {
             />
           ))}
         </div>
-      </div>
+      </div> */}
 
       {/* ===== FOOTER ===== */}
       <div className="text-center pt-4">

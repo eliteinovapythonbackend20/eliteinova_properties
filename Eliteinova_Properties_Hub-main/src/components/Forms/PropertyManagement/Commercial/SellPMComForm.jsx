@@ -383,7 +383,7 @@ export default function SellPMComForm({ isOpen, onClose }) {
     listingPurpose: "sell", sellPrice: "", priceType: "fixed",
     maintenance: "", availableFrom: "",
     selectedAmenities: [], otherAmenities: "",
-    priceNegotiable: "", immediatePossession: "",
+    immediatePossession: "",
 
     // Bank Details (Step 6)
     accountHolderName: "", bankName: "", accountNumber: "", ifscCode: "", upiId: "",
@@ -1571,7 +1571,7 @@ function MobContentSellPMCom({
       <Field label="Selling Price (₹)" required error={errors.sellPrice}>
         <input className={`${inp} ${getErrorClass('sellPrice')}`} type="number" min="0" placeholder="Enter selling price" value={formData.sellPrice} onChange={(e) => updateForm("sellPrice", e.target.value)} />
       </Field>
-      <Field label="Price Type">
+      <Field label="Price Negotiable">
         <div className="flex gap-4">
           <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
             <input type="radio" name="mob-priceType-sell-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "fixed"} onChange={() => updateForm("priceType", "fixed")} />
@@ -1581,16 +1581,6 @@ function MobContentSellPMCom({
             <input type="radio" name="mob-priceType-sell-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "negotiable"} onChange={() => updateForm("priceType", "negotiable")} />
             Negotiable
           </label>
-        </div>
-      </Field>
-      <Field label="Price Negotiable">
-        <div className="flex gap-4">
-          {yesNoOptions.map(opt => (
-            <label key={opt} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
-              <input type="radio" name="mob-negotiable-sell-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceNegotiable === opt} onChange={() => updateForm("priceNegotiable", opt)} />
-              {opt}
-            </label>
-          ))}
         </div>
       </Field>
       <Field label="Maintenance (₹/month)">
@@ -2415,7 +2405,7 @@ function DtContentSellPMCom({
       <FieldDt label="Selling Price (₹)" required error={errors.sellPrice}>
         <input className={`${inp} ${getErrorClass('sellPrice')}`} type="number" min="0" placeholder="Enter selling price" value={formData.sellPrice} onChange={(e) => updateForm("sellPrice", e.target.value)} />
       </FieldDt>
-      <FieldDt label="Price Type">
+      <FieldDt label="Price Negotiable">
         <div className="flex gap-5">
           <label className="flex items-center gap-2 text-[13px] cursor-pointer">
             <input type="radio" name="dt-priceType-sell-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "fixed"} onChange={() => updateForm("priceType", "fixed")} />
@@ -2425,16 +2415,6 @@ function DtContentSellPMCom({
             <input type="radio" name="dt-priceType-sell-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "negotiable"} onChange={() => updateForm("priceType", "negotiable")} />
             Negotiable
           </label>
-        </div>
-      </FieldDt>
-      <FieldDt label="Price Negotiable">
-        <div className="flex gap-5">
-          {yesNoOptions.map(opt => (
-            <label key={opt} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-negotiable-sell-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceNegotiable === opt} onChange={() => updateForm("priceNegotiable", opt)} />
-              {opt}
-            </label>
-          ))}
         </div>
       </FieldDt>
       <FieldDt label="Maintenance (₹/month)">

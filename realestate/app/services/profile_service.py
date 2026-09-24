@@ -18,7 +18,27 @@ VENDOR_TYPE_MAP: Dict[str, PostedBy] = {
     "property-management": PostedBy.PROPERTY_MANAGEMENT,
 }
 
+ROLE_DETAILS_KEY: Dict[str, str] = {
+    "OWNER": "ownerDetails",
+    "AGENT": "agencyDetails",
+    "BUILDER": "builderDetails",
+    "PROPERTY_MANAGEMENT": "pmDetails",
+}
+
+# Wire-format alias update_vendor_profile expects for the logo field of each
+# role's JSONB blob on VendorProfile (see app.schemas.vendor_profile_details)
+# - owners aren't a company, so they have no entry here.
 LOGO_FIELD_BY_ROLE: Dict[PostedBy, str] = {
+    PostedBy.AGENT: "companyLogoUrl",
+    PostedBy.BUILDER: "companyLogoUrl",
+    PostedBy.PROPERTY_MANAGEMENT: "companyLogoUrl",
+}
+
+# Real column name on the per-property vendor-detail table (property_agent/
+# property_builder/property_management) - a different, Property-domain model
+# from VendorProfile, so its logo column keeps its own (differently-cased)
+# name per role instead of the wire alias above.
+PROPERTY_LOGO_COLUMN_BY_ROLE: Dict[PostedBy, str] = {
     PostedBy.AGENT: "agency_logo_url",
     PostedBy.BUILDER: "company_logo_url",
     PostedBy.PROPERTY_MANAGEMENT: "company_logo_url",
@@ -265,8 +285,6 @@ class ProfileService:
             "phoneNumber":vendorprofile.phone_number,
             "whatsappNumber":vendorprofile.whatsapp_number,
             "gender":vendorprofile.gender,
-            "profilePhotoUrl":vendorprofile.profile_picture,
-            "companyLogoUrl":vendorprofile.company_logo_url,
             "companyName":vendorprofile.company_name,
             "address":vendorprofile.address,
             "city":vendorprofile.city,
@@ -289,20 +307,21 @@ class ProfileService:
             "youtube":vendorprofile.youtube,
             "preferredContactMethod":vendorprofile.preferred_contact_method,
             "preferredContactTime":vendorprofile.preferred_contact_time,
-            "agencyDetails":vendorprofile.agency_details,
-            "builderDetails":vendorprofile.builder_details,
-            "pmDetails":vendorprofile.pm_details,
-            "ownerDetails":getattr(vendorprofile, "owner_details", None),
         }
 
-        # Flatten the role-specific JSONB blob into the same top-level
-        # camelCase keys the profile-edit forms read (they don't know about
-        # agencyDetails/builderDetails/pmDetails/ownerDetails nesting) - the
-        # inverse of VendorProfileRepository.update_vendor_profile's split.
+        # Only the JSONB blob for the role actually being asked about goes in
+        # the response - an Owner profile response never carries the Agent/
+        # Builder/PM blobs (and vice versa), even though all four live on the
+        # one shared vendor_profile row. Also flatten that one blob onto the
+        # same top-level camelCase keys the profile-edit forms read (they
+        # don't know about the agencyDetails/builderDetails/pmDetails/
+        # ownerDetails nesting) - the inverse of
+        # VendorProfileRepository.update_vendor_profile's split.
         extra_schema = ROLE_EXTRA_SCHEMA.get(posted_by)
         extra_column = ROLE_EXTRA_COLUMN.get(posted_by)
         if extra_schema and extra_column:
             raw_extra = getattr(vendorprofile, extra_column, None) or {}
+            profile[ROLE_DETAILS_KEY[posted_by]] = raw_extra
             for field_name, field in extra_schema.model_fields.items():
                 if field.alias:
                     profile[field.alias] = raw_extra.get(field_name)
@@ -496,13 +515,24 @@ class ProfileService:
         await self.vendor_profile_repository.commit()
         return self.formatter.strip_none_values(self._to_profile_response(profile_obj, posted_by.value))
 
+    @staticmethod
+    def _role_extra(profile_obj, posted_by: PostedBy) -> Dict[str, Any]:
+        """The one JSONB blob (agency_details/builder_details/pm_details/
+        owner_details) that belongs to this role - profile photo and logo are
+        read from here, never from a shared column, so each role keeps its
+        own image."""
+        if not profile_obj:
+            return {}
+        extra_column = ROLE_EXTRA_COLUMN.get(posted_by.value)
+        return getattr(profile_obj, extra_column, None) or {} if extra_column else {}
+
     async def upload_vendor_profile_photo(
         self, user_id: str, vendor_type: str, file: UploadFile
     ) -> Dict[str, Any]:
         posted_by = self.resolve_vendor_type(vendor_type)
 
         existing_profile = await self.vendor_profile_repository.get_vendor_profile(user_id)
-        old_url = existing_profile.profile_picture if existing_profile else None
+        old_url = self._role_extra(existing_profile, posted_by).get("profile_photo_url")
 
         upload_result = await self.file_service.upload_image(
             file=file,
@@ -513,7 +543,7 @@ class ProfileService:
         )
 
         profile_obj = await self.vendor_profile_repository.update_vendor_profile(
-            user_id, posted_by.value, {"profile_photo_url": upload_result["file_url"]}
+            user_id, posted_by.value, {"profilePhotoUrl": upload_result["file_url"]}
         )
         if not profile_obj:
             raise HTTPException(
@@ -522,15 +552,17 @@ class ProfileService:
             )
         await self.vendor_profile_repository.commit()
 
+        new_url = self._role_extra(profile_obj, posted_by).get("profile_photo_url")
+
         # Replacing an existing photo - clean up the old file so it doesn't
         # leak on disk. Best-effort: a failure here shouldn't undo the DB update.
-        if old_url and old_url != profile_obj.profile_picture:
+        if old_url and old_url != new_url:
             try:
                 await self.file_service.delete_files([old_url])
             except Exception as e:
                 print(f"Failed to delete old profile photo from storage: {e}")
 
-        return {"fileUrl": profile_obj.profile_picture}
+        return {"fileUrl": new_url}
 
     async def upload_vendor_logo(
         self, user_id: str, vendor_type: str, file: UploadFile
@@ -544,7 +576,7 @@ class ProfileService:
             )
 
         existing_profile = await self.vendor_profile_repository.get_vendor_profile(user_id)
-        old_url = existing_profile.company_logo_url if existing_profile else None
+        old_url = self._role_extra(existing_profile, posted_by).get("company_logo_url")
 
         field_name = "agencyLogo" if posted_by == PostedBy.AGENT else "companyLogo"
         upload_result = await self.file_service.upload_image(
@@ -565,22 +597,24 @@ class ProfileService:
             )
         await self.vendor_profile_repository.commit()
 
-        if old_url and old_url != profile_obj.company_logo_url:
+        new_url = self._role_extra(profile_obj, posted_by).get("company_logo_url")
+
+        if old_url and old_url != new_url:
             try:
                 await self.file_service.delete_files([old_url])
             except Exception as e:
                 print(f"Failed to delete old logo from storage: {e}")
 
-        return {"fileUrl": profile_obj.company_logo_url}
+        return {"fileUrl": new_url}
 
     async def delete_vendor_profile_photo(self, user_id: str, vendor_type: str) -> Dict[str, Any]:
         posted_by = self.resolve_vendor_type(vendor_type)
         profile_obj = await self.vendor_profile_repository.get_vendor_profile(user_id)
-        if not profile_obj or not profile_obj.profile_picture:
+        old_url = self._role_extra(profile_obj, posted_by).get("profile_photo_url")
+        if not old_url:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No profile photo to delete")
 
-        old_url = profile_obj.profile_picture
-        await self.vendor_profile_repository.update_vendor_profile(user_id, posted_by.value, {"profile_photo_url": None})
+        await self.vendor_profile_repository.update_vendor_profile(user_id, posted_by.value, {"profilePhotoUrl": None})
         await self.vendor_profile_repository.commit()
 
         # Best-effort storage cleanup - a failure here shouldn't block the
@@ -602,7 +636,7 @@ class ProfileService:
             )
 
         profile_obj = await self.vendor_profile_repository.get_vendor_profile(user_id)
-        old_url = profile_obj.company_logo_url if profile_obj else None
+        old_url = self._role_extra(profile_obj, posted_by).get("company_logo_url")
         if not old_url:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No logo to delete")
 
@@ -615,53 +649,6 @@ class ProfileService:
             print(f"Failed to delete old logo from storage: {e}")
 
         return {"deleted": True}
-
-    # profile_picture/company_logo_url are single columns on VendorProfile -
-    # one row per user, not per vendor_type/role - so the field_name (which
-    # image slot) is all that's needed here; there's no role to resolve.
-    # "OWNER" below is a required-but-inert argument: update_vendor_profile
-    # only consults posted_by to route role-specific JSONB "extra" fields,
-    # and these are plain columns, never role-extra fields.
-    _IMAGE_DB_COLUMN_TO_REAL_COLUMN = {
-        "profile_photo_url": "profile_picture",
-        "agency_logo_url": "company_logo_url",
-        "company_logo_url": "company_logo_url",
-    }
-
-    async def update_vendor_profile_image_by_field(
-        self, user_id: str, field_name: str, file: UploadFile
-    ) -> Dict[str, Any]:
-        from app.core.file_mappings import VENDOR_PROFILE_IMAGE_TO_DB_COLUMN
-        db_column = VENDOR_PROFILE_IMAGE_TO_DB_COLUMN.get(field_name)
-        if not db_column:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown field_name '{field_name}'")
-
-        upload_result = await self.file_service.upload_vendor_profile_image(
-            file=file, user_id=user_id, field_name=field_name
-        )
-        profile_obj = await self.vendor_profile_repository.update_vendor_profile(
-            user_id, "OWNER", {db_column: upload_result["file_url"]}
-        )
-        if not profile_obj:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No vendor profile found for this user.")
-        await self.vendor_profile_repository.commit()
-        return upload_result
-
-    async def delete_vendor_profile_image_by_field(self, user_id: str, field_name: str) -> None:
-        from app.core.file_mappings import VENDOR_PROFILE_IMAGE_TO_DB_COLUMN
-        db_column = VENDOR_PROFILE_IMAGE_TO_DB_COLUMN.get(field_name)
-        if not db_column:
-            return
-
-        real_column = self._IMAGE_DB_COLUMN_TO_REAL_COLUMN.get(db_column, db_column)
-        profile = await self.vendor_profile_repository.get_vendor_profile(user_id)
-        current_url = getattr(profile, real_column, None) if profile else None
-        if not current_url:
-            return
-
-        await self.file_service.delete_files([current_url])
-        await self.vendor_profile_repository.update_vendor_profile(user_id, "OWNER", {db_column: None})
-        await self.vendor_profile_repository.commit()
 
     # ============================================
     # VENDOR-LEVEL DOCUMENTS (sale deed, Aadhaar, GST certificate, ...) -
@@ -782,8 +769,11 @@ class ProfileService:
         happens to pass in. vendor_documents is fetched by the caller via
         PropertyService (PropertyDocument is Property-domain data)."""
         profile = await self.vendor_profile_repository.get_vendor_profile(user_id)
-        if profile and file_path in {profile.profile_picture, profile.company_logo_url}:
-            return True
+        if profile:
+            for extra_column in ROLE_EXTRA_COLUMN.values():
+                blob = getattr(profile, extra_column, None) or {}
+                if file_path in {blob.get("profile_photo_url"), blob.get("company_logo_url")}:
+                    return True
         return any(doc.file_url == file_path for doc in vendor_documents)
 
     def format_profile_files_for_role(self, posted_by, detail_obj) -> Optional[Dict[str, Any]]:
@@ -793,7 +783,7 @@ class ProfileService:
         if not detail_obj:
             return None
         role_files = {"profile_photo_url": getattr(detail_obj, "profile_photo_url", None)}
-        logo_field = LOGO_FIELD_BY_ROLE.get(posted_by)
+        logo_field = PROPERTY_LOGO_COLUMN_BY_ROLE.get(posted_by)
         if logo_field:
             role_files[logo_field] = getattr(detail_obj, logo_field, None)
         return self.formatter.strip_none_values(role_files)

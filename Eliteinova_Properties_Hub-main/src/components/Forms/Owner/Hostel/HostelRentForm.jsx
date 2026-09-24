@@ -110,7 +110,7 @@ export default function HostelRentForm({ isOpen, onClose }) {
     // Pricing & Amenities (Step 3)
     listingPurpose: "rent", expectedPrice: "", budgetRange: { min: "", max: "" },
     priceType: "", maintenance: "", securityDeposit: "", 
-    maintenanceIncluded: "", rentNegotiable: "",
+    maintenanceIncluded: "",
     availableFrom: "", selectedAmenities: [], otherAmenities: "",
     rentFrequency: "", paymentMode: "",
     // Rent Preferences (Step 3)
@@ -1177,7 +1177,7 @@ function MobContentRent({
         {errors.securityDeposit && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.securityDeposit}</p>}
       </Field>
 
-      <Field label="Price Type" required error={errors.priceType}>
+      <Field label="Rent Negotiable" required error={errors.priceType}>
         <div className="flex gap-4">
           <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
             <input type="radio" name="mob-pt" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "fixed"} onChange={() => updateForm("priceType", "fixed")} />
@@ -1200,17 +1200,6 @@ function MobContentRent({
           {yesNoOptions.map(option => (
             <label key={option} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
               <input type="radio" name="mob-maintenance" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.maintenanceIncluded === option} onChange={() => updateForm("maintenanceIncluded", option)} />
-              {option}
-            </label>
-          ))}
-        </div>
-      </Field>
-
-      <Field label="Rent Negotiable">
-        <div className="flex gap-4">
-          {yesNoOptions.map(option => (
-            <label key={option} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
-              <input type="radio" name="mob-negotiable" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.rentNegotiable === option} onChange={() => updateForm("rentNegotiable", option)} />
               {option}
             </label>
           ))}
@@ -1991,7 +1980,7 @@ function DtContentRent({
         {errors.securityDeposit && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.securityDeposit}</p>}
       </FieldDt>
 
-      <FieldDt label="Price Type" required error={errors.priceType}>
+      <FieldDt label="Rent Negotiable" required error={errors.priceType}>
         <div className="flex gap-5">
           <label className="flex items-center gap-2 text-[13px] cursor-pointer">
             <input type="radio" name="dt-pt" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "fixed"} onChange={() => updateForm("priceType", "fixed")} />
@@ -2014,17 +2003,6 @@ function DtContentRent({
           {yesNoOptions.map(option => (
             <label key={option} className="flex items-center gap-2 text-[13px] cursor-pointer">
               <input type="radio" name="dt-maintenance" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.maintenanceIncluded === option} onChange={() => updateForm("maintenanceIncluded", option)} />
-              {option}
-            </label>
-          ))}
-        </div>
-      </FieldDt>
-
-      <FieldDt label="Rent Negotiable">
-        <div className="flex gap-5">
-          {yesNoOptions.map(option => (
-            <label key={option} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-negotiable" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.rentNegotiable === option} onChange={() => updateForm("rentNegotiable", option)} />
               {option}
             </label>
           ))}

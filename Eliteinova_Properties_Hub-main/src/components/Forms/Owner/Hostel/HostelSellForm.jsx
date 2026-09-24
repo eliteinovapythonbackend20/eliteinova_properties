@@ -115,7 +115,7 @@ export default function HostelSellForm({ isOpen, onClose }) {
     propertyCategory: "hostel", postedBy: "owner",
     // Pricing & Amenities (Step 3)
     listingPurpose: "sell", expectedPrice: "", budgetRange: { min: "", max: "" },
-    priceType: "", priceNegotiable: "",
+    priceType: "",
     availableFrom: "", selectedAmenities: [], otherAmenities: "",
     // Media (Step 4)
     propertyImages: [], propertyVideo: null, coverImage: null,
@@ -1206,7 +1206,7 @@ function MobContentSell({
         </div>
       </Field>
 
-      <Field label="Price Type" required error={errors.priceType}>
+      <Field label="Price Negotiable" required error={errors.priceType}>
         <div className="flex gap-4">
           <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
             <input type="radio" name="mob-pt" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "fixed"} onChange={() => updateForm("priceType", "fixed")} />
@@ -1216,17 +1216,6 @@ function MobContentSell({
             <input type="radio" name="mob-pt" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "negotiable"} onChange={() => updateForm("priceType", "negotiable")} />
             Negotiable
           </label>
-        </div>
-      </Field>
-
-      <Field label="Price Negotiable">
-        <div className="flex gap-4">
-          {yesNoOptions.map(option => (
-            <label key={option} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
-              <input type="radio" name="mob-negotiable" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceNegotiable === option} onChange={() => updateForm("priceNegotiable", option)} />
-              {option}
-            </label>
-          ))}
         </div>
       </Field>
 
@@ -2071,7 +2060,7 @@ function DtContentSell({
         </div>
       </FieldDt>
 
-      <FieldDt label="Price Type" required error={errors.priceType}>
+      <FieldDt label="Price Negotiable" required error={errors.priceType}>
         <div className="flex gap-5">
           <label className="flex items-center gap-2 text-[13px] cursor-pointer">
             <input type="radio" name="dt-pt" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "fixed"} onChange={() => updateForm("priceType", "fixed")} />
@@ -2081,17 +2070,6 @@ function DtContentSell({
             <input type="radio" name="dt-pt" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "negotiable"} onChange={() => updateForm("priceType", "negotiable")} />
             Negotiable
           </label>
-        </div>
-      </FieldDt>
-
-      <FieldDt label="Price Negotiable">
-        <div className="flex gap-5">
-          {yesNoOptions.map(option => (
-            <label key={option} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-negotiable" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceNegotiable === option} onChange={() => updateForm("priceNegotiable", option)} />
-              {option}
-            </label>
-          ))}
         </div>
       </FieldDt>
 

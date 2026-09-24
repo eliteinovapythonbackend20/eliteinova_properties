@@ -28,12 +28,6 @@ _FIELD_ALIASES = {
     "linkedIn": "linkedin",
     "preferredMethods": "preferred_contact_method",
     "preferredTimes": "preferred_contact_time",
-    # Photo/logo upload endpoints call update_vendor_profile with
-    # already-snake_case keys named after the per-property detail columns
-    # they used to write to - VendorProfile stores both under one shared
-    # column each, regardless of role.
-    "profile_photo_url": "profile_picture",
-    "agency_logo_url": "company_logo_url",
 }
 
 _CAMEL_RE = re.compile(r"(?<!^)(?=[A-Z])")

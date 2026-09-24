@@ -432,8 +432,7 @@ export default function SellPMHostelForm({ isOpen, onClose }) {
     facingDirection: "", balcony: "",
     builtUpArea: "", carpetArea: "",
     hostelCategory: "", genderType: "",
-    modularKitchen: "", wardrobes: "", airConditioning: "",
-    utilityArea: "", smartHomeFeatures: "", appliancesIncluded: "",
+    interiorFeatures: [], appliancesIncluded: "",
     
     // Sell-specific fields
     propertyAge: "", constructionStatus: "", possessionTimeline: "",
@@ -441,8 +440,8 @@ export default function SellPMHostelForm({ isOpen, onClose }) {
     immediatePossession: "",
     
     // Pricing & Amenities (Step 5) - Sell focused
-    saleAmountMin: "", saleAmountMax: "", budgetRange: { min: "", max: "" }, 
-    priceType: "", saleNegotiable: "",
+    saleAmount: "", budgetRange: { min: "", max: "" },
+    priceType: "",
     selectedAmenities: [], otherAmenities: "",
     foodIncluded: "", foodType: "", mealsPerDay: "", kitchenAccess: "",
     nearbySchool: false, nearbyHospital: false, nearbyMetro: false,
@@ -629,8 +628,8 @@ export default function SellPMHostelForm({ isOpen, onClose }) {
         break;
 
       case 5: // Pricing & Amenities
-        const saleMinValidation = validateField(formData.saleAmountMin, { required: true, min: 0 });
-        if (!saleMinValidation.valid) { newErrors.saleAmountMin = saleMinValidation.message; isValid = false; }
+        const saleAmountValidation = validateField(formData.saleAmount, { required: true, min: 0 });
+        if (!saleAmountValidation.valid) { newErrors.saleAmount = saleAmountValidation.message; isValid = false; }
         break;
 
       case 6: // Bank Details
@@ -1685,6 +1684,16 @@ function MobContentSellPMHostel({
           ))}
         </div>
       </Field>
+      <Field label="Interior Features">
+        <div className="grid grid-cols-2 gap-1">
+          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => (
+            <label key={feature} className="flex items-center gap-1 text-[9px] cursor-pointer">
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={(formData.interiorFeatures || []).includes(feature)} onChange={() => toggleArrayItem("interiorFeatures", feature)} />
+              {feature}
+            </label>
+          ))}
+        </div>
+      </Field>
 
       <Field label="Total Floors">
         <input className={inp} type="text" placeholder="Enter total floors" value={formData.totalFloors} onChange={(e) => updateForm("totalFloors", handleNumericFieldChange(e.target.value))} />
@@ -1854,11 +1863,8 @@ function MobContentSellPMHostel({
         <div className="w-1 h-3 bg-[#00695C] rounded" />
         <h3 className="text-[11px] font-bold text-[#00695C]">💰 Pricing & Amenities</h3>
       </div>
-      <Field label="Sale Amount (₹)" required error={errors.saleAmountMin}>
-        <div className="flex gap-1">
-          <input className={`${inp} w-1/2 ${getErrorClass('saleAmountMin')}`} type="text" placeholder="Min ₹" value={formData.saleAmountMin} onChange={(e) => updateForm("saleAmountMin", handleNumericFieldChange(e.target.value))} />
-          <input className={`${inp} w-1/2`} type="text" placeholder="Max ₹" value={formData.saleAmountMax} onChange={(e) => updateForm("saleAmountMax", handleNumericFieldChange(e.target.value))} />
-        </div>
+      <Field label="Sale Amount (₹)" required error={errors.saleAmount}>
+        <input className={`${inp} ${getErrorClass('saleAmount')}`} type="text" placeholder="Enter sale amount" value={formData.saleAmount} onChange={(e) => updateForm("saleAmount", handleNumericFieldChange(e.target.value))} />
       </Field>
       <Field label="Budget Range (₹)" hint="Set a range for negotiation">
         <div className="flex gap-1">
@@ -1866,7 +1872,7 @@ function MobContentSellPMHostel({
           <input className={`${inp} w-1/2`} type="text" placeholder="Max" value={formData.budgetRange.max} onChange={(e) => updateForm("budgetRange", { ...formData.budgetRange, max: handleNumericFieldChange(e.target.value) })} />
         </div>
       </Field>
-      <Field label="Price Type">
+      <Field label="Price Negotiable">
         <div className="flex gap-4">
           <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
             <input type="radio" name="mob-pt-sell-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "fixed"} onChange={() => updateForm("priceType", "fixed")} />
@@ -1876,16 +1882,6 @@ function MobContentSellPMHostel({
             <input type="radio" name="mob-pt-sell-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "negotiable"} onChange={() => updateForm("priceType", "negotiable")} />
             Negotiable
           </label>
-        </div>
-      </Field>
-      <Field label="Price Negotiable">
-        <div className="flex gap-4">
-          {yesNoOptions.map(opt => (
-            <label key={opt} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
-              <input type="radio" name="mob-negotiable-sell-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.saleNegotiable === opt} onChange={() => updateForm("saleNegotiable", opt)} />
-              {opt}
-            </label>
-          ))}
         </div>
       </Field>
 
@@ -2741,6 +2737,16 @@ function DtContentSellPMHostel({
           ))}
         </div>
       </FieldDt>
+      <FieldDt label="Interior Features">
+        <div className="flex flex-wrap gap-3">
+          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => (
+            <label key={feature} className="flex items-center gap-2 text-[13px] cursor-pointer">
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={(formData.interiorFeatures || []).includes(feature)} onChange={() => toggleArrayItem("interiorFeatures", feature)} />
+              {feature}
+            </label>
+          ))}
+        </div>
+      </FieldDt>
 
       <FieldDt label="Total Floors">
         <input className={inp} type="text" placeholder="Enter total floors" value={formData.totalFloors} onChange={(e) => updateForm("totalFloors", handleNumericFieldChange(e.target.value))} />
@@ -2910,11 +2916,8 @@ function DtContentSellPMHostel({
         <div className="w-1 h-4 bg-[#00695C] rounded" />
         <h3 className="text-[14px] font-bold text-[#00695C]">💰 Pricing & Amenities</h3>
       </div>
-      <FieldDt label="Sale Amount (₹)" required error={errors.saleAmountMin}>
-        <div className="flex gap-2">
-          <input className={`${inp} w-1/2 ${getErrorClass('saleAmountMin')}`} type="text" placeholder="Min ₹" value={formData.saleAmountMin} onChange={(e) => updateForm("saleAmountMin", handleNumericFieldChange(e.target.value))} />
-          <input className={`${inp} w-1/2`} type="text" placeholder="Max ₹" value={formData.saleAmountMax} onChange={(e) => updateForm("saleAmountMax", handleNumericFieldChange(e.target.value))} />
-        </div>
+      <FieldDt label="Sale Amount (₹)" required error={errors.saleAmount}>
+        <input className={`${inp} ${getErrorClass('saleAmount')}`} type="text" placeholder="Enter sale amount" value={formData.saleAmount} onChange={(e) => updateForm("saleAmount", handleNumericFieldChange(e.target.value))} />
       </FieldDt>
       <FieldDt label="Budget Range (₹)" hint="Set a range for negotiation">
         <div className="flex gap-2">
@@ -2922,7 +2925,7 @@ function DtContentSellPMHostel({
           <input className={`${inp} w-1/2`} type="text" placeholder="Max" value={formData.budgetRange.max} onChange={(e) => updateForm("budgetRange", { ...formData.budgetRange, max: handleNumericFieldChange(e.target.value) })} />
         </div>
       </FieldDt>
-      <FieldDt label="Price Type">
+      <FieldDt label="Price Negotiable">
         <div className="flex gap-5">
           <label className="flex items-center gap-2 text-[13px] cursor-pointer">
             <input type="radio" name="dt-pt-sell-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "fixed"} onChange={() => updateForm("priceType", "fixed")} />
@@ -2932,16 +2935,6 @@ function DtContentSellPMHostel({
             <input type="radio" name="dt-pt-sell-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "negotiable"} onChange={() => updateForm("priceType", "negotiable")} />
             Negotiable
           </label>
-        </div>
-      </FieldDt>
-      <FieldDt label="Price Negotiable">
-        <div className="flex gap-5">
-          {yesNoOptions.map(opt => (
-            <label key={opt} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-negotiable-sell-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.saleNegotiable === opt} onChange={() => updateForm("saleNegotiable", opt)} />
-              {opt}
-            </label>
-          ))}
         </div>
       </FieldDt>
 

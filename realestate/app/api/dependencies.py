@@ -11,6 +11,8 @@ from app.repositories.property_repository import PropertyRepository
 from app.services.property_service import PropertyService
 from app.services.profile_service import ProfileService
 from app.services.filter_service import FilterService
+from app.repositories.admin_dashboard_repository import AdminDashboardRepository
+from app.services.admin_dashboard_service import AdminDashboardService
 
 security = HTTPBearer(auto_error=False)
 
@@ -27,6 +29,9 @@ async def get_profile_service(db: AsyncSession = Depends(get_db)) -> ProfileServ
 
 async def get_filter_service(db: AsyncSession = Depends(get_db)) -> FilterService:
     return FilterService(PropertyRepository(db))
+
+async def get_admin_dashboard_service(db: AsyncSession = Depends(get_db)) -> AdminDashboardService:
+    return AdminDashboardService(AdminDashboardRepository(db))
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),

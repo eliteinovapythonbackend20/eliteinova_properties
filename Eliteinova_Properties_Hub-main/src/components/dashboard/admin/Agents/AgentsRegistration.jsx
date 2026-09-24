@@ -116,7 +116,7 @@ const ApprovalConfirmModal = ({ show, action, actionLoading, agentName, onCancel
 };
 
 // ============ AGENT PROPERTIES MODAL ============
-const AgentPropertiesModal = ({ agent, show, onClose, onViewProperty }) => {
+const AgentPropertiesModal = ({ agent, show, onClose, onViewProperty, onViewOwnerProfile }) => {
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -151,6 +151,12 @@ const AgentPropertiesModal = ({ agent, show, onClose, onViewProperty }) => {
   const handleViewProperty = (property) => {
     if (onViewProperty) {
       onViewProperty(property);
+    }
+  };
+
+  const handleViewOwnerProfile = (property) => {
+    if (onViewOwnerProfile) {
+      onViewOwnerProfile(agent, property);
     }
   };
 
@@ -273,6 +279,17 @@ const AgentPropertiesModal = ({ agent, show, onClose, onViewProperty }) => {
                     >
                       <FiEye className="text-xs" />
                       View Property Details
+                    </button>
+                  </div>
+
+                  {/* NEW: View Owner Profile button, below View Property Details */}
+                  <div className="mt-2">
+                    <button
+                      onClick={() => handleViewOwnerProfile(property)}
+                      className="w-full py-2 rounded-xl text-xs font-medium bg-[#E7F6EF] text-[#167A54] border border-[#BEE4D2] hover:bg-[#D5EFE0] transition-all duration-300 flex items-center justify-center gap-2 hover:scale-[1.02]"
+                    >
+                      <FiExternalLink className="text-xs" />
+                      View Owner Profile
                     </button>
                   </div>
                 </div>
@@ -1398,6 +1415,13 @@ const AgentsRegistration = () => {
     showToast('Opening Agent Profile...', 'info');
   }, [navigate, showToast]);
 
+  // ============ VIEW PROPERTY OWNER PROFILE (from Properties modal) ============
+  const handleViewOwnerProfile = useCallback((ownerAgent, property) => {
+    // Reuses the same agent-profile navigation; falls back to the agent
+    // shown in the Properties modal since that agent is the property owner.
+    handleViewAgentProfile(ownerAgent?.id);
+  }, [handleViewAgentProfile]);
+
   // ============ EDIT AGENT ============
   const handleEditAgent = useCallback((agent) => {
     setEditingAgent(agent);
@@ -1637,6 +1661,7 @@ const AgentsRegistration = () => {
         show={showPropertiesModal}
         onClose={() => { setShowPropertiesModal(false); setSelectedAgentForProperties(null); }}
         onViewProperty={handleViewPropertyDetail}
+        onViewOwnerProfile={handleViewOwnerProfile}
       />
 
       {/* Edit Modal */}
@@ -2116,6 +2141,19 @@ const AgentsRegistration = () => {
                       </>
                     )}
                   </div>
+
+                  {/* NEW: View Profile button, its own row below View/Edit/Properties/Block */}
+                  {!isPending && (
+                    <div className="mt-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleViewAgentProfile(agent.id)}
+                        className="w-full py-1.5 text-xs font-medium text-[#167A54] bg-[#E7F6EF] border border-[#BEE4D2] rounded-xl hover:bg-[#D5EFE0] transition-all duration-300 flex items-center justify-center gap-1 hover:scale-[1.02]"
+                      >
+                        <FiExternalLink className="text-[10px]" /> View Agent Profile
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

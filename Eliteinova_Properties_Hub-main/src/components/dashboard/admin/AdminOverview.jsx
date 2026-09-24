@@ -1004,7 +1004,7 @@ const AdminOverview = () => {
       </div>
 
       {/* Property Types */}
-      <div className="relative">
+      {/* <div className="relative">
         <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
           <div className="p-1.5 bg-[#00695C]/10 rounded-lg">
             <FiHome className="text-[#00695C]" />
@@ -1037,7 +1037,7 @@ const AdminOverview = () => {
             </div>
           ))}
         </div>
-      </div>
+      </div> */}
 
       {/* Vendor Status & Recent Activities */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1162,7 +1162,7 @@ const AdminOverview = () => {
 
               {/* Filter Buttons */}
               <div className="flex items-center gap-2 mt-4">
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 p-2 scrollbar-thin">
                   {['today', 'yesterday', 'week', 'month', 'year'].map((filter) => (
                     <button
                       key={filter}

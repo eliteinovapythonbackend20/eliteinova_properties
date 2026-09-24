@@ -15,7 +15,10 @@ from app.services.pricing_service import PricingService
 
 router = APIRouter()
 
-
+@router.post("/login")
+async def admin_login():
+    """Admin: Login endpoint"""
+    return {"status": "success", "message": "Admin login successful"}
 @router.get("/transactions")
 async def admin_get_transactions(
     status: Optional[str] = None,

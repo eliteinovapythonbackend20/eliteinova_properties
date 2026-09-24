@@ -448,6 +448,11 @@ const ViewOwnerModal = ({ owner, show, actionLoading, onClose, onApprove, onReje
             <span className="text-[10px] px-2.5 py-1 rounded-full font-semibold bg-white/15 text-white">
               {owner.subscriptionPlan} plan
             </span>
+            {owner.status === 'approved' && owner.kycStatus === 'verified' && (
+              <span className="text-[10px] px-2.5 py-1 rounded-full font-semibold bg-white/15 text-white flex items-center gap-1">
+                <FaCheck className="text-[10px]" /> Approved &amp; Verified
+              </span>
+            )}
           </div>
         </div>
 
@@ -616,6 +621,9 @@ const ViewOwnerModal = ({ owner, show, actionLoading, onClose, onApprove, onReje
                   </div>
                 ))}
               </div>
+              <div className="mt-3 p-3 rounded-xl" style={{ background: 'var(--ovm-surface)', border: '1px solid var(--ovm-border)' }}>
+                <p className="text-[10px] font-medium" style={{ color: 'var(--ovm-muted)' }}>Fully KYC-verified owners get priority listing benefits.</p>
+              </div>
             </div>
           )}
         </div>
@@ -705,6 +713,13 @@ const ViewOwnerModal = ({ owner, show, actionLoading, onClose, onApprove, onReje
   );
 };
 
+/* ============================================================
+   EDIT OWNER MODAL — now includes editable KYC Status and
+   per-document (Email / Phone / Aadhaar / PAN / GST / RERA)
+   verification toggles, mirroring the Agent edit-modal pattern.
+   Bottom buttons are sticky/fixed at bottom for mobile usability.
+============================================================ */
+
 const EditOwnerModal = ({ owner, show, onClose, onSave }) => {
   const [formData, setFormData] = useState(null);
 
@@ -720,6 +735,17 @@ const EditOwnerModal = ({ owner, show, onClose, onSave }) => {
         status: owner.status,
         subscriptionPlan: owner.subscriptionPlan,
         bio: owner.bio || '',
+        kycStatus: owner.kycStatus || 'pending',
+        verification: {
+          email: !!owner.verification?.email,
+          phone: !!owner.verification?.phone,
+        },
+        kyc: {
+          aadhaar: !!owner.kyc?.aadhaar,
+          pan: !!owner.kyc?.pan,
+          gst: !!owner.kyc?.gst,
+          rera: !!owner.kyc?.rera,
+        },
       });
     }
   }, [owner]);
@@ -730,15 +756,51 @@ const EditOwnerModal = ({ owner, show, onClose, onSave }) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const handleVerificationToggle = (key) => {
+    setFormData(prev => ({
+      ...prev,
+      verification: { ...prev.verification, [key]: !prev.verification[key] },
+    }));
+  };
+
+  const handleKycToggle = (key) => {
+    setFormData(prev => {
+      const updatedKyc = { ...prev.kyc, [key]: !prev.kyc[key] };
+      const allVerified = Object.values(updatedKyc).every(Boolean);
+
+      let nextStatus = prev.kycStatus;
+      if (allVerified) {
+        nextStatus = 'verified';
+      } else if (prev.kycStatus === 'verified') {
+        nextStatus = 'pending';
+      }
+
+      return { ...prev, kyc: updatedKyc, kycStatus: nextStatus };
+    });
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     onSave(formData);
   };
 
+  const verificationItems = [
+    { key: 'email', label: 'Email', icon: <FiMail className="text-sm" /> },
+    { key: 'phone', label: 'Phone', icon: <FiPhone className="text-sm" /> },
+  ];
+
+  const kycDocs = [
+    { key: 'aadhaar', label: 'Aadhaar', icon: <FaIdCard className="text-sm" /> },
+    { key: 'pan', label: 'PAN', icon: <FaFileAlt className="text-sm" /> },
+    { key: 'gst', label: 'GST', icon: <FaCertificate className="text-sm" /> },
+    { key: 'rera', label: 'RERA', icon: <FaShieldAlt className="text-sm" /> },
+  ];
+
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-[#1A2E2A]/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl animate-slide-up border border-[#E8F0EE]">
-        <div className="sticky top-0 bg-gradient-to-r from-[#00695C] to-[#26A69A] p-6 rounded-t-3xl z-10">
+      <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl animate-slide-up border border-[#E8F0EE] flex flex-col">
+        {/* Header - Sticky */}
+        <div className="sticky top-0 bg-gradient-to-r from-[#00695C] to-[#26A69A] p-6 rounded-t-3xl z-10 shrink-0">
           <button
             onClick={onClose}
             className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 transition-all duration-300 flex items-center justify-center text-white hover:scale-110"
@@ -749,113 +811,200 @@ const EditOwnerModal = ({ owner, show, onClose, onSave }) => {
           <p className="text-white/80 text-sm">Update owner information</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 bg-white">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-[#5A7D78] block mb-1">Full Name *</label>
-              <input
-                type="text"
-                name="name"
-                value={formData.name}
-                onChange={handleChange}
-                className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
-                required
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-[#5A7D78] block mb-1">Email *</label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
-                required
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-[#5A7D78] block mb-1">Phone *</label>
-              <input
-                type="text"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
-                required
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-[#5A7D78] block mb-1">City</label>
-              <input
-                type="text"
-                name="city"
-                value={formData.city}
-                onChange={handleChange}
-                className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-[#5A7D78] block mb-1">State</label>
-              <input
-                type="text"
-                name="state"
-                value={formData.state}
-                onChange={handleChange}
-                className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-[#5A7D78] block mb-1">Company</label>
-              <input
-                type="text"
-                name="company"
-                value={formData.company}
-                onChange={handleChange}
-                className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-[#5A7D78] block mb-1">Status</label>
-              <select
-                name="status"
-                value={formData.status}
-                onChange={handleChange}
-                className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
-              >
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-                <option value="blocked">Blocked</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-[#5A7D78] block mb-1">Subscription Plan</label>
-              <select
-                name="subscriptionPlan"
-                value={formData.subscriptionPlan}
-                onChange={handleChange}
-                className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
-              >
-                <option value="Free">Free</option>
-                <option value="Silver">Silver</option>
-                <option value="Gold">Gold</option>
-                <option value="Platinum">Platinum</option>
-              </select>
-            </div>
-            <div className="col-span-2">
-              <label className="text-xs font-medium text-[#5A7D78] block mb-1">Bio</label>
-              <textarea
-                name="bio"
-                value={formData.bio}
-                onChange={handleChange}
-                rows="2"
-                className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none resize-none text-[#1A2E2A]"
-                placeholder="Brief description about the owner"
-              />
-            </div>
-          </div>
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-6 bg-white">
+          <form id="edit-owner-form" onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Full Name *</label>
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Email *</label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Phone *</label>
+                <input
+                  type="text"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">City</label>
+                <input
+                  type="text"
+                  name="city"
+                  value={formData.city}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">State</label>
+                <input
+                  type="text"
+                  name="state"
+                  value={formData.state}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Company</label>
+                <input
+                  type="text"
+                  name="company"
+                  value={formData.company}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Status</label>
+                <select
+                  name="status"
+                  value={formData.status}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="blocked">Blocked</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Subscription Plan</label>
+                <select
+                  name="subscriptionPlan"
+                  value={formData.subscriptionPlan}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                >
+                  <option value="Free">Free</option>
+                  <option value="Silver">Silver</option>
+                  <option value="Gold">Gold</option>
+                  <option value="Platinum">Platinum</option>
+                </select>
+              </div>
 
-          <div className="flex items-center gap-3 pt-4 border-t border-[#E8F0EE]">
+              {/* KYC Status (overall) */}
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">KYC Status</label>
+                <select
+                  name="kycStatus"
+                  value={formData.kycStatus}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="verified">Verified</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div>
+
+              {/* Mobile & Email Verification */}
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-[#5A7D78] block mb-2">Mobile &amp; Email Verification</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {verificationItems.map(item => {
+                    const isVerified = formData.verification[item.key];
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => handleVerificationToggle(item.key)}
+                        className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border text-xs font-medium transition-all duration-300 hover:scale-[1.02] ${
+                          isVerified
+                            ? 'bg-[#E8F8F5] border-[#A8D5CD] text-[#00695C]'
+                            : 'bg-[#F5F9F8] border-[#E8F0EE] text-[#5A7D78]'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          {item.icon}
+                          {item.label}
+                        </span>
+                        {isVerified ? (
+                          <FiCheckCircle className="text-sm shrink-0" />
+                        ) : (
+                          <FiXCircle className="text-sm shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* KYC Documents (Aadhaar / PAN / GST / RERA) */}
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-[#5A7D78] block mb-2">KYC Documents</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {kycDocs.map(item => {
+                    const isVerified = formData.kyc[item.key];
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => handleKycToggle(item.key)}
+                        className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border text-xs font-medium transition-all duration-300 hover:scale-[1.02] ${
+                          isVerified
+                            ? 'bg-[#E8F8F5] border-[#A8D5CD] text-[#00695C]'
+                            : 'bg-[#F5F9F8] border-[#E8F0EE] text-[#5A7D78]'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          {item.icon}
+                          {item.label}
+                        </span>
+                        {isVerified ? (
+                          <FiCheckCircle className="text-sm shrink-0" />
+                        ) : (
+                          <FiXCircle className="text-sm shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-[#5A7D78] mt-1.5">Tap a document to mark it verified / not verified. Verifying Aadhaar, PAN, GST &amp; RERA sets KYC Status to Verified automatically.</p>
+              </div>
+
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Bio</label>
+                <textarea
+                  name="bio"
+                  value={formData.bio}
+                  onChange={handleChange}
+                  rows="2"
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none resize-none text-[#1A2E2A]"
+                  placeholder="Brief description about the owner"
+                />
+              </div>
+            </div>
+          </form>
+        </div>
+
+        {/* Footer - Sticky at bottom with proper shadow and background */}
+        <div className="sticky bottom-0 px-6 py-4 bg-white border-t border-[#E8F0EE] rounded-b-3xl shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={onClose}
@@ -865,12 +1014,13 @@ const EditOwnerModal = ({ owner, show, onClose, onSave }) => {
             </button>
             <button
               type="submit"
+              form="edit-owner-form"
               className="flex-1 px-4 py-2.5 bg-[#00695C] text-white rounded-xl hover:bg-[#004D40] transition-all duration-300 text-sm font-medium shadow-lg shadow-[#00695C]/30 hover:scale-[1.02]"
             >
               Save Changes
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
@@ -922,13 +1072,14 @@ const OwnersRegistration = () => {
 
   // ============ STATS ============
   const [stats, setStats] = useState({
-    totalOwners: 523,
-    pendingApprovals: 18,
-    approved: 478,
-    rejected: 27,
+    totalOwners: 0,
+    pendingApprovals: 0,
+    approved: 0,
+    rejected: 0,
     blocked: 0,
-    verifiedKyc: 412,
-    pendingKyc: 111,
+    verifiedKyc: 0,
+    pendingKyc: 0,
+    approvedAndVerified: 0, // NEW: Combined Approved & KYC Verified
   });
 
   // ============ GENERATE MOCK OWNERS ============
@@ -1004,6 +1155,28 @@ const OwnersRegistration = () => {
         verifiedBadge: Math.random() > 0.7,
       });
     }
+
+    // Update stats — computed from the actual generated data so every
+    // stat card, filter click, and count stays accurate.
+    const total = owners.length;
+    const pending = owners.filter(o => o.status === 'pending').length;
+    const approved = owners.filter(o => o.status === 'approved').length;
+    const rejected = owners.filter(o => o.status === 'rejected').length;
+    const blocked = owners.filter(o => o.status === 'blocked').length;
+    const verifiedKyc = owners.filter(o => o.kycStatus === 'verified').length;
+    const pendingKyc = owners.filter(o => o.kycStatus === 'pending').length;
+    const approvedAndVerified = owners.filter(o => o.status === 'approved' && o.kycStatus === 'verified').length;
+
+    setStats({
+      totalOwners: total,
+      pendingApprovals: pending,
+      approved: approved,
+      rejected: rejected,
+      blocked: blocked,
+      verifiedKyc: verifiedKyc,
+      pendingKyc: pendingKyc,
+      approvedAndVerified: approvedAndVerified,
+    });
 
     return owners;
   }, []);
@@ -1123,11 +1296,13 @@ const OwnersRegistration = () => {
       let owner = updatedOwners.find(o => o.id === ownerId);
       
       if (action === 'approve') {
+        const isAlsoVerified = owner.kycStatus === 'verified';
         owner = { ...owner, status: 'approved' };
         setStats(prev => ({
           ...prev,
           pendingApprovals: Math.max(0, prev.pendingApprovals - 1),
           approved: prev.approved + 1,
+          approvedAndVerified: isAlsoVerified ? prev.approvedAndVerified + 1 : prev.approvedAndVerified,
         }));
         showToast(`${owner.name} has been approved successfully`, 'success');
       } else if (action === 'reject') {
@@ -1159,19 +1334,23 @@ const OwnersRegistration = () => {
       const wasBlocked = owner.status === 'blocked';
 
       if (wasBlocked) {
+        const isAlsoVerified = owner.kycStatus === 'verified';
         owner = { ...owner, status: 'approved' };
         setStats(prev => ({
           ...prev,
           blocked: Math.max(0, prev.blocked - 1),
           approved: prev.approved + 1,
+          approvedAndVerified: isAlsoVerified ? prev.approvedAndVerified + 1 : prev.approvedAndVerified,
         }));
         showToast(`${owner.name} has been unblocked`, 'success');
       } else {
+        const wasAlsoVerified = owner.kycStatus === 'verified' && owner.status === 'approved';
         owner = { ...owner, status: 'blocked' };
         setStats(prev => ({
           ...prev,
           blocked: prev.blocked + 1,
           approved: Math.max(0, prev.approved - 1),
+          approvedAndVerified: wasAlsoVerified ? Math.max(0, prev.approvedAndVerified - 1) : prev.approvedAndVerified,
         }));
         showToast(`${owner.name} has been blocked`, 'warning');
       }
@@ -1203,6 +1382,12 @@ const OwnersRegistration = () => {
     showToast(`Opening ${property.title}...`, 'info');
   }, [navigate, showToast]);
 
+  // ============ VIEW Owner PROFILE ============
+    const handleViewOwnerProfile = useCallback((ownerId) => {
+      navigate('/profile/owner');
+      showToast('Opening Owner Profile...', 'info');
+    }, [navigate, showToast]);
+
   // ============ EDIT OWNER ============
   const handleEditOwner = useCallback((owner) => {
     setEditingOwner(owner);
@@ -1211,9 +1396,36 @@ const OwnersRegistration = () => {
 
   // ============ SAVE EDIT ============
   const saveEdit = useCallback((updatedData) => {
-    setOwners(prev => prev.map(owner =>
-      owner.id === editingOwner.id ? { ...owner, ...updatedData } : owner
-    ));
+    setOwners(prev => prev.map(owner => {
+      if (owner.id !== editingOwner.id) return owner;
+      return { ...owner, ...updatedData };
+    }));
+
+    // Recompute stats fully to keep counts accurate after KYC/status edits
+    setOwners(prev => {
+      const total = prev.length;
+      const pending = prev.filter(o => o.status === 'pending').length;
+      const approved = prev.filter(o => o.status === 'approved').length;
+      const rejected = prev.filter(o => o.status === 'rejected').length;
+      const blocked = prev.filter(o => o.status === 'blocked').length;
+      const verifiedKyc = prev.filter(o => o.kycStatus === 'verified').length;
+      const pendingKyc = prev.filter(o => o.kycStatus === 'pending').length;
+      const approvedAndVerified = prev.filter(o => o.status === 'approved' && o.kycStatus === 'verified').length;
+
+      setStats({
+        totalOwners: total,
+        pendingApprovals: pending,
+        approved: approved,
+        rejected: rejected,
+        blocked: blocked,
+        verifiedKyc: verifiedKyc,
+        pendingKyc: pendingKyc,
+        approvedAndVerified: approvedAndVerified,
+      });
+
+      return prev;
+    });
+
     setShowEditModal(false);
     setEditingOwner(null);
     showToast('Owner updated successfully', 'success');
@@ -1243,6 +1455,9 @@ const OwnersRegistration = () => {
     } else if (filter === 'kyc_pending') {
       setSelectedVerification('pending');
       setSelectedStatus('all');
+    } else if (filter === 'approved_verified') {
+      setSelectedStatus('approved');
+      setSelectedVerification('verified');
     }
     setSearchQuery('');
     searchInputRef.current?.focus();
@@ -1349,11 +1564,14 @@ const OwnersRegistration = () => {
       const selectedIds = new Set(selectedOwners);
       let updatedOwners = [...owners];
       let count = 0;
+      let verifiedCount = 0;
 
       updatedOwners = updatedOwners.map(owner => {
         if (selectedIds.has(owner.id)) {
           count++;
           if (action === 'approve') {
+            const isVerified = owner.kycStatus === 'verified';
+            if (isVerified) verifiedCount++;
             return { ...owner, status: 'approved' };
           } else if (action === 'reject') {
             return { ...owner, status: 'rejected' };
@@ -1372,6 +1590,7 @@ const OwnersRegistration = () => {
           ...prev,
           pendingApprovals: Math.max(0, prev.pendingApprovals - count),
           approved: prev.approved + count,
+          approvedAndVerified: prev.approvedAndVerified + verifiedCount,
         }));
         showToast(`${count} owner(s) approved successfully`, 'success');
       } else if (action === 'reject') {
@@ -1487,7 +1706,7 @@ const OwnersRegistration = () => {
         </div>
       </div>
 
-      {/* Stats Section */}
+      {/* Stats Section — now includes combined Approved & Verified */}
       {showStats && (
         <div className="relative animate-slide-in">
           <div className="bg-white rounded-2xl p-4 border border-[#E8F0EE] shadow-sm">
@@ -1561,6 +1780,17 @@ const OwnersRegistration = () => {
                 isActive={activeFilter === 'kyc_pending'}
                 statsAnimating={statsAnimating}
                 onClick={() => handleStatClick('kyc_pending')}
+              />
+              {/* NEW: Approved & Verified Stat Card */}
+              <StatCard
+                icon={<FaCheck className="text-white text-sm" />}
+                title="Approved & Verified"
+                value={stats.approvedAndVerified}
+                color="bg-gradient-to-br from-purple-600 to-purple-400"
+                delay={600}
+                isActive={activeFilter === 'approved_verified'}
+                statsAnimating={statsAnimating}
+                onClick={() => handleStatClick('approved_verified')}
               />
             </div>
           </div>
@@ -1886,6 +2116,19 @@ const OwnersRegistration = () => {
                       </>
                     )}
                   </div>
+
+                   {/* NEW: View Profile button, its own row below View/Edit/Properties/Block */}
+                                    {!isPending && (
+                                      <div className="mt-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleViewOwnerProfile(owner.id)}
+                                          className="w-full py-1.5 text-xs font-medium text-[#167A54] bg-[#E7F6EF] border border-[#BEE4D2] rounded-xl hover:bg-[#D5EFE0] transition-all duration-300 flex items-center justify-center gap-1 hover:scale-[1.02]"
+                                        >
+                                          <FiExternalLink className="text-[10px]" /> View Owner Profile
+                                        </button>
+                                      </div>
+                                    )}
                 </div>
               );
             })}

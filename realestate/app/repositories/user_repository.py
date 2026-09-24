@@ -79,6 +79,32 @@ class UserRepository:
             print(f"Error in create_user: {e}")
             await self.db.rollback()
             raise e
+
+
+
+    async def create_admin(self, admin_data: Dict[str, Any]) -> User:
+        try:
+            user_id = await IDGenerator.generate_user_id(self.db, UserRole.ADMIN)
+            
+            # Create admin user
+            admin_user = User(
+                id=user_id,
+                email=admin_data.get('email'),
+                password_hash=Security.hash_password(admin_data.get('password')),
+                role=UserRole.ADMIN,
+                status=UserStatus.ACTIVE.value,
+            )
+            
+            self.db.add(admin_user)
+            await self.db.commit()
+            await self.db.refresh(admin_user)
+            
+            return admin_user
+            
+        except Exception as e:
+            print(f"Error in create_admin: {e}")
+            await self.db.rollback()
+            raise e
     
     async def get_user_by_id(self, user_id: str) -> Optional[User]:
         result = await self.db.execute(select(User).where(User.id == user_id))

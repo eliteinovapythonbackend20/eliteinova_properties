@@ -1,7 +1,8 @@
+// Must match the backend's UserRole enum values (realestate/app/models/user.py), which are lowercase.
 export const USER_ROLES = {
-  USER: 'USER',
-  VENDOR: 'VENDOR',
-  ADMIN: 'ADMIN'
+  USER: 'user',
+  VENDOR: 'vendor',
+  ADMIN: 'admin'
 };
 
 export const AuthState = {

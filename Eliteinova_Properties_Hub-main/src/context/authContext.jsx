@@ -74,7 +74,7 @@ export const AuthProvider = ({ children }) => {
         const freshUser = response?.user || response?.data?.user;
         if (!cancelled && freshUser) {
           setUser(new User(freshUser));
-          storage.set("user",user);
+          storage.set('user', JSON.stringify(freshUser));
         }
       } catch (err) {
         if (import.meta.env.DEV) console.warn('Auth bootstrap validation failed:', err);

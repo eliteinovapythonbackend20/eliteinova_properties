@@ -4,7 +4,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.models.user import User
-from app.schemas.property_enums import ListingPurpose, PropertyCategory, PostedBy, PropertyStatus
+from app.schemas.property_enums import ListingPurpose, PropertyCategory, PostedBy, PropertyStatus, VerificationStatus
 
 
 
@@ -64,6 +64,8 @@ class BaseProperty(Base):
     state = Column(String(100), nullable=True)
     pin_code = Column(String(15), nullable=True)
     landmark = Column(Text, nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
     
     # Furnishing & Features
     furnishing_status = Column(String(20), nullable=True) # fully furnished, semi furnished, no furnished
@@ -123,7 +125,9 @@ class BaseProperty(Base):
     loan_eligible = Column(String(5), nullable=True)
 
     #lease specific
-    renewable_option = Column(String(5),nullable=True)
+    # Yes/No on some forms, but others offer named options ("Automatic", "Fixed Term", ...) -
+    # sized for the longest option in use, not just Yes/No.
+    renewable_option = Column(String(20),nullable=True)
 
 
 
@@ -182,7 +186,9 @@ class BaseProperty(Base):
     rental_frequency = Column(String(150), nullable=True)
 
     status = Column(String(20), nullable=False, server_default="Active", default="Active")  # public visibility: Active / Inactive
-    
+    featured = Column(Boolean, nullable=False, server_default="false", default=False)  # admin-curated highlight flag
+    verification_status = Column(String(20), nullable=False, server_default=VerificationStatus.NOT_VERIFIED.value, default=VerificationStatus.NOT_VERIFIED.value)  # admin KYC/listing review
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

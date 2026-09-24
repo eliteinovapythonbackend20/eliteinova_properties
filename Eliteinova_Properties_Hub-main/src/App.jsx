@@ -5,6 +5,7 @@ import {
   Route,
 } from "react-router-dom";
 import { AuthProvider } from "./context/authContext.jsx";
+import ProtectedRoute from "./models/ProtectedRoute.jsx";
 
 import Header from "./components/common/Header";
 import CustomerLoginWrapper  from "./components/login/CustomerLoginWrapper.jsx";
@@ -149,6 +150,15 @@ const BuilderProfile = lazy(() => import("./components/profiles/BuilderProfile.j
 const PropertyManagementProfile = lazy(() => import("./components/profiles/PropertyManagementProfile"));
 const AdminDashboard = lazy(() => import("./components/dashboard/AdminDashboard"));
 
+function Unauthorized() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+      <h1 className="text-2xl font-bold text-gray-800 mb-2">Access denied</h1>
+      <p className="text-gray-500">You don't have permission to view this page.</p>
+    </div>
+  );
+}
+
 function AppLayout() {
   const [openOwnerForm, setOpenOwnerForm] = useState(false);
   const [openAgentForm, setOpenAgentForm] = useState(false);
@@ -231,7 +241,15 @@ function AppLayout() {
 
           <Route path="/" element={<HomePage />} />
           <Route path="/customer-portal" element={<CustomerPortalPage />} />
-          <Route path="/admin/*" element={<AdminDashboard/>} />
+          <Route path="/unauthorized" element={<Unauthorized />} />
+          <Route
+            path="/admin/*"
+            element={
+              <ProtectedRoute allowedRoles={['admin']} redirectTo="/login">
+                <AdminDashboard />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Customer Portal Routes */}
           <Route path="/individual" element={<IndividualPage />} />

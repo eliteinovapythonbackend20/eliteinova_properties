@@ -471,14 +471,13 @@ export default function RentPMHostelForm({ isOpen, onClose }) {
     facingDirection: "", balcony: "",
     builtUpArea: "", carpetArea: "",
     hostelCategory: "", genderType: "",
-    modularKitchen: "no", wardrobes: "no", airConditioning: "no",
-    utilityArea: "no", smartHomeFeatures: "no", appliancesIncluded: [],
+    interiorFeatures: [], appliancesIncluded: [],
     propertyAge: "", ownershipType: "",
     nearbyPlaces: [],
     
     // Pricing & Amenities (Step 5)
     rentAmount: "", securityDeposit: "",
-    rentDuration: "", maintenanceIncluded: "", rentNegotiable: "",
+    rentDuration: "", maintenanceIncluded: "",
     tenantType: [], petFriendly: "", dietaryPreference: "", smokingAllowed: "",
     selectedAmenities: [], otherAmenities: "",
     immediateOccupancy: "", availableFrom: "", rentRenewalOption: "",
@@ -1726,6 +1725,16 @@ function MobContentRentPMHostel({
           ))}
         </div>
       </Field>
+      <Field label="Interior Features">
+        <div className="grid grid-cols-2 gap-1">
+          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => (
+            <label key={feature} className="flex items-center gap-1 text-[9px] cursor-pointer">
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={(formData.interiorFeatures || []).includes(feature)} onChange={() => toggleArrayItem("interiorFeatures", feature)} />
+              {feature}
+            </label>
+          ))}
+        </div>
+      </Field>
 
       <Field label="Total Floors">
         <input className={inp} type="text" placeholder="Enter total floors" value={formData.totalFloors} onChange={(e) => updateForm("totalFloors", handleNumericFieldChange(e.target.value))} />
@@ -1855,7 +1864,7 @@ function MobContentRentPMHostel({
         <input className={inp} type="text" placeholder="Enter security/deposit amount" value={formData.securityDeposit} onChange={(e) => updateForm("securityDeposit", handleNumericFieldChange(e.target.value))} />
       </Field>
       
-      <Field label="Price Type">
+      <Field label="Rent Negotiable">
         <div className="flex gap-4">
           <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
             <input type="radio" name="mob-priceType-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "fixed"} onChange={() => updateForm("priceType", "fixed")} />
@@ -1867,7 +1876,7 @@ function MobContentRentPMHostel({
           </label>
         </div>
       </Field>
-      
+
       <Field label="Rent Duration" required error={errors.rentDuration}>
         <div className="grid grid-cols-2 gap-1">
           {rentDurationOptions.map(d => (
@@ -1883,16 +1892,6 @@ function MobContentRentPMHostel({
           {yesNoOptions.map(opt => (
             <label key={opt} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
               <input type="radio" name="mob-maint-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.maintenanceIncluded === opt} onChange={() => updateForm("maintenanceIncluded", opt)} />
-              {opt}
-            </label>
-          ))}
-        </div>
-      </Field>
-      <Field label="Rent Negotiable">
-        <div className="flex gap-4">
-          {yesNoOptions.map(opt => (
-            <label key={opt} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
-              <input type="radio" name="mob-negotiable-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.rentNegotiable === opt} onChange={() => updateForm("rentNegotiable", opt)} />
               {opt}
             </label>
           ))}
@@ -2767,6 +2766,16 @@ function DtContentRentPMHostel({
           ))}
         </div>
       </FieldDt>
+      <FieldDt label="Interior Features">
+        <div className="flex flex-wrap gap-3">
+          {["Modular Kitchen", "Wardrobes", "Air Conditioning", "Utility Area", "Smart Home Features"].map(feature => (
+            <label key={feature} className="flex items-center gap-2 text-[13px] cursor-pointer">
+              <input type="checkbox" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={(formData.interiorFeatures || []).includes(feature)} onChange={() => toggleArrayItem("interiorFeatures", feature)} />
+              {feature}
+            </label>
+          ))}
+        </div>
+      </FieldDt>
 
       <FieldDt label="Total Floors">
         <input className={inp} type="text" placeholder="Enter total floors" value={formData.totalFloors} onChange={(e) => updateForm("totalFloors", handleNumericFieldChange(e.target.value))} />
@@ -2896,7 +2905,7 @@ function DtContentRentPMHostel({
         <input className={inp} type="text" placeholder="Enter security/deposit amount" value={formData.securityDeposit} onChange={(e) => updateForm("securityDeposit", handleNumericFieldChange(e.target.value))} />
       </FieldDt>
       
-      <FieldDt label="Price Type">
+      <FieldDt label="Rent Negotiable">
         <div className="flex gap-5">
           <label className="flex items-center gap-2 text-[13px] cursor-pointer">
             <input type="radio" name="dt-priceType-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === "fixed"} onChange={() => updateForm("priceType", "fixed")} />
@@ -2924,16 +2933,6 @@ function DtContentRentPMHostel({
           {yesNoOptions.map(opt => (
             <label key={opt} className="flex items-center gap-2 text-[13px] cursor-pointer">
               <input type="radio" name="dt-maint-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.maintenanceIncluded === opt} onChange={() => updateForm("maintenanceIncluded", opt)} />
-              {opt}
-            </label>
-          ))}
-        </div>
-      </FieldDt>
-      <FieldDt label="Rent Negotiable">
-        <div className="flex gap-5">
-          {yesNoOptions.map(opt => (
-            <label key={opt} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-negotiable-pm" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.rentNegotiable === opt} onChange={() => updateForm("rentNegotiable", opt)} />
               {opt}
             </label>
           ))}

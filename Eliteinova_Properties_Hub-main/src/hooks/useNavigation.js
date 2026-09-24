@@ -179,6 +179,16 @@ const hostelPathMap = new Map(hostelType.map(type => [type.path,type.name]));
 const purposePathMap = new Map(purpose.map(purpose=>[purpose.path,purpose.name]));
 
 // ============================================
+// RAW TYPE LISTS (named exports)
+// ============================================
+// Property-type option lists per category, and the true Land & Plots
+// subcategory list (landSubMenuTypes) - exported so other screens (e.g. the
+// admin dashboard's Edit Property form) can source the exact same
+// canonical property_type / sub_category strings used for browse filtering
+// here, instead of hand-maintaining a second, drifting copy.
+export { houseTypes, apartmentTypes, commercialTypes, landTypes, landSubMenuTypes, hostelType };
+
+// ============================================
 // USE NAVIGATION HOOK
 // ============================================
 function useNavigation() {

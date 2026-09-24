@@ -22,6 +22,11 @@ class _RoleProfileExtra(BaseModel):
 
 
 class AgentProfileExtra(_RoleProfileExtra):
+    # Profile photo/logo are role-specific: an Agent's "easy navigation" photo
+    # and agency logo live in this blob, not a column shared with the other
+    # three roles, so switching roles never shows another role's image.
+    profile_photo_url: Optional[str] = Field(None, alias="profilePhotoUrl")
+    company_logo_url: Optional[str] = Field(None, alias="companyLogoUrl")
     rera_registration_number: Optional[str] = Field(None, alias="reraRegistrationNumber")
     gst_number: Optional[str] = Field(None, alias="gstNumber")
     years_of_experience: Optional[int] = Field(None, alias="yearsOfExperience")
@@ -45,6 +50,8 @@ class AgentProfileExtra(_RoleProfileExtra):
 
 
 class BuilderProfileExtra(_RoleProfileExtra):
+    profile_photo_url: Optional[str] = Field(None, alias="profilePhotoUrl")
+    company_logo_url: Optional[str] = Field(None, alias="companyLogoUrl")
     company_reg_number: Optional[str] = Field(None, alias="companyRegNumber")
     rera_number: Optional[str] = Field(None, alias="reraNumber")
     gst_number: Optional[str] = Field(None, alias="gstNumber")
@@ -82,6 +89,8 @@ class BuilderProfileExtra(_RoleProfileExtra):
 
 
 class PropertyManagementProfileExtra(_RoleProfileExtra):
+    profile_photo_url: Optional[str] = Field(None, alias="profilePhotoUrl")
+    company_logo_url: Optional[str] = Field(None, alias="companyLogoUrl")
     business_reg_number: Optional[str] = Field(None, alias="businessRegNumber")
     rera_number: Optional[str] = Field(None, alias="reraNumber")
     gst_number: Optional[str] = Field(None, alias="gstNumber")
@@ -110,7 +119,9 @@ class PropertyManagementProfileExtra(_RoleProfileExtra):
 
 class OwnerProfileExtra(_RoleProfileExtra):
     # Owner-only fields with no shared VendorProfile column of their own
-    # (unlike gender/address/bank details, which every role shares).
+    # (unlike gender/address/bank details, which every role shares). Owners
+    # aren't a company, so there's no logo counterpart here.
+    profile_photo_url: Optional[str] = Field(None, alias="profilePhotoUrl")
     date_of_birth: Optional[str] = Field(None, alias="dateOfBirth")
     additional_note: Optional[str] = Field(None, alias="additionalNotes")
 

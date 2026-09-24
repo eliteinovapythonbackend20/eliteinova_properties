@@ -10,9 +10,14 @@ class VendorProfile(Base):
     user, editable independently of any property they've posted. Fields
     shared by all four vendor roles (Owner/Agent/Builder/Property Management)
     are real columns; each role's few extra fields (RERA/GST numbers,
-    experience, ongoing projects, ...) live in that role's typed JSONB blob
-    (see app.schemas.vendor_profile_details) rather than a wide table of
-    columns only one role ever fills in.
+    experience, ongoing projects, profile photo, company/agency logo, ...)
+    live in that role's typed JSONB blob (see app.schemas.vendor_profile_details)
+    rather than a wide table of columns only one role ever fills in.
+
+    Profile photo and logo are deliberately NOT shared columns: a user who has
+    posted under more than one role (e.g. both Agent and Builder) gets a
+    separate photo/logo per role, stored under that role's own JSONB blob,
+    instead of one image bleeding across roles.
     """
 
     __tablename__ = "vendor_profile"
@@ -24,9 +29,6 @@ class VendorProfile(Base):
     phone_number = Column(String(20), nullable=True)
     whatsapp_number = Column(String(20), nullable=True)
     gender = Column(String(20), nullable=True)
-
-    profile_picture = Column(Text, nullable=True)
-    company_logo_url = Column(Text, nullable=True)
 
     company_name = Column(String(255), nullable=True)
 

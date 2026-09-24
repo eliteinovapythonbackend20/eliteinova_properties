@@ -171,7 +171,7 @@ export default function LeaseBuilderComForm({ isOpen, onClose }) {
     listingPurpose: "lease", leaseAmount: "",
     securityDeposit: "", priceType: "", maintenance: "", 
     availableFrom: "", selectedAmenities: [], otherAmenities: "",
-    immediateOccupancy: "", leaseNegotiable: "", leaseRenewalOption: "",
+    immediateOccupancy: "", leaseRenewalOption: "",
     
     // Bank Details (Step 6)
     accountHolderName: "", bankName: "", accountNumber: "", ifscCode: "", upiId: "",
@@ -1337,22 +1337,12 @@ function MobContentLeaseBuilderCom({
       <Field label="Security Deposit (₹)" hint="If applicable">
         <input className={inp} type="text" inputMode="decimal" placeholder="Enter security deposit amount" value={formData.securityDeposit} onChange={(e) => updateForm("securityDeposit", e.target.value.replace(/[^0-9.]/g, ''))} />
       </Field>
-      <Field label="Price Type" required error={errors.priceType}>
+      <Field label="Lease Negotiable" required error={errors.priceType}>
         <div className="flex gap-4">
           {priceTypeOptions.map(pt => (
             <label key={pt} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
               <input type="radio" name="mob-priceType-lease" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === pt} onChange={() => updateForm("priceType", pt)} />
               {pt}
-            </label>
-          ))}
-        </div>
-      </Field>
-      <Field label="Lease Negotiable">
-        <div className="flex gap-4">
-          {yesNoOptions.map(opt => (
-            <label key={opt} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
-              <input type="radio" name="mob-negotiable-lease" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.leaseNegotiable === opt} onChange={() => updateForm("leaseNegotiable", opt)} />
-              {opt}
             </label>
           ))}
         </div>
@@ -2150,22 +2140,12 @@ function DtContentLeaseBuilderCom({
       <FieldDt label="Security Deposit (₹)" hint="If applicable">
         <input className={inp} type="text" inputMode="decimal" placeholder="Enter security deposit amount" value={formData.securityDeposit} onChange={(e) => updateForm("securityDeposit", e.target.value.replace(/[^0-9.]/g, ''))} />
       </FieldDt>
-      <FieldDt label="Price Type" required error={errors.priceType}>
+      <FieldDt label="Lease Negotiable" required error={errors.priceType}>
         <div className="flex gap-5">
           {priceTypeOptions.map(pt => (
             <label key={pt} className="flex items-center gap-2 text-[13px] cursor-pointer">
               <input type="radio" name="dt-priceType-lease" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.priceType === pt} onChange={() => updateForm("priceType", pt)} />
               {pt}
-            </label>
-          ))}
-        </div>
-      </FieldDt>
-      <FieldDt label="Lease Negotiable">
-        <div className="flex gap-5">
-          {yesNoOptions.map(opt => (
-            <label key={opt} className="flex items-center gap-2 text-[13px] cursor-pointer">
-              <input type="radio" name="dt-negotiable-lease" className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer" checked={formData.leaseNegotiable === opt} onChange={() => updateForm("leaseNegotiable", opt)} />
-              {opt}
             </label>
           ))}
         </div>

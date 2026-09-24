@@ -252,56 +252,56 @@ const OwnersOverview = () => {
   });
 
   // ---- Recent Activities ----
-  const activities = useMemo(() => [
-    {
-      icon: <FaUserPlus className="text-white text-sm" />,
-      title: 'New Owner Registration',
-      time: '2 min ago',
-      description: 'Rajesh Kumar registered as a property owner',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-[#00695C] to-[#26A69A]'
-    },
-    {
-      icon: <FiCheckCircle className="text-white text-sm" />,
-      title: 'KYC Approved',
-      time: '15 min ago',
-      description: 'Priya Sharma\'s Aadhaar & PAN verified successfully',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-emerald-500 to-emerald-400'
-    },
-    {
-      icon: <FiHome className="text-white text-sm" />,
-      title: 'New Property Listed',
-      time: '32 min ago',
-      description: 'Amit Singh listed a Luxury Apartment in Bangalore',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-blue-500 to-blue-400'
-    },
-    {
-      icon: <FiEdit className="text-white text-sm" />,
-      title: 'Property Approved',
-      time: '45 min ago',
-      description: 'Vikram Patel\'s property listing was approved',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-emerald-500 to-emerald-400'
-    },
-    {
-      icon: <FiDollarSign className="text-white text-sm" />,
-      title: 'Subscription Upgraded',
-      time: '1 hour ago',
-      description: 'Sneha Reddy upgraded to Gold Plan',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-amber-500 to-amber-400'
-    },
-    {
-      icon: <FiUserCheck className="text-white text-sm" />,
-      title: 'Owner Verified',
-      time: '2 hours ago',
-      description: 'Vikram Patel\'s account was verified',
-      color: 'bg-gradient-to-br',
-      gradient: 'from-purple-500 to-purple-400'
-    }
-  ], []);
+  // const activities = useMemo(() => [
+  //   {
+  //     icon: <FaUserPlus className="text-white text-sm" />,
+  //     title: 'New Owner Registration',
+  //     time: '2 min ago',
+  //     description: 'Rajesh Kumar registered as a property owner',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-[#00695C] to-[#26A69A]'
+  //   },
+  //   {
+  //     icon: <FiCheckCircle className="text-white text-sm" />,
+  //     title: 'KYC Approved',
+  //     time: '15 min ago',
+  //     description: 'Priya Sharma\'s Aadhaar & PAN verified successfully',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-emerald-500 to-emerald-400'
+  //   },
+  //   {
+  //     icon: <FiHome className="text-white text-sm" />,
+  //     title: 'New Property Listed',
+  //     time: '32 min ago',
+  //     description: 'Amit Singh listed a Luxury Apartment in Bangalore',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-blue-500 to-blue-400'
+  //   },
+  //   {
+  //     icon: <FiEdit className="text-white text-sm" />,
+  //     title: 'Property Approved',
+  //     time: '45 min ago',
+  //     description: 'Vikram Patel\'s property listing was approved',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-emerald-500 to-emerald-400'
+  //   },
+  //   {
+  //     icon: <FiDollarSign className="text-white text-sm" />,
+  //     title: 'Subscription Upgraded',
+  //     time: '1 hour ago',
+  //     description: 'Sneha Reddy upgraded to Gold Plan',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-amber-500 to-amber-400'
+  //   },
+  //   {
+  //     icon: <FiUserCheck className="text-white text-sm" />,
+  //     title: 'Owner Verified',
+  //     time: '2 hours ago',
+  //     description: 'Vikram Patel\'s account was verified',
+  //     color: 'bg-gradient-to-br',
+  //     gradient: 'from-purple-500 to-purple-400'
+  //   }
+  // ], []);
 
   // ---- Quick Stats ----
   const quickStats = useMemo(() => [
@@ -576,7 +576,7 @@ const OwnersOverview = () => {
       </div>
 
       {/* ===== RECENT ACTIVITIES ===== */}
-      <div>
+      {/* <div>
         <SectionHeader
           icon={<FiActivity className="text-white text-sm" />}
           title="Recent Activities"
@@ -601,7 +601,7 @@ const OwnersOverview = () => {
             />
           ))}
         </div>
-      </div>
+      </div> */}
 
       {/* ===== FOOTER ===== */}
       <div className="text-center pt-4">

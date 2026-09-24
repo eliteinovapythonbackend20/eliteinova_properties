@@ -450,13 +450,7 @@ class FieldMappingService:
         
         # Special handling for yes/no string fields
         if field in self.YES_NO_FIELDS:
-            converted = self._convert_yes_no(value)
-            # renewable_option is varchar(5) (Yes/No). Hostel lease forms send words such as
-            # "Automatic" / "Fixed Term" for the same key; those cannot be stored in that column
-            # and would fail the whole INSERT, so keep only a real Yes/No there.
-            if field == 'renewable_option' and converted not in ('Yes', 'No'):
-                return None
-            return converted
+            return self._convert_yes_no(value)
 
         return value
 

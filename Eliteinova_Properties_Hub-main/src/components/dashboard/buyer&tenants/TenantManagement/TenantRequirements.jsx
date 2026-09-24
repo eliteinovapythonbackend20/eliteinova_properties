@@ -1,0 +1,1875 @@
+// src/components/dashboard/admin/buyer&tenants/TenantManagement/TenantRequirements.jsx
+
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  FiUsers, FiDollarSign, FiMapPin, FiHome, FiGrid, FiCalendar,
+  FiClock, FiUser, FiUsers as FiFamily, FiCheckCircle, FiXCircle,
+  FiSearch, FiFilter, FiChevronDown, FiChevronLeft, FiChevronRight,
+  FiEye, FiEdit, FiTrash2, FiRefreshCw, FiPlus, FiDownload,
+  FiAlertTriangle, FiInfo, FiX, FiList, FiGrid as FiGridIcon,
+  FiActivity, FiStar, FiShield, FiBriefcase, FiMail, FiPhone,
+  FiExternalLink, FiLock, FiUnlock, FiMoreVertical, FiTag
+} from 'react-icons/fi';
+import {
+  FaHome, FaBed, FaCalendarAlt, FaUsers, FaCar, FaPaw,
+  FaCheck, FaTimes, FaStar as FaStarSolid, FaUserTie,
+  FaBuilding, FaUserCircle
+} from 'react-icons/fa';
+import { MdOutlineVerified, MdOutlineFamilyRestroom } from 'react-icons/md';
+import { HiOutlineUserGroup } from 'react-icons/hi2';
+
+/* ============================================================
+   STANDALONE COMPONENTS
+============================================================ */
+
+const Toast = ({ toast }) => {
+  if (!toast) return null;
+  const colors = {
+    success: 'bg-emerald-500',
+    error: 'bg-red-500',
+    warning: 'bg-amber-500',
+    info: 'bg-blue-500'
+  };
+  return (
+    <div className={`fixed bottom-6 right-6 z-[100] px-6 py-4 rounded-2xl text-white shadow-2xl flex items-center gap-3 animate-slide-up ${colors[toast.type] || colors.success}`}>
+      {toast.type === 'success' && <FiCheckCircle className="text-lg" />}
+      {toast.type === 'error' && <FiXCircle className="text-lg" />}
+      {toast.type === 'warning' && <FiAlertTriangle className="text-lg" />}
+      {toast.type === 'info' && <FiInfo className="text-lg" />}
+      <span className="text-sm font-medium">{toast.message}</span>
+    </div>
+  );
+};
+
+const StatCard = ({ icon, title, value, color, delay = 0, isActive, statsAnimating, onClick }) => {
+  return (
+    <div
+      className={`bg-white rounded-2xl p-1 shadow-sm hover:shadow-lg transition-all duration-500 border group cursor-pointer transform hover:-translate-y-1 ${statsAnimating ? 'animate-pulse-once' : ''} ${isActive ? 'ring-2 ring-[#00695C] shadow-lg bg-[#F5F9F8]' : 'border-[#E8F0EE]'}`}
+      style={{ animationDelay: `${delay}ms` }}
+      onClick={() => onClick()}
+    >
+      <div className="flex items-center gap-3">
+        <div className={`w-10 h-10 rounded-xl ${color} flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+          {icon}
+        </div>
+        <div>
+          <p className="text-[10px] font-medium text-[#5A7D78] uppercase tracking-wider">{title}</p>
+          <p className={`text-xl font-bold text-[#1A2E2A] group-hover:text-[#00695C] transition-colors duration-300 ${isActive ? 'text-[#00695C]' : ''}`}>
+            {value.toLocaleString()}
+          </p>
+        </div>
+      </div>
+      {isActive && (
+        <div className="mt-2 flex items-center gap-1">
+          <span className="text-[8px] text-[#00695C] font-medium bg-[#E8F4F2] px-2 py-0.5 rounded-full">Active Filter</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ============================================================
+   VIEW REQUIREMENT MODAL
+============================================================ */
+
+const ViewRequirementModal = ({ requirement, show, onClose, onEdit, onDelete }) => {
+  if (!requirement || !show) return null;
+
+  const statusColors = {
+    active: 'bg-[#E8F8F5] text-[#00695C]',
+    pending: 'bg-[#FEF3E2] text-amber-700',
+    expired: 'bg-gray-100 text-gray-600'
+  };
+
+  const propertyTypeColors = {
+    Individual: 'bg-blue-50 text-blue-700',
+    Apartment: 'bg-purple-50 text-purple-700',
+    Commercial: 'bg-orange-50 text-orange-700',
+    'Land & Plots': 'bg-green-50 text-green-700',
+    Hostel: 'bg-pink-50 text-pink-700'
+  };
+
+  const furnishingColors = {
+    'Fully Furnished': 'bg-emerald-50 text-emerald-700',
+    'Semi Furnished': 'bg-amber-50 text-amber-700',
+    'Unfurnished': 'bg-gray-50 text-gray-700'
+  };
+
+  const tenantTypeColors = {
+    'Family': 'bg-blue-50 text-blue-700',
+    'Bachelor': 'bg-purple-50 text-purple-700',
+    'Couple': 'bg-pink-50 text-pink-700',
+    'Students': 'bg-yellow-50 text-yellow-700',
+    'Working Professionals': 'bg-indigo-50 text-indigo-700'
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+      <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl animate-slide-up border border-[#E8F0EE] flex flex-col">
+        {/* Header */}
+        <div className="sticky top-0 bg-gradient-to-r from-[#00695C] to-[#26A69A] p-6 rounded-t-3xl z-10 shrink-0">
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 transition-all duration-300 flex items-center justify-center text-white hover:scale-110"
+          >
+            <FiX className="text-lg" />
+          </button>
+          <h2 className="text-2xl font-bold text-white">Tenant Requirements</h2>
+          <p className="text-white/80 text-sm">{requirement.name} · {requirement.email}</p>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 bg-white">
+          <div className="space-y-6">
+            {/* Status Badge */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className={`px-4 py-1.5 rounded-full text-xs font-semibold ${statusColors[requirement.status] || statusColors.pending}`}>
+                {requirement.status.charAt(0).toUpperCase() + requirement.status.slice(1)}
+              </span>
+              <span className={`px-4 py-1.5 rounded-full text-xs font-semibold ${propertyTypeColors[requirement.propertyType]}`}>
+                {requirement.propertyType}
+              </span>
+              <span className={`px-4 py-1.5 rounded-full text-xs font-semibold ${furnishingColors[requirement.furnishing]}`}>
+                {requirement.furnishing}
+              </span>
+              <span className={`px-4 py-1.5 rounded-full text-xs font-semibold ${tenantTypeColors[requirement.tenantType]}`}>
+                {requirement.tenantType}
+              </span>
+            </div>
+
+            {/* Budget Section */}
+            <div className="bg-[#F5F9F8] rounded-2xl p-4">
+              <h3 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider mb-3 flex items-center gap-2">
+                <FiDollarSign className="text-[#00695C]" />
+                Rental Budget
+              </h3>
+              <div className="flex items-center justify-between">
+                <span className="text-2xl font-bold text-[#1A2E2A]">₹{requirement.minBudget.toLocaleString()} - ₹{requirement.maxBudget.toLocaleString()}</span>
+                <span className="text-sm text-[#5A7D78]">per month</span>
+              </div>
+            </div>
+
+            {/* Location Section */}
+            <div className="bg-[#F5F9F8] rounded-2xl p-4">
+              <h3 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider mb-3 flex items-center gap-2">
+                <FiMapPin className="text-[#00695C]" />
+                Preferred Location
+              </h3>
+              <p className="text-sm font-medium text-[#1A2E2A]">{requirement.location}</p>
+              <p className="text-xs text-[#5A7D78]">{requirement.city}, {requirement.state}</p>
+            </div>
+
+            {/* Property Details Grid */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-[#F5F9F8] rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <FaHome className="text-[#00695C] text-sm" />
+                  <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider">Property Type</h4>
+                </div>
+                <p className="text-sm font-medium text-[#1A2E2A]">{requirement.propertyType}</p>
+              </div>
+
+              <div className="bg-[#F5F9F8] rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <FiTag className="text-[#00695C] text-sm" />
+                  <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider">Furnishing</h4>
+                </div>
+                <p className="text-sm font-medium text-[#1A2E2A]">{requirement.furnishing}</p>
+              </div>
+
+              <div className="bg-[#F5F9F8] rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <FaBed className="text-[#00695C] text-sm" />
+                  <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider">Bedrooms</h4>
+                </div>
+                <p className="text-sm font-medium text-[#1A2E2A]">{requirement.bedrooms} BHK</p>
+              </div>
+
+              <div className="bg-[#F5F9F8] rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <FaCalendarAlt className="text-[#00695C] text-sm" />
+                  <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider">Move-in Date</h4>
+                </div>
+                <p className="text-sm font-medium text-[#1A2E2A]">
+                  {new Date(requirement.moveInDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+              </div>
+
+              <div className="bg-[#F5F9F8] rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <FiClock className="text-[#00695C] text-sm" />
+                  <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider">Rental Duration</h4>
+                </div>
+                <p className="text-sm font-medium text-[#1A2E2A]">{requirement.rentalDuration}</p>
+              </div>
+
+              <div className="bg-[#F5F9F8] rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <FaUserTie className="text-[#00695C] text-sm" />
+                  <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider">Tenant Type</h4>
+                </div>
+                <p className="text-sm font-medium text-[#1A2E2A]">{requirement.tenantType}</p>
+              </div>
+            </div>
+
+            {/* Family Size */}
+            <div className="bg-[#F5F9F8] rounded-2xl p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <FiFamily className="text-[#00695C] text-sm" />
+                <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider">Family / Bachelor</h4>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-sm font-medium text-[#1A2E2A]">{requirement.tenantType}</span>
+                {requirement.familySize > 0 && (
+                  <span className="text-xs text-[#5A7D78]">({requirement.familySize} members)</span>
+                )}
+              </div>
+            </div>
+
+            {/* Parking & Pets */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-[#F5F9F8] rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <FaCar className="text-[#00695C] text-sm" />
+                  <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider">Parking Requirement</h4>
+                </div>
+                <div className="flex items-center gap-2">
+                  {requirement.parkingRequired ? (
+                    <FiCheckCircle className="text-emerald-500" />
+                  ) : (
+                    <FiXCircle className="text-gray-400" />
+                  )}
+                  <span className="text-sm font-medium text-[#1A2E2A]">
+                    {requirement.parkingRequired ? 'Required' : 'Not Required'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-[#F5F9F8] rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <FaPaw className="text-[#00695C] text-sm" />
+                  <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider">Pet Requirement</h4>
+                </div>
+                <div className="flex items-center gap-2">
+                  {requirement.petsAllowed ? (
+                    <FiCheckCircle className="text-emerald-500" />
+                  ) : (
+                    <FiXCircle className="text-gray-400" />
+                  )}
+                  <span className="text-sm font-medium text-[#1A2E2A]">
+                    {requirement.petsAllowed ? 'Allowed' : 'Not Allowed'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Additional Notes */}
+            {requirement.notes && (
+              <div className="bg-[#F5F9F8] rounded-2xl p-4">
+                <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider mb-2">Additional Notes</h4>
+                <p className="text-sm text-[#1A2E2A] leading-relaxed">{requirement.notes}</p>
+              </div>
+            )}
+
+            {/* Contact Info */}
+            <div className="bg-[#F5F9F8] rounded-2xl p-4">
+              <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider mb-2">Contact Information</h4>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <FiMail className="text-[#00695C]" />
+                  <span>{requirement.email}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <FiPhone className="text-[#00695C]" />
+                  <span>{requirement.phone}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="sticky bottom-0 px-6 py-4 bg-white border-t border-[#E8F0EE] rounded-b-3xl shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2.5 bg-[#F5F9F8] text-[#1A2E2A] rounded-xl hover:bg-[#E8F0EE] transition-all duration-300 text-sm font-medium"
+            >
+              Close
+            </button>
+            <button
+              onClick={() => onEdit(requirement)}
+              className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-300 text-sm font-medium shadow-lg shadow-blue-600/30 hover:scale-[1.02]"
+            >
+              <FiEdit className="inline mr-2" /> Edit
+            </button>
+            <button
+              onClick={() => onDelete(requirement.id)}
+              className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all duration-300 text-sm font-medium shadow-lg shadow-red-600/30 hover:scale-[1.02]"
+            >
+              <FiTrash2 className="inline mr-2" /> Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================
+   ADD / EDIT REQUIREMENT MODAL
+============================================================ */
+
+const AddEditRequirementModal = ({ requirement, show, mode, onClose, onSave }) => {
+  const emptyForm = {
+    name: '',
+    email: '',
+    phone: '',
+    city: '',
+    state: '',
+    location: '',
+    minBudget: 10000,
+    maxBudget: 25000,
+    propertyType: 'Apartment',
+    furnishing: 'Semi Furnished',
+    bedrooms: 1,
+    moveInDate: new Date().toISOString().slice(0, 10),
+    rentalDuration: '12 months',
+    tenantType: 'Family',
+    familySize: 2,
+    parkingRequired: false,
+    petsAllowed: false,
+    status: 'pending',
+    notes: ''
+  };
+
+  const [formData, setFormData] = useState(emptyForm);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  useEffect(() => {
+    if (mode === 'edit' && requirement) {
+      setFormData({
+        name: requirement.name || '',
+        email: requirement.email || '',
+        phone: requirement.phone || '',
+        city: requirement.city || '',
+        state: requirement.state || '',
+        location: requirement.location || '',
+        minBudget: requirement.minBudget || 10000,
+        maxBudget: requirement.maxBudget || 25000,
+        propertyType: requirement.propertyType || 'Apartment',
+        furnishing: requirement.furnishing || 'Semi Furnished',
+        bedrooms: requirement.bedrooms || 1,
+        moveInDate: requirement.moveInDate?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+        rentalDuration: requirement.rentalDuration || '12 months',
+        tenantType: requirement.tenantType || 'Family',
+        familySize: requirement.familySize || 2,
+        parkingRequired: requirement.parkingRequired || false,
+        petsAllowed: requirement.petsAllowed || false,
+        status: requirement.status || 'pending',
+        notes: requirement.notes || ''
+      });
+    } else if (mode === 'add') {
+      setFormData(emptyForm);
+    }
+  }, [requirement, mode, show]);
+
+  if (!show || !formData) return null;
+
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave(formData);
+  };
+
+  const propertyTypes = ['Individual', 'Apartment', 'Commercial', 'Land & Plots', 'Hostel'];
+  const furnishingOptions = ['Fully Furnished', 'Semi Furnished', 'Unfurnished'];
+  const rentalDurations = ['6 months', '12 months', '18 months', '24 months', '36 months'];
+  const tenantTypes = ['Family', 'Bachelor', 'Couple', 'Students', 'Working Professionals'];
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-[#1A2E2A]/50 backdrop-blur-sm animate-fade-in">
+      <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl animate-slide-up border border-[#E8F0EE] flex flex-col">
+        {/* Header */}
+        <div className="sticky top-0 bg-gradient-to-r from-[#00695C] to-[#26A69A] p-6 rounded-t-3xl z-10 shrink-0">
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 transition-all duration-300 flex items-center justify-center text-white hover:scale-110"
+          >
+            <FiX className="text-lg" />
+          </button>
+          <h2 className="text-2xl font-bold text-white">{mode === 'add' ? 'Add Requirements' : 'Edit Requirements'}</h2>
+          <p className="text-white/80 text-sm">{mode === 'add' ? 'Create new tenant requirements' : 'Update tenant requirements'}</p>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 bg-white">
+          <form id="requirement-form" onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              {/* Personal Info */}
+              <div className="col-span-2">
+                <h3 className="text-sm font-semibold text-[#1A2E2A] mb-3 flex items-center gap-2">
+                  <FiUser className="text-[#00695C]" />
+                  Personal Information
+                </h3>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Full Name *</label>
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Email *</label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Phone *</label>
+                <input
+                  type="text"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Status</label>
+                <select
+                  name="status"
+                  value={formData.status}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="active">Active</option>
+                  <option value="expired">Expired</option>
+                </select>
+              </div>
+
+              {/* Location */}
+              <div className="col-span-2">
+                <h3 className="text-sm font-semibold text-[#1A2E2A] mb-3 flex items-center gap-2">
+                  <FiMapPin className="text-[#00695C]" />
+                  Preferred Location
+                </h3>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">City *</label>
+                <input
+                  type="text"
+                  name="city"
+                  value={formData.city}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">State *</label>
+                <input
+                  type="text"
+                  name="state"
+                  value={formData.state}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                  required
+                />
+              </div>
+
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Preferred Location / Area</label>
+                <input
+                  type="text"
+                  name="location"
+                  value={formData.location}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                  placeholder="e.g., Indiranagar, Koramangala, Whitefield"
+                />
+              </div>
+
+              {/* Rental Budget */}
+              <div className="col-span-2">
+                <h3 className="text-sm font-semibold text-[#1A2E2A] mb-3 flex items-center gap-2">
+                  <FiDollarSign className="text-[#00695C]" />
+                  Rental Budget
+                </h3>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Min Budget (₹) *</label>
+                <input
+                  type="number"
+                  name="minBudget"
+                  value={formData.minBudget}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                  min="0"
+                  step="1"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Max Budget (₹) *</label>
+                <input
+                  type="number"
+                  name="maxBudget"
+                  value={formData.maxBudget}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                  min="0"
+                  step="1"
+                  required
+                />
+              </div>
+
+              {/* Property Type & Furnishing */}
+              <div className="col-span-2">
+                <h3 className="text-sm font-semibold text-[#1A2E2A] mb-3 flex items-center gap-2">
+                  <FaHome className="text-[#00695C]" />
+                  Property Details
+                </h3>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Property Type *</label>
+                <select
+                  name="propertyType"
+                  value={formData.propertyType}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                >
+                  {propertyTypes.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Furnishing Preference *</label>
+                <select
+                  name="furnishing"
+                  value={formData.furnishing}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                >
+                  {furnishingOptions.map(option => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Bedrooms *</label>
+                <select
+                  name="bedrooms"
+                  value={formData.bedrooms}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                >
+                  {[1, 2, 3, 4, 5].map(num => (
+                    <option key={num} value={num}>{num} BHK</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Move-in Date & Duration */}
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Move-in Date *</label>
+                <input
+                  type="date"
+                  name="moveInDate"
+                  value={formData.moveInDate}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Rental Duration *</label>
+                <select
+                  name="rentalDuration"
+                  value={formData.rentalDuration}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                >
+                  {rentalDurations.map(duration => (
+                    <option key={duration} value={duration}>{duration}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Family / Bachelor */}
+              <div className="col-span-2">
+                <h3 className="text-sm font-semibold text-[#1A2E2A] mb-3 flex items-center gap-2">
+                  <FiFamily className="text-[#00695C]" />
+                  Family / Bachelor
+                </h3>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Tenant Type *</label>
+                <select
+                  name="tenantType"
+                  value={formData.tenantType}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                >
+                  {tenantTypes.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Family Size</label>
+                <input
+                  type="number"
+                  name="familySize"
+                  value={formData.familySize}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none text-[#1A2E2A]"
+                  min="1"
+                  max="20"
+                />
+              </div>
+
+              {/* Parking & Pets */}
+              <div className="col-span-2">
+                <h3 className="text-sm font-semibold text-[#1A2E2A] mb-3 flex items-center gap-2">
+                  <FiShield className="text-[#00695C]" />
+                  Additional Requirements
+                </h3>
+              </div>
+
+              <div className="col-span-2 grid grid-cols-2 gap-4">
+                <div className="flex items-center gap-3 p-3 bg-[#F5F9F8] rounded-xl">
+                  <input
+                    type="checkbox"
+                    name="parkingRequired"
+                    checked={formData.parkingRequired}
+                    onChange={handleChange}
+                    className="w-4 h-4 rounded border-[#B5C9C5] text-[#00695C] focus:ring-[#00695C] focus:ring-2 transition-all duration-300"
+                  />
+                  <label className="text-sm font-medium text-[#1A2E2A] flex items-center gap-2">
+                    <FaCar className="text-[#00695C]" />
+                    Parking Required
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-3 p-3 bg-[#F5F9F8] rounded-xl">
+                  <input
+                    type="checkbox"
+                    name="petsAllowed"
+                    checked={formData.petsAllowed}
+                    onChange={handleChange}
+                    className="w-4 h-4 rounded border-[#B5C9C5] text-[#00695C] focus:ring-[#00695C] focus:ring-2 transition-all duration-300"
+                  />
+                  <label className="text-sm font-medium text-[#1A2E2A] flex items-center gap-2">
+                    <FaPaw className="text-[#00695C]" />
+                    Pets Allowed
+                  </label>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-[#5A7D78] block mb-1">Additional Notes</label>
+                <textarea
+                  name="notes"
+                  value={formData.notes}
+                  onChange={handleChange}
+                  rows="3"
+                  className="w-full px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none resize-none text-[#1A2E2A]"
+                  placeholder="Any special requirements or preferences..."
+                />
+              </div>
+            </div>
+          </form>
+        </div>
+
+        {/* Footer */}
+        <div className="sticky bottom-0 px-6 py-4 bg-white border-t border-[#E8F0EE] rounded-b-3xl shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2.5 bg-[#F5F9F8] text-[#1A2E2A] rounded-xl hover:bg-[#E8F0EE] transition-all duration-300 text-sm font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="requirement-form"
+              className="flex-1 px-4 py-2.5 bg-[#00695C] text-white rounded-xl hover:bg-[#004D40] transition-all duration-300 text-sm font-medium shadow-lg shadow-[#00695C]/30 hover:scale-[1.02]"
+            >
+              {mode === 'add' ? 'Add Requirements' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================
+   MAIN COMPONENT
+============================================================ */
+
+const TenantRequirements = () => {
+  const navigate = useNavigate();
+  const searchInputRef = useRef(null);
+
+  // ============ STATE ============
+  const [requirements, setRequirements] = useState([]);
+  const [filteredRequirements, setFilteredRequirements] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('all');
+  const [selectedPropertyType, setSelectedPropertyType] = useState('all');
+  const [selectedFurnishing, setSelectedFurnishing] = useState('all');
+  const [selectedTenantType, setSelectedTenantType] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [sortField, setSortField] = useState('name');
+  const [sortDirection, setSortDirection] = useState('asc');
+  const [viewMode, setViewMode] = useState('grid');
+  const [selectedRequirements, setSelectedRequirements] = useState([]);
+  const [showStats, setShowStats] = useState(true);
+  const [statsAnimating, setStatsAnimating] = useState(false);
+  const [viewingRequirement, setViewingRequirement] = useState(null);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [formRequirement, setFormRequirement] = useState(null);
+  const [formMode, setFormMode] = useState('add');
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [actionLoading, setActionLoading] = useState(null);
+  const [filterCount, setFilterCount] = useState(0);
+  const [activeFilter, setActiveFilter] = useState('all');
+
+  // ============ TOAST FUNCTION ============
+  const showToast = useCallback((message, type = 'success', duration = 3000) => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), duration);
+  }, []);
+
+  // ============ STATS ============
+  const [stats, setStats] = useState({
+    total: 0,
+    pending: 0,
+    active: 0,
+    expired: 0
+  });
+
+  // ============ COMPUTE STATS ============
+  const computeStats = useCallback((list) => {
+    const total = list.length;
+    const pending = list.filter(r => r.status === 'pending').length;
+    const active = list.filter(r => r.status === 'active').length;
+    const expired = list.filter(r => r.status === 'expired').length;
+
+    setStats({
+      total,
+      pending,
+      active,
+      expired
+    });
+  }, []);
+
+  // ============ GENERATE MOCK DATA ============
+  const generateMockRequirements = useCallback(() => {
+    const firstNames = ['Rahul', 'Anita', 'Sanjay', 'Divya', 'Karthik', 'Neha', 'Manoj', 'Swati', 'Rohit', 'Pallavi', 'Vivek', 'Shalini', 'Ajay', 'Bhavana', 'Naveen', 'Radhika', 'Sameer', 'Anjali', 'Harish', 'Preeti'];
+    const lastNames = ['Kumar', 'Sharma', 'Singh', 'Patel', 'Reddy', 'Gupta', 'Verma', 'Joshi', 'Malhotra', 'Mehta', 'Nair', 'Pillai', 'Rao', 'Shetty', 'Agarwal', 'Khanna', 'Chopra', 'Saxena', 'Tiwari', 'Desai'];
+    const cities = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune', 'Ahmedabad', 'Jaipur', 'Lucknow', 'Nagpur', 'Kolkata', 'Surat', 'Indore'];
+    const states = ['Maharashtra', 'Delhi', 'Karnataka', 'Tamil Nadu', 'Telangana', 'Uttar Pradesh', 'Gujarat', 'Rajasthan'];
+    const propertyTypes = ['Individual', 'Apartment', 'Commercial', 'Land & Plots', 'Hostel'];
+    const furnishingOptions = ['Fully Furnished', 'Semi Furnished', 'Unfurnished'];
+    const statuses = ['pending', 'active', 'expired'];
+    const rentalDurations = ['6 months', '12 months', '18 months', '24 months', '36 months'];
+    const tenantTypes = ['Family', 'Bachelor', 'Couple', 'Students', 'Working Professionals'];
+    const locations = ['MG Road', 'Banjara Hills', 'Indiranagar', 'Koramangala', 'Whitefield', 'Jubilee Hills', 'Connaught Place', 'Salt Lake', 'Marine Drive', 'Andheri', 'Bandra', 'Powai'];
+
+    const requirements = [];
+    const usedNames = new Set();
+
+    for (let i = 1; i <= 80; i++) {
+      let firstName, lastName, fullName;
+      let attempts = 0;
+      do {
+        firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
+        lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+        fullName = `${firstName} ${lastName}`;
+        attempts++;
+      } while (usedNames.has(fullName) && attempts < 50);
+      usedNames.add(fullName);
+
+      const minBudget = Math.floor(Math.random() * 15000 + 8000);
+      const maxBudget = minBudget + Math.floor(Math.random() * 20000 + 5000);
+      const city = cities[Math.floor(Math.random() * cities.length)];
+
+      const moveIn = new Date();
+      moveIn.setDate(moveIn.getDate() + Math.floor(Math.random() * 60));
+
+      requirements.push({
+        id: `req_${i}`,
+        name: fullName,
+        email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}${Math.floor(Math.random() * 100)}@email.com`,
+        phone: `+91 ${Math.floor(Math.random() * 9000000000 + 1000000000)}`,
+        city: city,
+        state: states[Math.floor(Math.random() * states.length)],
+        location: locations[Math.floor(Math.random() * locations.length)],
+        minBudget: minBudget,
+        maxBudget: maxBudget,
+        propertyType: propertyTypes[Math.floor(Math.random() * propertyTypes.length)],
+        furnishing: furnishingOptions[Math.floor(Math.random() * furnishingOptions.length)],
+        bedrooms: Math.floor(Math.random() * 4) + 1,
+        moveInDate: moveIn.toISOString(),
+        rentalDuration: rentalDurations[Math.floor(Math.random() * rentalDurations.length)],
+        tenantType: tenantTypes[Math.floor(Math.random() * tenantTypes.length)],
+        familySize: Math.floor(Math.random() * 4) + 1,
+        parkingRequired: Math.random() > 0.5,
+        petsAllowed: Math.random() > 0.6,
+        status: statuses[Math.floor(Math.random() * statuses.length)],
+        notes: Math.random() > 0.7 ? 'Additional requirements or preferences' : '',
+        createdAt: new Date(Date.now() - Math.floor(Math.random() * 30 * 24 * 60 * 60 * 1000)).toISOString()
+      });
+    }
+
+    computeStats(requirements);
+    return requirements;
+  }, [computeStats]);
+
+  // ============ INITIALIZE DATA ============
+  useEffect(() => {
+    const mockRequirements = generateMockRequirements();
+    setRequirements(mockRequirements);
+    setFilteredRequirements(mockRequirements);
+    setStatsAnimating(true);
+    setTimeout(() => setStatsAnimating(false), 1000);
+  }, [generateMockRequirements]);
+
+  // ============ FILTER REQUIREMENTS ============
+  const filterRequirements = useCallback(() => {
+    let filtered = [...requirements];
+
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(req =>
+        req.name.toLowerCase().includes(query) ||
+        req.email.toLowerCase().includes(query) ||
+        req.phone.includes(query) ||
+        req.city.toLowerCase().includes(query) ||
+        req.location.toLowerCase().includes(query) ||
+        req.propertyType.toLowerCase().includes(query)
+      );
+    }
+
+    if (selectedStatus !== 'all') {
+      filtered = filtered.filter(req => req.status === selectedStatus);
+    }
+
+    if (selectedPropertyType !== 'all') {
+      filtered = filtered.filter(req => req.propertyType === selectedPropertyType);
+    }
+
+    if (selectedFurnishing !== 'all') {
+      filtered = filtered.filter(req => req.furnishing === selectedFurnishing);
+    }
+
+    if (selectedTenantType !== 'all') {
+      filtered = filtered.filter(req => req.tenantType === selectedTenantType);
+    }
+
+    let count = 0;
+    if (selectedStatus !== 'all') count++;
+    if (selectedPropertyType !== 'all') count++;
+    if (selectedFurnishing !== 'all') count++;
+    if (selectedTenantType !== 'all') count++;
+    if (searchQuery) count++;
+    setFilterCount(count);
+
+    filtered.sort((a, b) => {
+      let aVal = a[sortField] || '';
+      let bVal = b[sortField] || '';
+
+      if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+      if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    setFilteredRequirements(filtered);
+    setCurrentPage(1);
+  }, [requirements, searchQuery, selectedStatus, selectedPropertyType, selectedFurnishing, selectedTenantType, sortField, sortDirection]);
+
+  useEffect(() => {
+    filterRequirements();
+  }, [filterRequirements]);
+
+  // ============ PAGINATION ============
+  const totalPages = Math.ceil(filteredRequirements.length / pageSize);
+  const paginatedRequirements = useMemo(() =>
+    filteredRequirements.slice(
+      (currentPage - 1) * pageSize,
+      currentPage * pageSize
+    )
+  , [filteredRequirements, currentPage, pageSize]);
+
+  // ============ HANDLE SORT ============
+  const handleSort = useCallback((field) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  }, [sortField]);
+
+  // ============ HANDLE SELECT ALL ============
+  const handleSelectAll = useCallback(() => {
+    if (selectedRequirements.length === paginatedRequirements.length) {
+      setSelectedRequirements([]);
+    } else {
+      setSelectedRequirements(paginatedRequirements.map(req => req.id));
+    }
+  }, [selectedRequirements, paginatedRequirements]);
+
+  // ============ HANDLE SELECT REQUIREMENT ============
+  const handleSelectRequirement = useCallback((reqId) => {
+    setSelectedRequirements(prev =>
+      prev.includes(reqId)
+        ? prev.filter(id => id !== reqId)
+        : [...prev, reqId]
+    );
+  }, []);
+
+  // ============ VIEW REQUIREMENT ============
+  const handleViewRequirement = useCallback((req) => {
+    setViewingRequirement(req);
+    setShowViewModal(true);
+  }, []);
+
+  // ============ ADD REQUIREMENT ============
+  const handleAddRequirement = useCallback(() => {
+    setFormRequirement(null);
+    setFormMode('add');
+    setShowFormModal(true);
+  }, []);
+
+  // ============ EDIT REQUIREMENT ============
+  const handleEditRequirement = useCallback((req) => {
+    setFormRequirement(req);
+    setFormMode('edit');
+    setShowFormModal(true);
+  }, []);
+
+  // ============ SAVE FORM ============
+  const saveForm = useCallback((data) => {
+    setRequirements(prev => {
+      let updated;
+      if (formMode === 'add') {
+        const newRequirement = {
+          ...data,
+          id: `req_${Date.now()}`,
+          createdAt: new Date().toISOString()
+        };
+        updated = [newRequirement, ...prev];
+      } else {
+        updated = prev.map(r => r.id === formRequirement.id ? { ...r, ...data } : r);
+      }
+      computeStats(updated);
+      return updated;
+    });
+
+    setShowFormModal(false);
+    setFormRequirement(null);
+    showToast(formMode === 'add' ? 'Requirements added successfully' : 'Requirements updated successfully', 'success');
+  }, [formMode, formRequirement, computeStats, showToast]);
+
+  // ============ DELETE REQUIREMENT ============
+  const handleDeleteRequirement = useCallback((reqId) => {
+    const req = requirements.find(r => r.id === reqId);
+    if (!req) return;
+
+    if (!window.confirm(`Are you sure you want to delete ${req.name}'s requirements?`)) return;
+
+    setActionLoading(reqId);
+    setTimeout(() => {
+      setRequirements(prev => {
+        const updated = prev.filter(r => r.id !== reqId);
+        computeStats(updated);
+        return updated;
+      });
+      setActionLoading(null);
+      setShowViewModal(false);
+      showToast(`${req.name}'s requirements deleted`, 'error');
+    }, 700);
+  }, [requirements, computeStats, showToast]);
+
+  // ============ STAT CLICK HANDLER ============
+  const handleStatClick = useCallback((filter) => {
+    setActiveFilter(prev => (prev === filter ? 'all' : filter));
+    const nextFilter = activeFilter === filter ? 'all' : filter;
+
+    setSelectedStatus('all');
+    setSelectedPropertyType('all');
+    setSelectedFurnishing('all');
+    setSelectedTenantType('all');
+
+    if (nextFilter === 'pending' || nextFilter === 'active' || nextFilter === 'expired') {
+      setSelectedStatus(nextFilter);
+    }
+
+    setSearchQuery('');
+    searchInputRef.current?.focus();
+  }, [activeFilter]);
+
+  // ============ CLEAR ALL FILTERS ============
+  const clearAllFilters = useCallback(() => {
+    setSearchQuery('');
+    setSelectedStatus('all');
+    setSelectedPropertyType('all');
+    setSelectedFurnishing('all');
+    setSelectedTenantType('all');
+    setActiveFilter('all');
+    searchInputRef.current?.focus();
+    showToast('All filters cleared', 'info');
+  }, [showToast]);
+
+  // ============ REFRESH DATA ============
+  const handleRefresh = useCallback(() => {
+    setLoading(true);
+    setTimeout(() => {
+      const mockRequirements = generateMockRequirements();
+      setRequirements(mockRequirements);
+      setFilteredRequirements(mockRequirements);
+      setLoading(false);
+      setStatsAnimating(true);
+      setTimeout(() => setStatsAnimating(false), 1000);
+      showToast('Data refreshed successfully', 'success');
+    }, 1000);
+  }, [generateMockRequirements, showToast]);
+
+  // ============ EXPORT DATA ============
+  const handleExport = useCallback(() => {
+    if (filteredRequirements.length === 0) {
+      showToast('No data to export', 'warning');
+      return;
+    }
+
+    const data = filteredRequirements.map(req => ({
+      Name: req.name,
+      Email: req.email,
+      Phone: req.phone,
+      City: req.city,
+      State: req.state,
+      'Preferred Location': req.location,
+      'Min Budget (₹)': req.minBudget,
+      'Max Budget (₹)': req.maxBudget,
+      'Property Type': req.propertyType,
+      'Furnishing Preference': req.furnishing,
+      'Bedrooms': req.bedrooms,
+      'Move-in Date': new Date(req.moveInDate).toLocaleDateString(),
+      'Rental Duration': req.rentalDuration,
+      'Tenant Type': req.tenantType,
+      'Family Size': req.familySize,
+      'Parking Required': req.parkingRequired ? 'Yes' : 'No',
+      'Pets Allowed': req.petsAllowed ? 'Yes' : 'No',
+      Status: req.status,
+      'Created At': new Date(req.createdAt).toLocaleDateString(),
+      Notes: req.notes || ''
+    }));
+
+    const csv = [
+      Object.keys(data[0]).join(','),
+      ...data.map(row => Object.values(row).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tenant_requirements_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    showToast(`${filteredRequirements.length} records exported successfully`, 'success');
+  }, [filteredRequirements, showToast]);
+
+  // ============ BULK ACTIONS ============
+  const handleBulkAction = useCallback((action) => {
+    if (selectedRequirements.length === 0) {
+      showToast('Please select requirements first', 'warning');
+      return;
+    }
+
+    setActionLoading(action);
+
+    setTimeout(() => {
+      const selectedIds = new Set(selectedRequirements);
+      let count = 0;
+
+      setRequirements(prev => {
+        let updated;
+        if (action === 'delete') {
+          count = prev.filter(r => selectedIds.has(r.id)).length;
+          updated = prev.filter(r => !selectedIds.has(r.id));
+        } else {
+          updated = prev.map(r => {
+            if (!selectedIds.has(r.id)) return r;
+            count++;
+            if (action === 'activate') return { ...r, status: 'active' };
+            if (action === 'expire') return { ...r, status: 'expired' };
+            return r;
+          });
+        }
+        computeStats(updated);
+        return updated;
+      });
+
+      setSelectedRequirements([]);
+      setActionLoading(null);
+
+      if (action === 'activate') showToast(`${count} requirement(s) activated`, 'success');
+      else if (action === 'expire') showToast(`${count} requirement(s) marked as expired`, 'info');
+      else if (action === 'delete') showToast(`${count} requirement(s) deleted`, 'error');
+    }, 800);
+  }, [selectedRequirements, computeStats, showToast]);
+
+  // ============ STATUS COLOR HELPER ============
+  const getStatusColor = (status) => {
+    const colors = {
+      pending: 'bg-[#FEF3E2] text-amber-700 border-amber-200',
+      active: 'bg-[#E8F8F5] text-[#00695C] border-[#A8D5CD]',
+      expired: 'bg-gray-100 text-gray-600 border-gray-200'
+    };
+    return colors[status] || colors.pending;
+  };
+
+  // ============ RENDER ============
+  return (
+    <div className="space-y-6 p-4 lg:p-6 bg-[#F8FAF9] min-h-screen">
+      {/* Animated Background */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-1/2 -right-1/2 w-96 h-96 bg-[#00695C]/5 rounded-full blur-3xl animate-float" />
+        <div className="absolute -bottom-1/2 -left-1/2 w-96 h-96 bg-[#26A69A]/5 rounded-full blur-3xl animate-float-delayed" />
+      </div>
+
+      {/* Toast */}
+      <Toast toast={toast} />
+
+      {/* Add/Edit Modal */}
+      <AddEditRequirementModal
+        requirement={formRequirement}
+        mode={formMode}
+        show={showFormModal}
+        onClose={() => { setShowFormModal(false); setFormRequirement(null); }}
+        onSave={saveForm}
+      />
+
+      {/* View Modal */}
+      <ViewRequirementModal
+        requirement={viewingRequirement}
+        show={showViewModal}
+        onClose={() => { setShowViewModal(false); setViewingRequirement(null); }}
+        onEdit={handleEditRequirement}
+        onDelete={handleDeleteRequirement}
+      />
+
+      {/* Header */}
+      <div className="relative animate-fade-in">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3 mb-1 flex-wrap">
+              <h1 className="text-3xl lg:text-4xl font-bold bg-gradient-to-r from-[#00695C] to-[#26A69A] bg-clip-text text-transparent">
+                Tenant Requirements
+              </h1>
+              <span className="px-3 py-1 bg-[#E8F4F2] text-[#00695C] text-xs font-semibold rounded-full animate-pulse">
+                {filteredRequirements.length} Requirements
+              </span>
+              {filterCount > 0 && (
+                <span className="px-3 py-1 bg-[#FEF3E2] text-amber-700 text-xs font-semibold rounded-full">
+                  {filterCount} filters
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-[#5A7D78] flex items-center gap-2 flex-wrap">
+              <span>Manage tenant property requirements</span>
+              <span className="w-1 h-1 bg-[#B5C9C5] rounded-full" />
+              <span className="text-[#00695C] font-medium">{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+            </p>
+          </div>
+          <div className="flex items-center gap-2 w-full lg:w-auto flex-wrap">
+            <button
+              onClick={() => setShowStats(!showStats)}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-[#E8F0EE] rounded-xl hover:border-[#00695C]/30 hover:shadow-md transition-all duration-300 text-sm font-medium text-[#1A2E2A] hover:scale-105"
+            >
+              <FiActivity className={`text-sm transition-transform duration-300 ${showStats ? 'rotate-0' : 'rotate-180'}`} />
+              <span className="hidden sm:inline">{showStats ? 'Hide Stats' : 'Show Stats'}</span>
+            </button>
+            <button
+              onClick={handleRefresh}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-[#E8F0EE] rounded-xl hover:border-[#00695C]/30 hover:shadow-md transition-all duration-300 text-sm font-medium text-[#1A2E2A] disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105"
+            >
+              <FiRefreshCw className={`text-sm ${loading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{loading ? 'Refreshing...' : 'Refresh'}</span>
+            </button>
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-[#E8F0EE] rounded-xl hover:border-[#00695C]/30 hover:shadow-md transition-all duration-300 text-sm font-medium text-[#1A2E2A] hover:scale-105"
+            >
+              <FiDownload className="text-sm" />
+              <span className="hidden sm:inline">Export</span>
+            </button>
+            <button
+              onClick={handleAddRequirement}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#00695C] to-[#26A69A] text-white rounded-xl hover:shadow-xl transition-all duration-300 text-sm font-medium shadow-md group relative overflow-hidden hover:scale-105"
+            >
+              <span className="absolute inset-0 bg-white/20 transform -translate-x-full group-hover:translate-x-full transition-transform duration-500" />
+              <FiPlus className="text-sm" />
+              <span>Add Requirements</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Section - Only 5 Stats */}
+      {showStats && (
+        <div className="relative animate-slide-in">
+          <div className="bg-white rounded-2xl p-4 border border-[#E8F0EE] shadow-sm">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              <StatCard
+                icon={<FiUsers className="text-white text-sm" />}
+                title="Total"
+                value={stats.total}
+                color="bg-gradient-to-br from-[#00695C] to-[#26A69A]"
+                delay={0}
+                isActive={activeFilter === 'all'}
+                statsAnimating={statsAnimating}
+                onClick={() => handleStatClick('all')}
+              />
+              <StatCard
+                icon={<FiClock className="text-white text-sm" />}
+                title="Pending"
+                value={stats.pending}
+                color="bg-gradient-to-br from-amber-600 to-amber-400"
+                delay={100}
+                isActive={activeFilter === 'pending'}
+                statsAnimating={statsAnimating}
+                onClick={() => handleStatClick('pending')}
+              />
+              <StatCard
+                icon={<FiCheckCircle className="text-white text-sm" />}
+                title="Active"
+                value={stats.active}
+                color="bg-gradient-to-br from-emerald-600 to-emerald-400"
+                delay={200}
+                isActive={activeFilter === 'active'}
+                statsAnimating={statsAnimating}
+                onClick={() => handleStatClick('active')}
+              />
+              <StatCard
+                icon={<FiXCircle className="text-white text-sm" />}
+                title="Expired"
+                value={stats.expired}
+                color="bg-gradient-to-br from-gray-600 to-gray-400"
+                delay={300}
+                isActive={activeFilter === 'expired'}
+                statsAnimating={statsAnimating}
+                onClick={() => handleStatClick('expired')}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Search and Filters */}
+      <div className="relative bg-white rounded-2xl p-4 shadow-sm border border-[#E8F0EE] hover:shadow-md transition-all duration-300">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4">
+          <div className="flex-1 w-full lg:w-auto relative">
+            <FiSearch className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#5A7D78] text-sm" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search by name, email, phone, city, location, or property type..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-11 pr-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm text-[#1A2E2A] outline-none placeholder:text-[#B5C9C5]"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-[#5A7D78] hover:text-[#1A2E2A] transition-colors hover:scale-110"
+              >
+                <FiX className="text-sm" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 w-full lg:w-auto flex-wrap">
+            <div className="relative">
+              <select
+                value={selectedStatus}
+                onChange={(e) => {
+                  setSelectedStatus(e.target.value);
+                  setSelectedPropertyType('all');
+                  setSelectedFurnishing('all');
+                  setSelectedTenantType('all');
+                  setActiveFilter(e.target.value === 'all' ? 'all' : e.target.value);
+                }}
+                className="appearance-none px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm text-[#1A2E2A] outline-none cursor-pointer pr-10 hover:bg-[#E8F0EE]"
+              >
+                <option value="all">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="active">Active</option>
+                <option value="expired">Expired</option>
+              </select>
+              <FiChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#5A7D78] text-sm pointer-events-none" />
+            </div>
+
+            <div className="relative">
+              <select
+                value={selectedPropertyType}
+                onChange={(e) => {
+                  setSelectedPropertyType(e.target.value);
+                  setSelectedStatus('all');
+                  setSelectedFurnishing('all');
+                  setSelectedTenantType('all');
+                  setActiveFilter(e.target.value === 'all' ? 'all' : e.target.value);
+                }}
+                className="appearance-none px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm text-[#1A2E2A] outline-none cursor-pointer pr-10 hover:bg-[#E8F0EE]"
+              >
+                <option value="all">All Types</option>
+                <option value="Individual">Individual</option>
+                <option value="Apartment">Apartment</option>
+                <option value="Commercial">Commercial</option>
+                <option value="Land & Plots">Land & Plots</option>
+                <option value="Hostel">Hostel</option>
+              </select>
+              <FiChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#5A7D78] text-sm pointer-events-none" />
+            </div>
+
+            <div className="relative">
+              <select
+                value={selectedFurnishing}
+                onChange={(e) => {
+                  setSelectedFurnishing(e.target.value);
+                  setSelectedStatus('all');
+                  setSelectedPropertyType('all');
+                  setSelectedTenantType('all');
+                  setActiveFilter(e.target.value === 'all' ? 'all' : e.target.value);
+                }}
+                className="appearance-none px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm text-[#1A2E2A] outline-none cursor-pointer pr-10 hover:bg-[#E8F0EE]"
+              >
+                <option value="all">All Furnishing</option>
+                <option value="Fully Furnished">Fully Furnished</option>
+                <option value="Semi Furnished">Semi Furnished</option>
+                <option value="Unfurnished">Unfurnished</option>
+              </select>
+              <FiChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#5A7D78] text-sm pointer-events-none" />
+            </div>
+
+            <div className="relative">
+              <select
+                value={selectedTenantType}
+                onChange={(e) => {
+                  setSelectedTenantType(e.target.value);
+                  setSelectedStatus('all');
+                  setSelectedPropertyType('all');
+                  setSelectedFurnishing('all');
+                  setActiveFilter(e.target.value === 'all' ? 'all' : e.target.value);
+                }}
+                className="appearance-none px-4 py-2.5 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm text-[#1A2E2A] outline-none cursor-pointer pr-10 hover:bg-[#E8F0EE]"
+              >
+                <option value="all">All Tenant Types</option>
+                <option value="Family">Family</option>
+                <option value="Bachelor">Bachelor</option>
+                <option value="Couple">Couple</option>
+                <option value="Students">Students</option>
+                <option value="Working Professionals">Working Professionals</option>
+              </select>
+              <FiChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#5A7D78] text-sm pointer-events-none" />
+            </div>
+
+            {filterCount > 0 && (
+              <button
+                onClick={clearAllFilters}
+                className="px-3 py-2.5 bg-[#FEF3E2] text-amber-700 rounded-xl hover:bg-[#FEE6C5] transition-all duration-300 text-sm font-medium flex items-center gap-1 hover:scale-105"
+              >
+                <FiX className="text-sm" /> Clear
+              </button>
+            )}
+
+            <div className="flex items-center bg-[#F5F9F8] rounded-xl p-1 border border-[#E8F0EE]">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-2 rounded-lg transition-all duration-300 hover:scale-110 ${viewMode === 'grid' ? 'bg-white shadow-sm text-[#00695C]' : 'text-[#5A7D78] hover:text-[#1A2E2A]'}`}
+                title="Grid View"
+              >
+                <FiGridIcon className="text-sm" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded-lg transition-all duration-300 hover:scale-110 ${viewMode === 'list' ? 'bg-white shadow-sm text-[#00695C]' : 'text-[#5A7D78] hover:text-[#1A2E2A]'}`}
+                title="List View"
+              >
+                <FiList className="text-sm" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Bulk Actions */}
+        {selectedRequirements.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-[#E8F0EE] flex flex-wrap items-center justify-between gap-3 animate-slide-in">
+            <span className="text-sm text-[#5A7D78]">
+              <span className="font-semibold text-[#00695C]">{selectedRequirements.length}</span> requirement(s) selected
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => handleBulkAction('activate')}
+                disabled={actionLoading === 'activate'}
+                className="px-4 py-1.5 bg-[#E8F8F5] text-[#00695C] rounded-xl hover:bg-[#C5EDE5] transition-all duration-300 text-xs font-medium flex items-center gap-1 hover:scale-105 disabled:opacity-50"
+              >
+                {actionLoading === 'activate' ? <FiRefreshCw className="text-[10px] animate-spin" /> : <FiCheckCircle className="text-[10px]" />}
+                Activate All
+              </button>
+              <button
+                onClick={() => handleBulkAction('expire')}
+                disabled={actionLoading === 'expire'}
+                className="px-4 py-1.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all duration-300 text-xs font-medium flex items-center gap-1 hover:scale-105 disabled:opacity-50"
+              >
+                {actionLoading === 'expire' ? <FiRefreshCw className="text-[10px] animate-spin" /> : <FiXCircle className="text-[10px]" />}
+                Mark as Expired
+              </button>
+              <button
+                onClick={() => handleBulkAction('delete')}
+                disabled={actionLoading === 'delete'}
+                className="px-4 py-1.5 bg-red-50 text-red-700 rounded-xl hover:bg-red-100 transition-all duration-300 text-xs font-medium flex items-center gap-1 hover:scale-105 disabled:opacity-50"
+              >
+                {actionLoading === 'delete' ? <FiRefreshCw className="text-[10px] animate-spin" /> : <FiTrash2 className="text-[10px]" />}
+                Delete All
+              </button>
+              <button
+                onClick={() => setSelectedRequirements([])}
+                className="px-4 py-1.5 bg-[#F5F9F8] text-[#1A2E2A] rounded-xl hover:bg-[#E8F0EE] transition-all duration-300 text-xs font-medium hover:scale-105"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Requirements Grid/List */}
+      <div className="relative">
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="w-12 h-12 border-4 border-[#00695C]/20 border-t-[#00695C] rounded-full animate-spin" />
+          </div>
+        ) : viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+            {paginatedRequirements.map((req, index) => {
+              const isSelected = selectedRequirements.includes(req.id);
+
+              return (
+                <div
+                  key={req.id}
+                  className={`bg-white rounded-2xl border border-[#E8F0EE] p-3.5 hover:shadow-xl hover:-translate-y-1 group animate-slide-in transition-all duration-500 ${isSelected ? 'ring-2 ring-[#00695C] shadow-lg' : ''} ${
+                    req.status === 'pending' ? 'border-l-4 border-l-amber-500' :
+                    req.status === 'active' ? 'border-l-4 border-l-emerald-500' : ''
+                  }`}
+                  style={{ animationDelay: `${index * 50}ms` }}
+                >
+                  <div className="flex items-start justify-between mb-2 gap-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => handleSelectRequirement(req.id)}
+                        className="w-4 h-4 shrink-0 rounded border-[#B5C9C5] text-[#00695C] focus:ring-[#00695C] focus:ring-2 transition-all duration-300"
+                      />
+                      <div className="relative shrink-0">
+                        <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#00695C] to-[#26A69A] flex items-center justify-center text-white font-bold text-sm shadow-lg">
+                          {req.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-semibold text-[#1A2E2A] text-sm truncate">{req.name}</h3>
+                        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${getStatusColor(req.status)}`}>
+                            {req.status.charAt(0).toUpperCase() + req.status.slice(1)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="w-7 h-7 rounded-xl hover:bg-[#F5F9F8] transition-all duration-300 flex items-center justify-center text-[#5A7D78] hover:text-[#00695C] hover:scale-110 shrink-0"
+                      onClick={() => handleViewRequirement(req)}
+                      title="View Details"
+                    >
+                      <FiEye className="text-sm" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-[11px] text-[#5A7D78]">
+                      <FiDollarSign className="text-[#00695C] flex-shrink-0" />
+                      <span>₹{req.minBudget.toLocaleString()} - ₹{req.maxBudget.toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-[#5A7D78]">
+                      <FiMapPin className="text-[#00695C] flex-shrink-0" />
+                      <span className="truncate">{req.location}, {req.city}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-[#5A7D78]">
+                      <FaHome className="text-[#00695C] flex-shrink-0" />
+                      <span className="truncate">{req.propertyType}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-[#5A7D78]">
+                      <FiTag className="text-[#00695C] flex-shrink-0" />
+                      <span className="truncate">{req.furnishing}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-[#5A7D78]">
+                      <FaBed className="text-[#00695C] flex-shrink-0" />
+                      <span>{req.bedrooms} BHK</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-[#5A7D78]">
+                      <FaCalendarAlt className="text-[#00695C] flex-shrink-0" />
+                      <span>Move-in: {new Date(req.moveInDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-[#5A7D78]">
+                      <FiClock className="text-[#00695C] flex-shrink-0" />
+                      <span>{req.rentalDuration}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-[#5A7D78]">
+                      <FiUser className="text-[#00695C] flex-shrink-0" />
+                      <span>{req.tenantType} ({req.familySize} members)</span>
+                    </div>
+                  </div>
+
+                  {/* Parking & Pets Quick Status */}
+                  <div className="grid grid-cols-2 gap-1 mt-2.5 pt-2.5 border-t border-[#E8F0EE]">
+                    <div className="flex items-center justify-center gap-1">
+                      {req.parkingRequired ? (
+                        <FaCar className="text-[#00695C] text-xs" />
+                      ) : (
+                        <FaCar className="text-[#B5C9C5] text-xs" />
+                      )}
+                      <span className="text-[8px] text-[#5A7D78]">
+                        {req.parkingRequired ? 'Parking' : 'No Parking'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-center gap-1">
+                      {req.petsAllowed ? (
+                        <FaPaw className="text-[#00695C] text-xs" />
+                      ) : (
+                        <FaPaw className="text-[#B5C9C5] text-xs" />
+                      )}
+                      <span className="text-[8px] text-[#5A7D78]">
+                        {req.petsAllowed ? 'Pets Allowed' : 'No Pets'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1 mt-2.5 pt-2.5 border-t border-[#E8F0EE]">
+                    <button
+                      type="button"
+                      onClick={() => handleViewRequirement(req)}
+                      className="flex-1 py-1.5 text-xs font-medium text-[#00695C] bg-[#E8F4F2] rounded-xl hover:bg-[#C5EDE5] transition-all duration-300 flex items-center justify-center gap-1 hover:scale-105"
+                    >
+                      <FiEye className="text-[10px]" /> View
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEditRequirement(req)}
+                      className="flex-1 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 transition-all duration-300 flex items-center justify-center gap-1 hover:scale-105"
+                    >
+                      <FiEdit className="text-[10px]" /> Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteRequirement(req.id)}
+                      disabled={actionLoading === req.id}
+                      className="flex-1 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-xl hover:bg-red-100 transition-all duration-300 flex items-center justify-center gap-1 hover:scale-105 disabled:opacity-50"
+                    >
+                      {actionLoading === req.id ? <FiRefreshCw className="text-[10px] animate-spin" /> : <FiTrash2 className="text-[10px]" />}
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-[#E8F0EE] shadow-sm overflow-hidden">
+            <div className="grid grid-cols-12 gap-2 items-center px-4 py-3 bg-[#F5F9F8] border-b border-[#E8F0EE] text-xs font-medium text-[#5A7D78] uppercase tracking-wider">
+              <div className="col-span-1 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={selectedRequirements.length === paginatedRequirements.length && paginatedRequirements.length > 0}
+                  onChange={handleSelectAll}
+                  className="w-4 h-4 rounded border-[#B5C9C5] text-[#00695C] focus:ring-[#00695C] focus:ring-2 transition-all duration-300"
+                />
+                <span>Tenant</span>
+              </div>
+              <div className="col-span-2 cursor-pointer hover:text-[#00695C] transition-colors" onClick={() => handleSort('name')}>
+                Name {sortField === 'name' && <span className="text-[#00695C]">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+              </div>
+              <div className="col-span-1">Status</div>
+              <div className="col-span-1">Budget</div>
+              <div className="col-span-1">Property</div>
+              <div className="col-span-1">Furnishing</div>
+              <div className="col-span-1 text-center">BHK</div>
+              <div className="col-span-1 text-center">Tenant Type</div>
+              <div className="col-span-1 text-center">Move-in</div>
+              <div className="col-span-1 text-right">Actions</div>
+            </div>
+
+            {paginatedRequirements.map((req, index) => {
+              const isSelected = selectedRequirements.includes(req.id);
+
+              return (
+                <div
+                  key={req.id}
+                  className={`grid grid-cols-12 gap-2 items-center py-3 px-4 border-b border-[#E8F0EE] hover:bg-[#F5F9F8] transition-all duration-300 group ${isSelected ? 'bg-[#E8F4F2]' : ''} ${req.status === 'pending' ? 'bg-amber-50/30' : ''}`}
+                  style={{ animationDelay: `${index * 30}ms` }}
+                >
+                  <div className="col-span-1 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => handleSelectRequirement(req.id)}
+                      className="w-4 h-4 rounded border-[#B5C9C5] text-[#00695C] focus:ring-[#00695C] focus:ring-2 transition-all duration-300"
+                    />
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00695C] to-[#26A69A] flex items-center justify-center text-white font-bold text-xs shadow-md">
+                      {req.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                    </div>
+                  </div>
+
+                  <div className="col-span-2">
+                    <p className="font-semibold text-sm text-[#1A2E2A]">{req.name}</p>
+                    <p className="text-[10px] text-[#5A7D78] truncate">{req.email}</p>
+                  </div>
+
+                  <div className="col-span-1">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${getStatusColor(req.status)}`}>
+                      {req.status.charAt(0).toUpperCase() + req.status.slice(1)}
+                    </span>
+                  </div>
+
+                  <div className="col-span-1 text-xs text-[#5A7D78]">
+                    ₹{Math.floor(req.minBudget / 1000)}K-{Math.floor(req.maxBudget / 1000)}K
+                  </div>
+
+                  <div className="col-span-1 text-xs text-[#5A7D78] truncate">{req.propertyType}</div>
+
+                  <div className="col-span-1 text-xs text-[#5A7D78] truncate">{req.furnishing}</div>
+
+                  <div className="col-span-1 text-center text-xs text-[#5A7D78]">{req.bedrooms} BHK</div>
+
+                  <div className="col-span-1 text-center text-xs text-[#5A7D78] truncate">{req.tenantType}</div>
+
+                  <div className="col-span-1 text-center text-[10px] text-[#5A7D78]">
+                    {new Date(req.moveInDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
+                  </div>
+
+                  <div className="col-span-1 flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleViewRequirement(req)}
+                      className="w-7 h-7 rounded-lg hover:bg-[#E8F4F2] transition-all duration-300 flex items-center justify-center text-[#5A7D78] hover:text-[#00695C] hover:scale-110"
+                      title="View"
+                    >
+                      <FiEye className="text-xs" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEditRequirement(req)}
+                      className="w-7 h-7 rounded-lg hover:bg-blue-50 transition-all duration-300 flex items-center justify-center text-[#5A7D78] hover:text-blue-600 hover:scale-110"
+                      title="Edit"
+                    >
+                      <FiEdit className="text-xs" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteRequirement(req.id)}
+                      disabled={actionLoading === req.id}
+                      className="w-7 h-7 rounded-lg hover:bg-red-50 transition-all duration-300 flex items-center justify-center text-[#5A7D78] hover:text-red-600 hover:scale-110 disabled:opacity-50"
+                      title="Delete"
+                    >
+                      {actionLoading === req.id ? <FiRefreshCw className="text-xs animate-spin" /> : <FiTrash2 className="text-xs" />}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {paginatedRequirements.length === 0 && !loading && (
+          <div className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-2xl border border-[#E8F0EE]">
+            <div className="w-24 h-24 rounded-full bg-[#F5F9F8] flex items-center justify-center mb-4 animate-float">
+              <FiHome className="text-4xl text-[#B5C9C5]" />
+            </div>
+            <h3 className="text-xl font-semibold text-[#1A2E2A]">No requirements found</h3>
+            <p className="text-sm text-[#5A7D78] mt-1">
+              {filterCount > 0 ? 'Try adjusting your search or filter criteria' : 'No requirements match your current view'}
+            </p>
+            {filterCount > 0 ? (
+              <button
+                onClick={clearAllFilters}
+                className="mt-4 px-6 py-2.5 bg-[#00695C] text-white rounded-xl hover:bg-[#004D40] transition-all duration-300 text-sm font-medium shadow-lg shadow-[#00695C]/30 hover:scale-105"
+              >
+                Clear All Filters
+              </button>
+            ) : (
+              <button
+                onClick={handleAddRequirement}
+                className="mt-4 px-6 py-2.5 bg-[#00695C] text-white rounded-xl hover:bg-[#004D40] transition-all duration-300 text-sm font-medium shadow-lg shadow-[#00695C]/30 hover:scale-105 flex items-center gap-2"
+              >
+                <FiPlus className="text-sm" /> Add Requirements
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex flex-wrap items-center justify-between bg-white rounded-2xl px-4 py-3 border border-[#E8F0EE] shadow-sm gap-3">
+          <div className="flex items-center gap-2 text-sm text-[#5A7D78] flex-wrap">
+            <span>
+              Showing {(currentPage - 1) * pageSize + 1} to{' '}
+              {Math.min(currentPage * pageSize, filteredRequirements.length)} of{' '}
+              {filteredRequirements.length} requirements
+            </span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="ml-2 px-2 py-1 bg-[#F5F9F8] rounded-lg border border-[#E8F0EE] text-sm text-[#1A2E2A] outline-none focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300"
+            >
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="w-9 h-9 rounded-xl hover:bg-[#F5F9F8] transition-all duration-300 flex items-center justify-center text-[#1A2E2A] disabled:opacity-50 disabled:cursor-not-allowed hover:scale-110"
+            >
+              <FiChevronLeft className="text-sm" />
+            </button>
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let pageNum;
+              if (totalPages <= 5) {
+                pageNum = i + 1;
+              } else if (currentPage <= 3) {
+                pageNum = i + 1;
+              } else if (currentPage >= totalPages - 2) {
+                pageNum = totalPages - 4 + i;
+              } else {
+                pageNum = currentPage - 2 + i;
+              }
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => setCurrentPage(pageNum)}
+                  className={`w-9 h-9 rounded-xl transition-all duration-300 text-sm font-medium hover:scale-110 ${
+                    currentPage === pageNum
+                      ? 'bg-gradient-to-r from-[#00695C] to-[#26A69A] text-white shadow-lg shadow-[#00695C]/30'
+                      : 'text-[#1A2E2A] hover:bg-[#F5F9F8]'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="w-9 h-9 rounded-xl hover:bg-[#F5F9F8] transition-all duration-300 flex items-center justify-center text-[#1A2E2A] disabled:opacity-50 disabled:cursor-not-allowed hover:scale-110"
+            >
+              <FiChevronRight className="text-sm" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* CSS Animations */}
+      <style>{`
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slide-in {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slide-up {
+          from { opacity: 0; transform: translateY(50px) scale(0.95); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes float {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
+        }
+        @keyframes float-delayed {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(10px); }
+        }
+        @keyframes pulse-once {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.02); }
+          100% { transform: scale(1); }
+        }
+        .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
+        .animate-slide-in { animation: slide-in 0.4s ease-out forwards; opacity: 0; }
+        .animate-slide-up { animation: slide-up 0.3s ease-out forwards; }
+        .animate-float { animation: float 6s ease-in-out infinite; }
+        .animate-float-delayed { animation: float-delayed 8s ease-in-out infinite; }
+        .animate-pulse-once { animation: pulse-once 1s ease-out; }
+      `}</style>
+    </div>
+  );
+};
+
+export default TenantRequirements;

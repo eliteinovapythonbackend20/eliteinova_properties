@@ -489,7 +489,7 @@ const EditPropertyModal = ({ property, show, onClose, onSave, loading }) => {
   );
 };
 
-// ============ ASSIGN LEADS MODAL - UPDATED with Download option ============
+// ============ ASSIGN LEADS MODAL - UPDATED ============
 const AssignLeadsModal = ({
   owner,
   show,
@@ -507,14 +507,23 @@ const AssignLeadsModal = ({
     if (show && owner) {
       const mockLeads = [];
       const leadNames = ['Rahul Sharma', 'Priya Patel', 'Amit Singh', 'Sneha Reddy', 'Vikram Kumar', 'Meera Iyer', 'Deepak Jain', 'Kavya Nair', 'Arjun Menon', 'Neha Kapoor'];
-      const cities = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune'];
+      const cities = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune', 'Ahmedabad', 'Jaipur'];
+      const propertyTypes = ['Individual', 'Apartment', 'Commercial', 'Land & Plots', 'Hostel'];
+      const bhkOptions = ['1 BHK', '2 BHK', '3 BHK', '4 BHK', 'Studio', 'Penthouse', 'Duplex'];
 
       for (let i = 1; i <= 12; i++) {
+        const propertyType = propertyTypes[Math.floor(Math.random() * propertyTypes.length)];
+        const bhk = propertyType === 'Land & Plots' ? 'Plot' : bhkOptions[Math.floor(Math.random() * bhkOptions.length)];
+        const location = cities[Math.floor(Math.random() * cities.length)];
+        
         mockLeads.push({
           id: `lead_${i}`,
           name: leadNames[i % leadNames.length] + (i > 8 ? ` ${i}` : ''),
           phone: `+91 98765${String(43210 + i).padStart(5, '0')}`,
-          city: cities[i % cities.length],
+          city: location,
+          propertyType: propertyType,
+          bhk: bhk,
+          location: location,
         });
       }
       setAvailableLeads(mockLeads);
@@ -528,7 +537,9 @@ const AssignLeadsModal = ({
     const query = searchQuery.toLowerCase();
     return availableLeads.filter(lead =>
       lead.name.toLowerCase().includes(query) ||
-      lead.city.toLowerCase().includes(query)
+      lead.city.toLowerCase().includes(query) ||
+      lead.propertyType.toLowerCase().includes(query) ||
+      lead.bhk.toLowerCase().includes(query)
     );
   }, [availableLeads, searchQuery]);
 
@@ -546,16 +557,15 @@ const AssignLeadsModal = ({
     }
   };
 
-  // Download all available leads as Excel/CSV
   const handleDownloadLeads = () => {
-    if (availableLeads.length === 0) {
-      return;
-    }
+    if (availableLeads.length === 0) return;
 
     const data = availableLeads.map(lead => ({
       'Name': lead.name,
       'Phone': lead.phone,
-      'City': lead.city,
+      'Property Type': lead.propertyType,
+      'BHK': lead.bhk,
+      'Location': lead.location,
       'ID': lead.id,
     }));
 
@@ -587,7 +597,7 @@ const AssignLeadsModal = ({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] overflow-hidden shadow-2xl animate-slide-up border border-[#E8F0EE] flex flex-col">
+      <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden shadow-2xl animate-slide-up border border-[#E8F0EE] flex flex-col">
         <div className="sticky top-0 bg-gradient-to-r from-[#00695C] to-[#26A69A] px-5 py-3 rounded-t-2xl z-10 shrink-0 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-white">
@@ -607,7 +617,7 @@ const AssignLeadsModal = ({
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[#5A7D78] text-sm" />
-              <input type="text" placeholder="Search leads by name or city..."
+              <input type="text" placeholder="Search leads by name, property type, BHK, or location..."
                 value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 bg-[#F5F9F8] rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm outline-none" />
             </div>
@@ -638,27 +648,25 @@ const AssignLeadsModal = ({
               <p className="text-sm text-[#5A7D78]">No leads to assign</p>
             </div>
           ) : (
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {filteredLeads.map((lead) => (
                 <div key={lead.id}
                   className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all duration-300 ${selectedLeads.includes(lead.id) ? 'border-[#00695C] bg-[#E8F4F2]' : 'border-[#E8F0EE] hover:border-[#B5C9C5]'}`}>
-                  <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
-                    <input type="checkbox" checked={selectedLeads.includes(lead.id)}
-                      onChange={() => handleToggleLead(lead.id)}
-                      className="w-4 h-4 rounded border-[#B5C9C5] text-[#00695C] focus:ring-[#00695C] focus:ring-2 transition-all duration-300 shrink-0" />
-                    <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-[#1A2E2A] truncate">{lead.name}</p>
-                      <span className="text-[10px] text-[#5A7D78] shrink-0">{lead.city} · {lead.phone}</span>
+                  <input type="checkbox" checked={selectedLeads.includes(lead.id)}
+                    onChange={() => handleToggleLead(lead.id)}
+                    className="w-4 h-4 rounded border-[#B5C9C5] text-[#00695C] focus:ring-[#00695C] focus:ring-2 transition-all duration-300 shrink-0" />
+                  <div className="flex items-center justify-between flex-1 min-w-0">
+                    <span className="font-semibold text-sm text-[#1A2E2A] whitespace-nowrap">{lead.name}</span>
+                    <div className="flex items-center gap-3 text-sm text-[#5A7D78]">
+                      <span className="font-medium text-[#00695C] whitespace-nowrap">{lead.propertyType}</span>
+                      <span className="text-[#B5C9C5]">·</span>
+                      <span className="whitespace-nowrap">{lead.bhk}</span>
+                      <span className="text-[#B5C9C5]">·</span>
+                      <span className="whitespace-nowrap">{lead.location}</span>
+                      <span className="text-[#B5C9C5]">·</span>
+                      <span className="whitespace-nowrap">{lead.phone}</span>
                     </div>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => onViewLeadProfile && onViewLeadProfile(lead)}
-                    className="p-1.5 rounded-lg hover:bg-white transition-all duration-300 text-[#5A7D78] hover:text-[#00695C] hover:scale-110 shrink-0"
-                    title="View Profile"
-                  >
-                    <FiExternalLink className="text-sm" />
-                  </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -677,7 +685,7 @@ const AssignLeadsModal = ({
   );
 };
 
-// ============ VIEW ASSIGNED LEADS MODAL ============
+// ============ VIEW ASSIGNED LEADS MODAL - UPDATED ============
 const ViewAssignedLeadsModal = ({ owner, leads, show, onClose, onViewLeadProfile }) => {
   if (!show || !owner) return null;
 
@@ -712,29 +720,30 @@ const ViewAssignedLeadsModal = ({ owner, leads, show, onClose, onViewLeadProfile
               <p className="text-sm text-[#5A7D78]">No leads assigned yet</p>
             </div>
           ) : (
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {leads.map((lead, idx) => (
-                <div key={`${lead.id}_${idx}`} className="flex items-center justify-between gap-2 p-2.5 rounded-xl border border-[#E8F0EE] bg-[#F5F9F8]">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-[#1A2E2A] truncate">{lead.name}</p>
-                    <div className="flex items-center gap-2 text-[10px] text-[#5A7D78] flex-wrap">
-                      <span>{lead.city}</span>
-                      <span className="w-1 h-1 bg-[#B5C9C5] rounded-full" />
-                      <span>{lead.phone}</span>
-                      {lead.assignedDate && (
-                        <>
-                          <span className="w-1 h-1 bg-[#B5C9C5] rounded-full" />
-                          <span>Assigned {new Date(lead.assignedDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                        </>
-                      )}
-                    </div>
+                <div key={`${lead.id}_${idx}`} className="p-3 rounded-xl border border-[#E8F0EE] bg-[#F5F9F8]">
+                  {/* Name - First Line */}
+                  <p className="font-semibold text-sm text-[#1A2E2A]">{lead.name}</p>
+                  
+                  {/* Property Details - Second Line */}
+                  <div className="flex items-center gap-1.5 text-sm text-[#5A7D78] mt-0.5">
+                    <span className="font-medium text-[#00695C]">{lead.propertyType || 'Apartment'}</span>
+                    <span className="text-[#B5C9C5]">·</span>
+                    <span>{lead.bhk || '2 BHK'}</span>
+                    <span className="text-[#B5C9C5]">·</span>
+                    <span>{lead.city || lead.location || 'Mumbai'}</span>
+                    <span className="text-[#B5C9C5]">·</span>
+                    <span>{lead.phone || '+91 98765 43210'}</span>
+                    {lead.assignedDate && (
+                      <>
+                        <span className="text-[#3b3e3d]">·</span>
+                        <span className="text-[12px] text-[#7d8583]">
+                          {new Date(lead.assignedDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                      </>
+                    )}
                   </div>
-                  <button
-                    onClick={() => onViewLeadProfile && onViewLeadProfile(lead)}
-                    className="px-3 py-1.5 bg-[#00695C] text-white rounded-lg hover:bg-[#004D40] transition-all duration-300 text-[10px] font-medium flex items-center gap-1 hover:scale-105 shrink-0"
-                  >
-                    <FiExternalLink className="text-[10px]" /> View Profile
-                  </button>
                 </div>
               ))}
             </div>

@@ -19,6 +19,8 @@ class Customer(Base):
 
     profile_picture = Column(String(500), nullable=True)
 
+    bio = Column(Text, nullable=True)
+
     address = Column(Text, nullable=True)
     city = Column(String, nullable=True)
     state = Column(String, nullable=True)

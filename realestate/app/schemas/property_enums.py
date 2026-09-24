@@ -21,6 +21,21 @@ class PostedBy(str, Enum):
 class PropertyStatus(str, Enum):
     ACTIVE = "Active"
     INACTIVE = "Inactive"
+    # Admin moderation / lifecycle states, beyond plain visibility -
+    # PENDING is a new listing awaiting review; SOLD/RENTED close out a
+    # listing that found a buyer/tenant; EXPIRED is a listing whose validity
+    # window lapsed; REJECTED is an admin moderation decision.
+    PENDING = "Pending"
+    SOLD = "Sold"
+    RENTED = "Rented"
+    EXPIRED = "Expired"
+    REJECTED = "Rejected"
+
+class VerificationStatus(str, Enum):
+    VERIFIED = "Verified"
+    PENDING = "Pending"
+    REJECTED = "Rejected"
+    NOT_VERIFIED = "Not Verified"
 
 class PropertyCondition(str, Enum):
     NEW = "New"

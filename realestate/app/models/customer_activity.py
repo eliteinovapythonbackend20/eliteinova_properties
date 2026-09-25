@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -15,6 +15,7 @@ class CustomerSavedProperty(Base):
     customer_id = Column(Integer, ForeignKey("customer.id", ondelete="CASCADE"), nullable=False, index=True)
     property_id = Column(String(20), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
     saved_at = Column(DateTime(timezone=True), server_default=func.now())
+    notes = Column(Text, nullable=True)
 
     customer = relationship("Customer", back_populates="saved_properties")
     property = relationship("BaseProperty")
@@ -32,6 +33,7 @@ class CustomerWishlistItem(Base):
     customer_id = Column(Integer, ForeignKey("customer.id", ondelete="CASCADE"), nullable=False, index=True)
     property_id = Column(String(20), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
     added_at = Column(DateTime(timezone=True), server_default=func.now())
+    price_at_add = Column(Float, nullable=True)
 
     customer = relationship("Customer", back_populates="wishlist_items")
     property = relationship("BaseProperty")

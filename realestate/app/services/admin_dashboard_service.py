@@ -7,6 +7,7 @@ it gets its own service instead of growing extra branches inside the
 vendor/public-facing one.
 """
 
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, status
@@ -109,6 +110,8 @@ class AdminDashboardService:
         featured: Optional[bool] = None,
         verification_status: Optional[str] = None,
         search: Optional[str] = None,
+        created_from: Optional[date] = None,
+        created_to: Optional[date] = None,
     ) -> Dict[str, Any]:
         skip = (page - 1) * limit
         properties, total = await self.repository.list_properties(
@@ -117,6 +120,7 @@ class AdminDashboardService:
             sub_category=sub_category,
             status=status, listing_purpose=listing_purpose,
             featured=featured, verification_status=verification_status, search=search,
+            created_from=created_from, created_to=created_to,
         )
         data = [self._to_card(p) for p in properties]
         total_pages = (total + limit - 1) // limit if limit else 0
@@ -136,10 +140,12 @@ class AdminDashboardService:
         property_category: Optional[str] = None,
         property_type: Optional[str] = None,
         sub_category: Optional[str] = None,
+        created_from: Optional[date] = None,
+        created_to: Optional[date] = None,
     ) -> Dict[str, Any]:
         return await self.repository.get_property_stats(
             posted_by=posted_by, property_category=property_category, property_type=property_type,
-            sub_category=sub_category,
+            sub_category=sub_category, created_from=created_from, created_to=created_to,
         )
 
     async def update_property_status(self, property_id: str, new_status: str) -> Dict[str, Any]:

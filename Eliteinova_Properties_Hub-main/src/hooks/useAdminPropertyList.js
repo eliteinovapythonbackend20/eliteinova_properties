@@ -143,11 +143,17 @@ export function useAdminPropertyList({
     setCurrentPage(1);
   }, []);
 
+  const changeSubCategory = useCallback((value) => {
+    setActiveSubCategory(value);
+    setCurrentPage(1);
+  }, []);
+
   const clearAllFilters = useCallback(() => {
     setSearchQuery('');
     setDebouncedSearchQuery('');
     setActivePropertyType('all');
     setActiveListingType('all');
+    setActiveSubCategory('all');
     setCurrentPage(1);
   }, []);
 
@@ -165,6 +171,7 @@ export function useAdminPropertyList({
     const baseParams = {
       propertyCategory,
       propertyType: effectivePropertyType,
+      subCategory: effectiveSubCategory,
       listingPurpose: effectiveListingType ? LISTING_TYPE_TO_BACKEND[effectiveListingType] : undefined,
       search: debouncedSearchQuery || undefined,
     };
@@ -180,7 +187,7 @@ export function useAdminPropertyList({
       page += 1;
     }
     return all;
-  }, [propertyCategory, effectivePropertyType, effectiveListingType, debouncedSearchQuery, mapCard]);
+  }, [propertyCategory, effectivePropertyType, effectiveListingType, effectiveSubCategory, debouncedSearchQuery, mapCard]);
 
   return {
     // data
@@ -199,6 +206,7 @@ export function useAdminPropertyList({
     clearSearch,
     activePropertyType, setActivePropertyType: changePropertyType,
     activeListingType, setActiveListingType: changeListingType,
+    activeSubCategory, setActiveSubCategory: changeSubCategory,
     filterCount,
     clearAllFilters,
     // actions

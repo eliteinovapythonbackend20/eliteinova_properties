@@ -52,6 +52,8 @@ class AdminDashboardService {
     featured,
     verificationStatus,
     search,
+    createdFrom,
+    createdTo,
   } = {}) {
     this._assertAdmin();
     const params = { page, limit };
@@ -64,6 +66,8 @@ class AdminDashboardService {
     if (featured !== undefined) params.featured = featured;
     if (verificationStatus) params.verification_status = verificationStatus;
     if (search) params.search = search;
+    if (createdFrom) params.created_from = createdFrom;
+    if (createdTo) params.created_to = createdTo;
 
     try {
       const response = await axiosInstance.get('/admin/dashboard/properties', { params });
@@ -74,13 +78,15 @@ class AdminDashboardService {
     }
   }
 
-  async getPropertyStats({ postedBy, propertyCategory, propertyType, subCategory } = {}) {
+  async getPropertyStats({ postedBy, propertyCategory, propertyType, subCategory, createdFrom, createdTo } = {}) {
     this._assertAdmin();
     const params = {};
     if (postedBy) params.posted_by = postedBy;
     if (propertyCategory) params.property_category = propertyCategory;
     if (propertyType) params.property_type = propertyType;
     if (subCategory) params.sub_category = subCategory;
+    if (createdFrom) params.created_from = createdFrom;
+    if (createdTo) params.created_to = createdTo;
 
     try {
       const response = await axiosInstance.get('/admin/dashboard/properties/stats', { params });

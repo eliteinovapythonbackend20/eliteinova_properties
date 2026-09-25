@@ -7,6 +7,7 @@ authoring) and is kept on its own schema/repository/service stack so a
 change here can never ripple into the posting forms or public listing path.
 """
 
+from datetime import date
 from typing import Optional
 
 from pydantic import BaseModel, field_validator
@@ -126,6 +127,10 @@ class AdminPropertyListParams(BaseModel):
     featured: Optional[bool] = None
     verification_status: Optional[str] = None
     search: Optional[str] = None
+    # Filters on created_at's calendar date (inclusive both ends) - powers
+    # PropertiesOverview's period selector (Today/This Week/This Month/...).
+    created_from: Optional[date] = None
+    created_to: Optional[date] = None
 
     @field_validator("page")
     @classmethod

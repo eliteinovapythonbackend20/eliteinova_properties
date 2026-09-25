@@ -131,7 +131,7 @@ axiosInstance.interceptors.response.use(
         }
 
         const { data } = await axiosInstance.post(REFRESH_ENDPOINT, {
-          refreshToken: refreshTokenValue,
+          refresh_token: refreshTokenValue,
         });
 
         const newAccessToken = data.accessToken;

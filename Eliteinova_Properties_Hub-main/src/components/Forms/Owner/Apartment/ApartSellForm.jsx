@@ -86,7 +86,7 @@ export default function ApartSellForm({ isOpen, onClose }) {
     ownerName: "", contactNumber: "", emailId: "", gender: "",
     // Identity Verification (Step 1)
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, passportPhoto: null,
-    addressLine1: "", addressLine2: "", ownerCity: "", district: "", state: "", ownerPinCode: "",
+    addressLine1: "", addressLine2: "", ownerCity: "", ownerDistrict: "", ownerState: "", ownerPinCode: "",
     // Property Details (Step 2)
     propertyType: "", purpose: "Sell",
     propertyArea: "", propertyLandmark: "", nearbyConnectivity: "",
@@ -400,10 +400,10 @@ export default function ApartSellForm({ isOpen, onClose }) {
       if (!formData.addressLine1.trim()) e.addressLine1 = "Address Line 1 is required";
       if (!formData.ownerCity.trim()) e.ownerCity = "City is required";
       else if (!isOnlyLettersAndSpaces(formData.ownerCity)) e.ownerCity = "Only letters and spaces allowed";
-      if (!formData.district.trim()) e.district = "District is required";
-      else if (!isOnlyLettersAndSpaces(formData.district)) e.district = "Only letters and spaces allowed";
-      if (!formData.state.trim()) e.state = "State is required";
-      else if (!isOnlyLettersAndSpaces(formData.state)) e.state = "Only letters and spaces allowed";
+      if (!formData.ownerDistrict.trim()) e.ownerDistrict = "District is required";
+      else if (!isOnlyLettersAndSpaces(formData.ownerDistrict)) e.ownerDistrict = "Only letters and spaces allowed";
+      if (!formData.ownerState.trim()) e.ownerState = "State is required";
+      else if (!isOnlyLettersAndSpaces(formData.ownerState)) e.ownerState = "Only letters and spaces allowed";
       if (!formData.ownerPinCode.trim()) e.ownerPinCode = "PIN code is required";
       else if (formData.ownerPinCode.length !== 6) e.ownerPinCode = "PIN code must be exactly 6 digits";
     }
@@ -856,12 +856,12 @@ function MobContentApartSell({ step, inp, formData, updateForm, handleAlphaField
         {errors.ownerCity && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.ownerCity}</p>}
       </Field>
       <Field label="District" required>
-        <input className={inp} placeholder="Enter district" value={formData.district} onChange={(e) => handleAlphaFieldChange("district", e.target.value)} />
-        {errors.district && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.district}</p>}
+        <input className={inp} placeholder="Enter district" value={formData.ownerDistrict} onChange={(e) => handleAlphaFieldChange("ownerDistrict", e.target.value)} />
+        {errors.ownerDistrict && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.ownerDistrict}</p>}
       </Field>
       <Field label="State" required>
-        <input className={inp} placeholder="Enter state" value={formData.state} onChange={(e) => handleAlphaFieldChange("state", e.target.value)} />
-        {errors.state && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.state}</p>}
+        <input className={inp} placeholder="Enter state" value={formData.ownerState} onChange={(e) => handleAlphaFieldChange("ownerState", e.target.value)} />
+        {errors.ownerState && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.ownerState}</p>}
       </Field>
       <Field label="Owner PIN Code" required>
         <input className={inp} type="text" inputMode="numeric" maxLength={6} placeholder="Enter 6-digit PIN code" value={formData.ownerPinCode} onChange={(e) => handlePinCodeChange("ownerPinCode", e.target.value)} />
@@ -1632,12 +1632,12 @@ function DtContentApartSell({ step, inp, formData, updateForm, handleAlphaFieldC
         {errors.ownerCity && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.ownerCity}</p>}
       </FieldDt>
       <FieldDt label="District" required>
-        <input className={inp} placeholder="Enter district" value={formData.district} onChange={(e) => handleAlphaFieldChange("district", e.target.value)} />
-        {errors.district && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.district}</p>}
+        <input className={inp} placeholder="Enter district" value={formData.ownerDistrict} onChange={(e) => handleAlphaFieldChange("ownerDistrict", e.target.value)} />
+        {errors.ownerDistrict && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.ownerDistrict}</p>}
       </FieldDt>
       <FieldDt label="State" required>
-        <input className={inp} placeholder="Enter state" value={formData.state} onChange={(e) => handleAlphaFieldChange("state", e.target.value)} />
-        {errors.state && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.state}</p>}
+        <input className={inp} placeholder="Enter state" value={formData.ownerState} onChange={(e) => handleAlphaFieldChange("ownerState", e.target.value)} />
+        {errors.ownerState && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.ownerState}</p>}
       </FieldDt>
       <FieldDt label="Owner PIN Code" required>
         <input className={inp} type="text" inputMode="numeric" maxLength={6} placeholder="Enter 6-digit PIN code" value={formData.ownerPinCode} onChange={(e) => handlePinCodeChange("ownerPinCode", e.target.value)} />

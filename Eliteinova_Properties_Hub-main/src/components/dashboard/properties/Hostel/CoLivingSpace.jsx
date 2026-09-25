@@ -1,6 +1,6 @@
 // src/components/dashboard/properties/Hostel/CoLivingSpace.jsx
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   FiSearch, FiChevronDown, FiChevronLeft, FiChevronRight, FiEye, FiEdit,
   FiTrash2, FiRefreshCw, FiDownload, FiAlertTriangle, FiInfo, FiX, FiList,
@@ -9,6 +9,9 @@ import {
   FiMap, FiActivity, FiDollarSign, FiKey
 } from 'react-icons/fi';
 import { FaCity, FaUserFriends } from 'react-icons/fa';
+
+import adminDashboardService from '../../../../services/adminDashboardService';
+import useAdminPropertyList, { LISTING_TYPE_FROM_BACKEND, LISTING_TYPE_TO_BACKEND } from '../../../../hooks/useAdminPropertyList';
 
 // ============================================================
 // FIXED PROPERTY TYPE — this page only handles Co-Living Space
@@ -19,7 +22,8 @@ const CO_LIVING_SPACE_TYPE = {
   bg: 'bg-purple-50',
   text: 'text-purple-700',
   border: 'border-purple-200',
-  label: 'Co-Living Space'
+  label: 'Co-Living Space',
+  filterValue: 'Co-Living Space'
 };
 
 // ============================================================
@@ -214,9 +218,9 @@ const ViewPropertyDetailModal = ({ property, show, onClose, onEdit, onDelete }) 
             <div className="bg-[#F5F9F8] rounded-2xl p-4">
               <div className="flex items-center gap-2 mb-1">
                 <FiMapPin className="text-[#00695C] text-sm" />
-                <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider">Street</h4>
+                <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider">Location</h4>
               </div>
-              <p className="text-sm font-bold text-[#1A2E2A]">{property.street}</p>
+              <p className="text-sm font-bold text-[#1A2E2A]">{property.location}</p>
             </div>
 
             <div className="bg-[#F5F9F8] rounded-2xl p-4">
@@ -322,7 +326,7 @@ const EditPropertyModal = ({ property, show, onClose, onSave }) => {
   const [formData, setFormData] = useState({
     propertyId: '', propertyTitle: '', listingType: '',
     description: '', state: '', district: '', city: '', area: '',
-    street: '', pincode: '', latitude: '', longitude: ''
+    location: '', pincode: '', latitude: '', longitude: ''
   });
   const [loading, setLoading] = useState(false);
 
@@ -339,7 +343,7 @@ const EditPropertyModal = ({ property, show, onClose, onSave }) => {
         district: property.district || '',
         city: property.city || '',
         area: property.area || '',
-        street: property.street || '',
+        location: property.location || '',
         pincode: property.pincode || '',
         latitude: property.latitude || '',
         longitude: property.longitude || ''
@@ -437,11 +441,11 @@ const EditPropertyModal = ({ property, show, onClose, onSave }) => {
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-[#5A7D78] mb-1">Street</label>
+                  <label className="block text-xs font-medium text-[#5A7D78] mb-1">Location</label>
                   <input
-                    type="text" name="street" value={formData.street} onChange={handleChange}
+                    type="text" name="location" value={formData.location} onChange={handleChange}
                     className="w-full px-3 py-2 bg-white rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm text-[#1A2E2A] outline-none"
-                    placeholder="Street"
+                    placeholder="Street, Area"
                   />
                 </div>
                 <div>
@@ -633,15 +637,54 @@ const FilterDropdown = ({ label, options, value, onChange, icon: Icon, allLabel 
 const CoLivingSpace = () => {
   const searchInputRef = useRef(null);
 
-  // ============ STATE ============
-  const [properties, setProperties] = useState([]);
-  const [filteredProperties, setFilteredProperties] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [sortField, setSortField] = useState('propertyTitle');
-  const [sortDirection, setSortDirection] = useState('asc');
+  // ============ REAL BACKEND DATA (see src/hooks/useAdminPropertyList.js) ============
+  const mapCard = useCallback((card) => ({
+    id: card.id,
+    propertyId: card.id,
+    propertyTitle: card.propertyTitle || 'Untitled Property',
+    propertyType: card.propertyType || CO_LIVING_SPACE_TYPE.label,
+    listingType: LISTING_TYPE_FROM_BACKEND[card.listingPurpose] || card.listingPurpose,
+    description: card.description || '',
+    state: card.state || '',
+    district: card.district || '',
+    city: card.city || '',
+    area: card.area || '',
+    location: card.address || '',
+    pincode: card.pinCode || '',
+    latitude: card.latitude ?? '',
+    longitude: card.longitude ?? ''
+  }), []);
+
+  const {
+    properties: paginatedProperties,
+    totalCount,
+    loading,
+    stats: rawStats,
+    currentPage, setCurrentPage,
+    pageSize, setPageSize,
+    totalPages,
+    sortField, sortDirection, handleSort,
+    searchQuery, setSearchQuery,
+    clearSearch,
+    activeListingType, setActiveListingType,
+    filterCount,
+    clearAllFilters: clearFiltersFromHook,
+    fetchAllFiltered,
+    refetchAll,
+  } = useAdminPropertyList({
+    propertyCategory: 'HOSTEL',
+    fixedPropertyType: CO_LIVING_SPACE_TYPE.filterValue,
+    mapCard,
+    initialSortField: 'propertyTitle',
+  });
+
+  const stats = {
+    total: rawStats.total || 0,
+    buy: rawStats.byListingPurpose?.SELL || 0,
+    rent: rawStats.byListingPurpose?.RENT || 0,
+    lease: rawStats.byListingPurpose?.LEASE || 0,
+  };
+
   const [viewMode, setViewMode] = useState('grid');
   const [selectedProperties, setSelectedProperties] = useState([]);
   const [viewingProperty, setViewingProperty] = useState(null);
@@ -650,161 +693,12 @@ const CoLivingSpace = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [toast, setToast] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
-  const [filterCount, setFilterCount] = useState(0);
-  const [activeListingType, setActiveListingType] = useState('all');
   const [showStats, setShowStats] = useState(true);
 
   // ============ CONFIRMATION MODAL STATE ============
   const [confirmationModal, setConfirmationModal] = useState({
     isOpen: false, title: '', message: '', confirmText: 'Confirm', cancelText: 'Cancel', type: 'danger', onConfirm: null, onCancel: null
   });
-
-  // ============ STATS ============
-  const [stats, setStats] = useState({ total: 0, buy: 0, rent: 0, lease: 0 });
-
-  // ============ NORMALIZE DATA ============
-  const normalizeProperties = useCallback((list) => {
-    if (!list) return list;
-    return list.map(p => ({
-      ...p,
-      propertyType: CO_LIVING_SPACE_TYPE.label
-    }));
-  }, []);
-
-  const computeStats = useCallback((list) => {
-    if (!list || list.length === 0) {
-      setStats({ total: 0, buy: 0, rent: 0, lease: 0 });
-      return;
-    }
-    const total = list.length;
-    const buy = list.filter(p => p.listingType === 'Buy').length;
-    const rent = list.filter(p => p.listingType === 'Rent').length;
-    const lease = list.filter(p => p.listingType === 'Lease').length;
-    setStats({ total, buy, rent, lease });
-  }, []);
-
-  // ============ GENERATE MOCK DATA ============
-  const generateMockProperties = useCallback(() => {
-    const propertyTitles = [
-      'Harmony Co-Living Space', 'Urban Nest Co-Living Space', 'Cozy Cube Co-Living Space',
-      'Nestway Co-Living Space', 'Union Co-Living Space', 'Bloom Co-Living Space',
-      'Circle Co-Living Space', 'Riverside Co-Living Space', 'Common Ground Co-Living Space',
-      'Nook Co-Living Space', 'Haven Co-Living Space', 'Collective Co-Living Space',
-      'Loft Co-Living Space', 'Grove Co-Living Space', 'Junction Co-Living Space',
-      'Meadow Co-Living Space', 'Starlight Co-Living Space', 'Cedar Co-Living Space'
-    ];
-    const states = ['Tamil Nadu', 'Karnataka', 'Telangana', 'Maharashtra', 'Delhi', 'West Bengal', 'Gujarat', 'Kerala'];
-    const districts = ['Chennai', 'Bengaluru Urban', 'Hyderabad', 'Mumbai Suburban', 'New Delhi', 'Kolkata', 'Ahmedabad', 'Ernakulam'];
-    const cities = ['Chennai', 'Bangalore', 'Hyderabad', 'Mumbai', 'Delhi', 'Kolkata', 'Ahmedabad', 'Kochi'];
-    const areas = ['Guindy', 'Whitefield', 'Hitech City', 'Andheri', 'Nehru Place', 'Sector V', 'SG Highway', 'Infopark'];
-    const streets = ['Business Park Avenue', 'MG Road', 'Ring Road', 'Commerce Street', 'Tech Park Lane', 'Junction Road', 'Market Street', 'Corporate Boulevard'];
-    const listingTypes = Object.keys(LISTING_TYPES);
-
-    const propertiesList = [];
-
-    for (let i = 1; i <= 40; i++) {
-      const listingType = listingTypes[Math.floor(Math.random() * listingTypes.length)];
-      const pincode = String(600000 + Math.floor(Math.random() * 99999));
-      const hasCoords = Math.random() > 0.4;
-
-      propertiesList.push({
-        id: `cl_${i}`,
-        propertyId: `CL-${String(i).padStart(4, '0')}`,
-        propertyTitle: propertyTitles[Math.floor(Math.random() * propertyTitles.length)],
-        propertyType: CO_LIVING_SPACE_TYPE.label,
-        listingType,
-        description: `A well-maintained co-living space with shared amenities, community living and prime connectivity, available for ${listingType.toLowerCase()}.`,
-        state: states[Math.floor(Math.random() * states.length)],
-        district: districts[Math.floor(Math.random() * districts.length)],
-        city: cities[Math.floor(Math.random() * cities.length)],
-        area: areas[Math.floor(Math.random() * areas.length)],
-        street: streets[Math.floor(Math.random() * streets.length)],
-        pincode,
-        latitude: hasCoords ? (11 + Math.random() * 15).toFixed(4) : '',
-        longitude: hasCoords ? (72 + Math.random() * 15).toFixed(4) : ''
-      });
-    }
-
-    computeStats(propertiesList);
-    return propertiesList;
-  }, [computeStats]);
-
-  // ============ INITIALIZE DATA ============
-  useEffect(() => {
-    try {
-      const mockProperties = normalizeProperties(generateMockProperties());
-      setProperties(mockProperties);
-      setFilteredProperties(mockProperties);
-    } catch (error) {
-      console.error('Error generating mock properties:', error);
-    }
-  }, [generateMockProperties, normalizeProperties]);
-
-  // ============ FILTER PROPERTIES ============
-  const filterProperties = useCallback(() => {
-    try {
-      let filtered = [...properties];
-
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        filtered = filtered.filter(p =>
-          (p.propertyTitle && p.propertyTitle.toLowerCase().includes(query)) ||
-          (p.propertyId && p.propertyId.toLowerCase().includes(query)) ||
-          (p.listingType && p.listingType.toLowerCase().includes(query)) ||
-          (p.state && p.state.toLowerCase().includes(query)) ||
-          (p.district && p.district.toLowerCase().includes(query)) ||
-          (p.city && p.city.toLowerCase().includes(query)) ||
-          (p.area && p.area.toLowerCase().includes(query)) ||
-          (p.street && p.street.toLowerCase().includes(query)) ||
-          (p.pincode && p.pincode.toLowerCase().includes(query))
-        );
-      }
-
-      if (activeListingType !== 'all') {
-        filtered = filtered.filter(p => p.listingType === activeListingType);
-      }
-
-      let count = 0;
-      if (activeListingType !== 'all') count++;
-      if (searchQuery) count++;
-      setFilterCount(count);
-
-      filtered.sort((a, b) => {
-        let aVal = a[sortField] || '';
-        let bVal = b[sortField] || '';
-        if (typeof aVal === 'string') aVal = aVal.toLowerCase();
-        if (typeof bVal === 'string') bVal = bVal.toLowerCase();
-        if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
-        if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
-        return 0;
-      });
-
-      setFilteredProperties(filtered);
-      setCurrentPage(1);
-    } catch (error) {
-      console.error('Error filtering properties:', error);
-    }
-  }, [properties, searchQuery, activeListingType, sortField, sortDirection]);
-
-  useEffect(() => { filterProperties(); }, [filterProperties]);
-
-  // ============ PAGINATION ============
-  const totalPages = Math.max(1, Math.ceil(filteredProperties.length / pageSize));
-  const paginatedProperties = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    const end = start + pageSize;
-    return filteredProperties.slice(start, end);
-  }, [filteredProperties, currentPage, pageSize]);
-
-  // ============ HANDLE SORT ============
-  const handleSort = useCallback((field) => {
-    if (sortField === field) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  }, [sortField]);
 
   // ============ HANDLE SELECT ALL ============
   const handleSelectAll = useCallback(() => {
@@ -831,18 +725,34 @@ const CoLivingSpace = () => {
     setShowEditModal(true);
   }, []);
 
+  // Only fields with a real, unambiguous BaseProperty column go over the
+  // wire - propertyType is fixed/page-locked (the Edit form's Property Type
+  // input is disabled), so it's never sent.
   const handleSaveProperty = useCallback((updatedProperty) => {
-    setProperties(prev => {
-      const updated = prev.map(p => p.id === updatedProperty.id ? updatedProperty : p);
-      computeStats(updated);
-      return updated;
-    });
-    setToast({ message: `Property "${updatedProperty.propertyTitle}" updated successfully`, type: 'success' });
-  }, [computeStats]);
+    adminDashboardService.updateProperty(updatedProperty.id, {
+      propertyTitle: updatedProperty.propertyTitle,
+      description: updatedProperty.description,
+      listingPurpose: LISTING_TYPE_TO_BACKEND[updatedProperty.listingType],
+      state: updatedProperty.state,
+      district: updatedProperty.district,
+      city: updatedProperty.city,
+      area: updatedProperty.area,
+      pinCode: updatedProperty.pincode,
+      address: updatedProperty.location,
+      latitude: updatedProperty.latitude !== '' && updatedProperty.latitude != null ? parseFloat(updatedProperty.latitude) : undefined,
+      longitude: updatedProperty.longitude !== '' && updatedProperty.longitude != null ? parseFloat(updatedProperty.longitude) : undefined,
+    })
+      .then(refetchAll)
+      .then(() => setToast({ message: `Property "${updatedProperty.propertyTitle}" updated successfully`, type: 'success' }))
+      .catch((error) => {
+        console.error('Failed to update property:', error);
+        setToast({ message: error?.response?.data?.detail || 'Failed to update property', type: 'error' });
+      });
+  }, [refetchAll]);
 
   // ============ DELETE PROPERTY WITH CONFIRMATION ============
   const handleDeleteProperty = useCallback((propertyId) => {
-    const property = properties.find(p => p.id === propertyId);
+    const property = paginatedProperties.find(p => p.id === propertyId);
     if (!property) return;
 
     setConfirmationModal({
@@ -852,78 +762,80 @@ const CoLivingSpace = () => {
       confirmText: 'Delete',
       cancelText: 'Cancel',
       type: 'danger',
-      onConfirm: () => {
+      onConfirm: async () => {
         setActionLoading(propertyId);
-        setTimeout(() => {
-          setProperties(prev => {
-            const updated = prev.filter(p => p.id !== propertyId);
-            computeStats(updated);
-            return updated;
-          });
-          setActionLoading(null);
+        try {
+          await adminDashboardService.deleteProperty(propertyId);
+          await refetchAll();
           setShowViewModal(false);
           setToast({ message: `Deleted property "${property.propertyTitle}"`, type: 'warning' });
-        }, 700);
+        } catch (error) {
+          console.error('Failed to delete property:', error);
+          setToast({ message: error?.response?.data?.detail || 'Failed to delete property', type: 'error' });
+        } finally {
+          setActionLoading(null);
+        }
       },
       onCancel: () => setConfirmationModal(prev => ({ ...prev, isOpen: false }))
     });
-  }, [properties, computeStats]);
+  }, [paginatedProperties, refetchAll]);
 
   // ============ STAT CLICK HANDLERS ============
   const handleListingClick = useCallback((type) => {
-    setActiveListingType(prev => (prev === type ? 'all' : type));
+    setActiveListingType(activeListingType === type ? 'all' : type);
     if (searchInputRef.current) searchInputRef.current.focus();
-  }, []);
+  }, [activeListingType, setActiveListingType]);
 
   const handleTotalClick = useCallback(() => {
-    setActiveListingType('all');
-    setSearchQuery('');
+    clearFiltersFromHook();
     if (searchInputRef.current) searchInputRef.current.focus();
-  }, []);
+  }, [clearFiltersFromHook]);
 
   // ============ CLEAR ALL FILTERS ============
   const clearAllFilters = useCallback(() => {
-    setSearchQuery('');
-    setActiveListingType('all');
+    clearFiltersFromHook();
     if (searchInputRef.current) searchInputRef.current.focus();
     setToast({ message: 'All filters cleared', type: 'info' });
-  }, []);
+  }, [clearFiltersFromHook]);
 
   // ============ REFRESH DATA ============
-  const handleRefresh = useCallback(() => {
-    setLoading(true);
-    setTimeout(() => {
-      try {
-        const mockProperties = normalizeProperties(generateMockProperties());
-        setProperties(mockProperties);
-        setFilteredProperties(mockProperties);
-        setToast({ message: 'Data refreshed successfully', type: 'success' });
-      } catch (error) {
-        console.error('Error refreshing data:', error);
-        setToast({ message: 'Error refreshing data', type: 'error' });
-      }
-      setLoading(false);
-    }, 1000);
-  }, [generateMockProperties, normalizeProperties]);
+  const handleRefresh = useCallback(async () => {
+    try {
+      await refetchAll();
+      setToast({ message: 'Data refreshed successfully', type: 'success' });
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      setToast({ message: 'Error refreshing data', type: 'error' });
+    }
+  }, [refetchAll]);
 
   // ============ EXPORT DATA ============
-  const handleExport = useCallback(() => {
-    if (filteredProperties.length === 0) {
+  const handleExport = useCallback(async () => {
+    let allFiltered;
+    try {
+      allFiltered = await fetchAllFiltered();
+    } catch (error) {
+      console.error('Error fetching data to export:', error);
+      setToast({ message: 'Error exporting data', type: 'error' });
+      return;
+    }
+
+    if (allFiltered.length === 0) {
       setToast({ message: 'No data to export', type: 'warning' });
       return;
     }
     try {
-      const data = filteredProperties.map(p => ({
+      const data = allFiltered.map(p => ({
         'Property ID': p.propertyId || '',
         'Property Title': p.propertyTitle || '',
         'Property Type': p.propertyType || '',
         'Listing Type': p.listingType || '',
         'Description': p.description || '',
-        'State': p.state || '',
-        'District': p.district || '',
-        'City': p.city || '',
+        'Location': p.location || '',
         'Area / Locality': p.area || '',
-        'Street': p.street || '',
+        'City': p.city || '',
+        'District': p.district || '',
+        'State': p.state || '',
         'Pincode': p.pincode || '',
         'Latitude': p.latitude || '',
         'Longitude': p.longitude || ''
@@ -941,12 +853,12 @@ const CoLivingSpace = () => {
       a.download = `co_living_space_${new Date().toISOString().split('T')[0]}.csv`;
       a.click();
       window.URL.revokeObjectURL(url);
-      setToast({ message: `${filteredProperties.length} records exported successfully`, type: 'success' });
+      setToast({ message: `${allFiltered.length} records exported successfully`, type: 'success' });
     } catch (error) {
       console.error('Error exporting data:', error);
       setToast({ message: 'Error exporting data', type: 'error' });
     }
-  }, [filteredProperties]);
+  }, [fetchAllFiltered]);
 
   // ============ BULK DELETE ============
   const handleBulkDelete = useCallback(() => {
@@ -961,22 +873,24 @@ const CoLivingSpace = () => {
       confirmText: 'Delete All',
       cancelText: 'Cancel',
       type: 'danger',
-      onConfirm: () => {
+      onConfirm: async () => {
         setActionLoading('bulk-delete');
-        setTimeout(() => {
-          const selectedIds = new Set(selectedProperties);
-          const count = properties.filter(p => selectedIds.has(p.id)).length;
-          const updated = properties.filter(p => !selectedIds.has(p.id));
-          setProperties(updated);
-          computeStats(updated);
+        try {
+          const count = selectedProperties.length;
+          await Promise.all(selectedProperties.map(id => adminDashboardService.deleteProperty(id)));
+          await refetchAll();
           setSelectedProperties([]);
-          setActionLoading(null);
           setToast({ message: `${count} property(ies) deleted`, type: 'warning' });
-        }, 800);
+        } catch (error) {
+          console.error('Failed to bulk delete properties:', error);
+          setToast({ message: error?.response?.data?.detail || 'Failed to delete some properties', type: 'error' });
+        } finally {
+          setActionLoading(null);
+        }
       },
       onCancel: () => setConfirmationModal(prev => ({ ...prev, isOpen: false }))
     });
-  }, [selectedProperties, properties, computeStats]);
+  }, [selectedProperties, refetchAll]);
 
   // ============ FILTER OPTIONS ============
   const listingTypeOptions = Object.keys(LISTING_TYPES).map(type => ({ value: type, label: type }));
@@ -1036,7 +950,7 @@ const CoLivingSpace = () => {
                 Co-Living Spaces
               </h1>
               <span className="px-3 py-1 bg-[#E8F4F2] text-[#00695C] text-xs font-semibold rounded-full animate-pulse">
-                {filteredProperties.length} Properties
+                {totalCount} Properties
               </span>
               {filterCount > 0 && (
                 <span className="px-3 py-1 bg-[#FEF3E2] text-amber-700 text-xs font-semibold rounded-full">
@@ -1261,7 +1175,7 @@ const CoLivingSpace = () => {
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-[#5A7D78]">
                       <FiMapPin className="text-[#00695C] flex-shrink-0" />
-                      <span className="truncate font-medium">{property.street}</span>
+                      <span className="truncate font-medium">{property.location}</span>
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-[#5A7D78]">
                       <FiMapPin className="text-[#00695C] flex-shrink-0" />
@@ -1473,8 +1387,8 @@ const CoLivingSpace = () => {
           <div className="flex items-center gap-2 text-sm text-[#5A7D78] flex-wrap">
             <span className="font-medium">
               Showing {(currentPage - 1) * pageSize + 1} to{' '}
-              {Math.min(currentPage * pageSize, filteredProperties.length)} of{' '}
-              {filteredProperties.length} properties
+              {Math.min(currentPage * pageSize, totalCount)} of{' '}
+              {totalCount} properties
             </span>
             <select
               value={pageSize}

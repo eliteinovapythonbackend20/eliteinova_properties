@@ -1,4 +1,4 @@
-import React, { useState, lazy, Suspense } from "react";
+import React, { useState, lazy, Suspense, useEffect } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -148,8 +148,9 @@ const OwnerProfile = lazy(() => import("./components/profiles/OwnerProfile.jsx")
 const AgentProfile = lazy(() => import("./components/profiles/AgentProfile.jsx"));
 const BuilderProfile = lazy(() => import("./components/profiles/BuilderProfile.jsx"));
 const PropertyManagementProfile = lazy(() => import("./components/profiles/PropertyManagementProfile"));
-const AdminDashboard = lazy(() => import("./components/dashboard/AdminDashboard"));
-
+// const AdminDashboardFactory = () => import("./components/dashboard/AdminDashboard"); 
+// const AdminDashboard = lazy(AdminDashboardFactory); 
+const AdminDashboard = lazy(() => import("./components/dashboard/AdminDashboard.jsx"));
 function Unauthorized() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
@@ -167,6 +168,13 @@ function AppLayout() {
   const [openPropertyManagementForm, setOpenPropertyManagementForm] = useState(false);
 
   // Central control from Header
+//   useEffect(() => { 
+//     // Fixed the capitalization to match the variable definition
+//     AdminDashboardFactory().catch((error) => {
+//         console.error("Failed to preload AdminDashboard:", error);
+//     }); 
+// }, []);
+
   const handlePostPropertyClick = (type) => {
     console.log("Form clicked:", type);
 

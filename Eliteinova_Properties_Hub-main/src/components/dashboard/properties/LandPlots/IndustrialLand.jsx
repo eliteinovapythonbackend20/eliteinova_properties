@@ -1,6 +1,6 @@
 // src/components/dashboard/properties/LandPlots/IndustrialLand.jsx
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   FiSearch, FiChevronDown, FiChevronLeft, FiChevronRight, FiEye, FiEdit,
   FiTrash2, FiRefreshCw, FiDownload, FiAlertTriangle, FiInfo, FiX, FiList,
@@ -9,6 +9,9 @@ import {
   FiMap, FiActivity, FiSettings, FiTruck, FiThermometer, FiFlag
 } from 'react-icons/fi';
 import { FaCity, FaIndustry, FaTools, FaWarehouse } from 'react-icons/fa';
+
+import adminDashboardService from '../../../../services/adminDashboardService';
+import useAdminPropertyList, { LISTING_TYPE_FROM_BACKEND, LISTING_TYPE_TO_BACKEND } from '../../../../hooks/useAdminPropertyList';
 
 // ============================================================
 // FIXED MAIN PROPERTY TYPE — this page only handles Industrial Land
@@ -25,7 +28,8 @@ const SUB_TYPES = {
     bg: 'bg-stone-50',
     text: 'text-stone-700',
     border: 'border-stone-200',
-    label: 'Industrial Plot'
+    label: 'Industrial Plot',
+    filterValue: 'Industrial Plot'
   },
   'FactoryLand': {
     icon: FiSettings,
@@ -33,7 +37,8 @@ const SUB_TYPES = {
     bg: 'bg-orange-50',
     text: 'text-orange-700',
     border: 'border-orange-200',
-    label: 'Factory Land'
+    label: 'Factory Land',
+    filterValue: 'Factory Land'
   },
   'ManufacturingUnitPlot': {
     icon: FaTools,
@@ -41,7 +46,8 @@ const SUB_TYPES = {
     bg: 'bg-blue-50',
     text: 'text-blue-700',
     border: 'border-blue-200',
-    label: 'Manufacturing Unit Plot'
+    label: 'Manufacturing Unit Plot',
+    filterValue: 'Manufacturing Unit Plot'
   },
   'LogisticsHubLand': {
     icon: FiTruck,
@@ -49,7 +55,8 @@ const SUB_TYPES = {
     bg: 'bg-purple-50',
     text: 'text-purple-700',
     border: 'border-purple-200',
-    label: 'Logistics Hub Land'
+    label: 'Logistics Hub Land',
+    filterValue: 'Logistics Hub Land'
   },
   'WarehousePlot': {
     icon: FaWarehouse,
@@ -57,7 +64,8 @@ const SUB_TYPES = {
     bg: 'bg-amber-50',
     text: 'text-amber-700',
     border: 'border-amber-200',
-    label: 'Warehouse Plot'
+    label: 'Warehouse Plot',
+    filterValue: 'Warehouse Plot'
   },
   'ColdStorageLand': {
     icon: FiThermometer,
@@ -65,7 +73,8 @@ const SUB_TYPES = {
     bg: 'bg-cyan-50',
     text: 'text-cyan-700',
     border: 'border-cyan-200',
-    label: 'Cold Storage Land'
+    label: 'Cold Storage Land',
+    filterValue: 'Cold Storage Land'
   },
   'SezLand': {
     icon: FiFlag,
@@ -73,9 +82,15 @@ const SUB_TYPES = {
     bg: 'bg-green-50',
     text: 'text-green-700',
     border: 'border-green-200',
-    label: 'SEZ Land'
+    label: 'SEZ Land',
+    filterValue: 'SEZ Land'
   }
 };
+
+// Reverse lookup: real backend property_type (landType) value -> the
+// PascalCase key every render path below already indexes SUB_TYPES by.
+const propertyTypeKeyFromValue = (value) =>
+  Object.keys(SUB_TYPES).find(key => SUB_TYPES[key].filterValue === value);
 
 // ---- All listing types available globally: Buy, Rent, Lease ----
 const LISTING_TYPE_CONFIG = {
@@ -260,9 +275,9 @@ const ViewPropertyDetailModal = ({ property, show, onClose, onEdit, onDelete }) 
             <div className="bg-[#F5F9F8] rounded-2xl p-4">
               <div className="flex items-center gap-2 mb-1">
                 <FiMapPin className="text-[#00695C] text-sm" />
-                <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider">Street</h4>
+                <h4 className="text-xs font-semibold text-[#5A7D78] uppercase tracking-wider">Location</h4>
               </div>
-              <p className="text-sm font-bold text-[#1A2E2A]">{property.street}</p>
+              <p className="text-sm font-bold text-[#1A2E2A]">{property.location}</p>
             </div>
 
             <div className="bg-[#F5F9F8] rounded-2xl p-4">
@@ -369,7 +384,7 @@ const EditPropertyModal = ({ property, show, onClose, onSave }) => {
   const [formData, setFormData] = useState({
     propertyId: '', propertyTitle: '', propertySubType: '', listingType: '',
     description: '', state: '', district: '', city: '', area: '',
-    street: '', pincode: '', latitude: '', longitude: ''
+    location: '', pincode: '', latitude: '', longitude: ''
   });
   const [loading, setLoading] = useState(false);
 
@@ -387,7 +402,7 @@ const EditPropertyModal = ({ property, show, onClose, onSave }) => {
         district: property.district || '',
         city: property.city || '',
         area: property.area || '',
-        street: property.street || '',
+        location: property.location || '',
         pincode: property.pincode || '',
         latitude: property.latitude || '',
         longitude: property.longitude || ''
@@ -497,11 +512,11 @@ const EditPropertyModal = ({ property, show, onClose, onSave }) => {
               {/* ===== Location fields: Street → Area/Locality → City → District → State → Pincode ===== */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-[#5A7D78] mb-1">Street</label>
+                  <label className="block text-xs font-medium text-[#5A7D78] mb-1">Location</label>
                   <input
-                    type="text" name="street" value={formData.street} onChange={handleChange}
+                    type="text" name="location" value={formData.location} onChange={handleChange}
                     className="w-full px-3 py-2 bg-white rounded-xl border border-[#E8F0EE] focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/20 transition-all duration-300 text-sm text-[#1A2E2A] outline-none"
-                    placeholder="Street"
+                    placeholder="Street, Area"
                   />
                 </div>
                 <div>
@@ -694,15 +709,56 @@ const FilterDropdown = ({ label, options, value, onChange, icon: Icon, allLabel 
 const IndustrialLand = () => {
   const searchInputRef = useRef(null);
 
-  // ============ STATE ============
-  const [properties, setProperties] = useState([]);
-  const [filteredProperties, setFilteredProperties] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [sortField, setSortField] = useState('propertyTitle');
-  const [sortDirection, setSortDirection] = useState('asc');
+  // ============ REAL BACKEND DATA (see src/hooks/useAdminPropertyList.js) ============
+  const mapCard = useCallback((card) => ({
+    id: card.id,
+    propertyId: card.id,
+    propertyTitle: card.propertyTitle || 'Untitled Property',
+    propertyType: MAIN_TYPE_LABEL,
+    propertySubType: propertyTypeKeyFromValue(card.propertyType) || card.propertyType || '',
+    listingType: LISTING_TYPE_FROM_BACKEND[card.listingPurpose] || card.listingPurpose,
+    description: card.description || '',
+    state: card.state || '',
+    district: card.district || '',
+    city: card.city || '',
+    area: card.area || '',
+    location: card.address || '',
+    pincode: card.pinCode || '',
+    latitude: card.latitude ?? '',
+    longitude: card.longitude ?? ''
+  }), []);
+
+  const {
+    properties: paginatedProperties,
+    totalCount,
+    loading,
+    stats: rawStats,
+    currentPage, setCurrentPage,
+    pageSize, setPageSize,
+    totalPages,
+    sortField, sortDirection, handleSort,
+    searchQuery, setSearchQuery,
+    clearSearch,
+    activePropertyType: activeSubType, setActivePropertyType: setActiveSubType,
+    activeListingType, setActiveListingType,
+    filterCount,
+    clearAllFilters: clearFiltersFromHook,
+    fetchAllFiltered,
+    refetchAll,
+  } = useAdminPropertyList({
+    propertyCategory: 'LAND_PLOT',
+    fixedSubCategory: MAIN_TYPE_LABEL,
+    mapCard,
+    initialSortField: 'propertyTitle',
+  });
+
+  // rawStats.byType is keyed by the real property_type (landType) strings,
+  // already scoped to this page's fixedSubCategory by the backend.
+  const stats = { total: rawStats.total || 0 };
+  Object.keys(SUB_TYPES).forEach((key) => {
+    stats[key] = rawStats.byType?.[SUB_TYPES[key].filterValue] || 0;
+  });
+
   const [viewMode, setViewMode] = useState('grid');
   const [selectedProperties, setSelectedProperties] = useState([]);
   const [viewingProperty, setViewingProperty] = useState(null);
@@ -711,168 +767,12 @@ const IndustrialLand = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [toast, setToast] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
-  const [filterCount, setFilterCount] = useState(0);
-  const [activeSubType, setActiveSubType] = useState('all');
-  const [activeListingType, setActiveListingType] = useState('all');
   const [showStats, setShowStats] = useState(true);
 
   // ============ CONFIRMATION MODAL STATE ============
   const [confirmationModal, setConfirmationModal] = useState({
     isOpen: false, title: '', message: '', confirmText: 'Confirm', cancelText: 'Cancel', type: 'danger', onConfirm: null, onCancel: null
   });
-
-  // ============ STATS (total + one count per sub type) ============
-  const [stats, setStats] = useState(() => {
-    const initial = { total: 0 };
-    Object.keys(SUB_TYPES).forEach(sub => { initial[sub] = 0; });
-    return initial;
-  });
-
-  const computeStats = useCallback((list) => {
-    const counts = { total: list ? list.length : 0 };
-    Object.keys(SUB_TYPES).forEach(sub => {
-      counts[sub] = list ? list.filter(p => p.propertySubType === sub).length : 0;
-    });
-    setStats(counts);
-  }, []);
-
-  // ============ NORMALIZE DATA ============
-  const normalizeProperties = useCallback((list) => {
-    if (!list) return list;
-    return list.map(p => ({ ...p, propertyType: MAIN_TYPE_LABEL }));
-  }, []);
-
-  // ============ GENERATE MOCK DATA ============
-  const generateMockProperties = useCallback(() => {
-    const propertyTitles = [
-      'Industrial Belt Plot', 'Highway Factory Land', 'Metro Manufacturing Unit Plot',
-      'Riverfront Logistics Hub Land', 'Silverline Warehouse Plot', 'ColdChain Storage Land',
-      'Gateway SEZ Land', 'Union Industrial Plot', 'Crown Factory Land',
-      'Emerald Manufacturing Unit Plot', 'Fortune Logistics Hub Land', 'Meridian Warehouse Plot',
-      'Junction Cold Storage Land', 'Phoenix SEZ Land', 'Sunrise Industrial Plot',
-      'Galaxy Factory Land', 'Prime Manufacturing Unit Plot', 'Horizon Logistics Hub Land'
-    ];
-    const states = ['Tamil Nadu', 'Karnataka', 'Telangana', 'Maharashtra', 'Delhi', 'West Bengal', 'Gujarat', 'Kerala'];
-    const districts = ['Chennai', 'Bengaluru Urban', 'Hyderabad', 'Mumbai Suburban', 'New Delhi', 'Kolkata', 'Ahmedabad', 'Ernakulam'];
-    const cities = ['Chennai', 'Bangalore', 'Hyderabad', 'Mumbai', 'Delhi', 'Kolkata', 'Ahmedabad', 'Kochi'];
-    const areas = ['Guindy', 'Whitefield', 'Hitech City', 'Andheri', 'Nehru Place', 'Sector V', 'SG Highway', 'Infopark'];
-    const streets = ['Survey Road', 'MG Road', 'Ring Road', 'Development Avenue', 'Layout Road', 'Junction Road', 'Byepass Road', 'Outer Ring Road'];
-    const subTypes = Object.keys(SUB_TYPES);
-    const listingTypes = ALL_LISTING_TYPES;
-
-    const propertiesList = [];
-
-    for (let i = 1; i <= 60; i++) {
-      const propertySubType = subTypes[Math.floor(Math.random() * subTypes.length)];
-      const listingType = listingTypes[Math.floor(Math.random() * listingTypes.length)];
-      const pincode = String(600000 + Math.floor(Math.random() * 99999));
-      const hasCoords = Math.random() > 0.4;
-
-      propertiesList.push({
-        id: `il_${i}`,
-        propertyId: `IL-${String(i).padStart(4, '0')}`,
-        propertyTitle: propertyTitles[Math.floor(Math.random() * propertyTitles.length)],
-        propertyType: MAIN_TYPE_LABEL,
-        propertySubType,
-        listingType,
-        description: `A well-located ${SUB_TYPES[propertySubType].label.toLowerCase()} under industrial land, available for ${listingType.toLowerCase()}.`,
-        state: states[Math.floor(Math.random() * states.length)],
-        district: districts[Math.floor(Math.random() * districts.length)],
-        city: cities[Math.floor(Math.random() * cities.length)],
-        area: areas[Math.floor(Math.random() * areas.length)],
-        street: streets[Math.floor(Math.random() * streets.length)],
-        pincode,
-        latitude: hasCoords ? (11 + Math.random() * 15).toFixed(4) : '',
-        longitude: hasCoords ? (72 + Math.random() * 15).toFixed(4) : ''
-      });
-    }
-
-    computeStats(propertiesList);
-    return propertiesList;
-  }, [computeStats]);
-
-  // ============ INITIALIZE DATA ============
-  useEffect(() => {
-    try {
-      const mockProperties = normalizeProperties(generateMockProperties());
-      setProperties(mockProperties);
-      setFilteredProperties(mockProperties);
-    } catch (error) {
-      console.error('Error generating mock properties:', error);
-    }
-  }, [generateMockProperties, normalizeProperties]);
-
-  // ============ FILTER PROPERTIES ============
-  const filterProperties = useCallback(() => {
-    try {
-      let filtered = [...properties];
-
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        filtered = filtered.filter(p =>
-          (p.propertyTitle && p.propertyTitle.toLowerCase().includes(query)) ||
-          (p.propertyId && p.propertyId.toLowerCase().includes(query)) ||
-          (p.propertySubType && (SUB_TYPES[p.propertySubType]?.label || p.propertySubType).toLowerCase().includes(query)) ||
-          (p.listingType && p.listingType.toLowerCase().includes(query)) ||
-          (p.state && p.state.toLowerCase().includes(query)) ||
-          (p.district && p.district.toLowerCase().includes(query)) ||
-          (p.city && p.city.toLowerCase().includes(query)) ||
-          (p.area && p.area.toLowerCase().includes(query)) ||
-          (p.street && p.street.toLowerCase().includes(query)) ||
-          (p.pincode && p.pincode.toLowerCase().includes(query))
-        );
-      }
-
-      if (activeSubType !== 'all') {
-        filtered = filtered.filter(p => p.propertySubType === activeSubType);
-      }
-
-      if (activeListingType !== 'all') {
-        filtered = filtered.filter(p => p.listingType === activeListingType);
-      }
-
-      let count = 0;
-      if (activeSubType !== 'all') count++;
-      if (activeListingType !== 'all') count++;
-      if (searchQuery) count++;
-      setFilterCount(count);
-
-      filtered.sort((a, b) => {
-        let aVal = a[sortField] || '';
-        let bVal = b[sortField] || '';
-        if (typeof aVal === 'string') aVal = aVal.toLowerCase();
-        if (typeof bVal === 'string') bVal = bVal.toLowerCase();
-        if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
-        if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
-        return 0;
-      });
-
-      setFilteredProperties(filtered);
-      setCurrentPage(1);
-    } catch (error) {
-      console.error('Error filtering properties:', error);
-    }
-  }, [properties, searchQuery, activeSubType, activeListingType, sortField, sortDirection]);
-
-  useEffect(() => { filterProperties(); }, [filterProperties]);
-
-  // ============ PAGINATION ============
-  const totalPages = Math.max(1, Math.ceil(filteredProperties.length / pageSize));
-  const paginatedProperties = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    const end = start + pageSize;
-    return filteredProperties.slice(start, end);
-  }, [filteredProperties, currentPage, pageSize]);
-
-  // ============ HANDLE SORT ============
-  const handleSort = useCallback((field) => {
-    if (sortField === field) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  }, [sortField]);
 
   // ============ HANDLE SELECT ALL ============
   const handleSelectAll = useCallback(() => {
@@ -899,18 +799,38 @@ const IndustrialLand = () => {
     setShowEditModal(true);
   }, []);
 
+  // Only fields with a real, unambiguous BaseProperty column go over the
+  // wire - propertyType here displays the fixed MAIN_TYPE_LABEL (maps to
+  // sub_category, which is page-locked and never sent); propertySubType is
+  // translated from its internal PascalCase config key back to the real
+  // landType value the posting forms use, sent as propertyType (the actual
+  // backend column that value maps to).
   const handleSaveProperty = useCallback((updatedProperty) => {
-    setProperties(prev => {
-      const updated = prev.map(p => p.id === updatedProperty.id ? updatedProperty : p);
-      computeStats(updated);
-      return updated;
-    });
-    setToast({ message: `Property "${updatedProperty.propertyTitle}" updated successfully`, type: 'success' });
-  }, [computeStats]);
+    adminDashboardService.updateProperty(updatedProperty.id, {
+      propertyTitle: updatedProperty.propertyTitle,
+      propertyType: SUB_TYPES[updatedProperty.propertySubType]?.filterValue,
+      description: updatedProperty.description,
+      listingPurpose: LISTING_TYPE_TO_BACKEND[updatedProperty.listingType],
+      state: updatedProperty.state,
+      district: updatedProperty.district,
+      city: updatedProperty.city,
+      area: updatedProperty.area,
+      pinCode: updatedProperty.pincode,
+      address: updatedProperty.location,
+      latitude: updatedProperty.latitude !== '' && updatedProperty.latitude != null ? parseFloat(updatedProperty.latitude) : undefined,
+      longitude: updatedProperty.longitude !== '' && updatedProperty.longitude != null ? parseFloat(updatedProperty.longitude) : undefined,
+    })
+      .then(refetchAll)
+      .then(() => setToast({ message: `Property "${updatedProperty.propertyTitle}" updated successfully`, type: 'success' }))
+      .catch((error) => {
+        console.error('Failed to update property:', error);
+        setToast({ message: error?.response?.data?.detail || 'Failed to update property', type: 'error' });
+      });
+  }, [refetchAll]);
 
   // ============ DELETE PROPERTY WITH CONFIRMATION ============
   const handleDeleteProperty = useCallback((propertyId) => {
-    const property = properties.find(p => p.id === propertyId);
+    const property = paginatedProperties.find(p => p.id === propertyId);
     if (!property) return;
 
     setConfirmationModal({
@@ -920,77 +840,77 @@ const IndustrialLand = () => {
       confirmText: 'Delete',
       cancelText: 'Cancel',
       type: 'danger',
-      onConfirm: () => {
+      onConfirm: async () => {
         setActionLoading(propertyId);
-        setTimeout(() => {
-          setProperties(prev => {
-            const updated = prev.filter(p => p.id !== propertyId);
-            computeStats(updated);
-            return updated;
-          });
-          setActionLoading(null);
+        try {
+          await adminDashboardService.deleteProperty(propertyId);
+          await refetchAll();
           setShowViewModal(false);
           setToast({ message: `Deleted property "${property.propertyTitle}"`, type: 'warning' });
-        }, 700);
+        } catch (error) {
+          console.error('Failed to delete property:', error);
+          setToast({ message: error?.response?.data?.detail || 'Failed to delete property', type: 'error' });
+        } finally {
+          setActionLoading(null);
+        }
       },
       onCancel: () => setConfirmationModal(prev => ({ ...prev, isOpen: false }))
     });
-  }, [properties, computeStats]);
+  }, [paginatedProperties, refetchAll]);
 
   // ============ STAT CLICK HANDLERS ============
-  const handleSubTypeClick = useCallback((sub) => {
-    setActiveSubType(prev => (prev === sub ? 'all' : sub));
+  const handleSubTypeClick = useCallback((filterValue) => {
+    setActiveSubType(activeSubType === filterValue ? 'all' : filterValue);
     if (searchInputRef.current) searchInputRef.current.focus();
-  }, []);
+  }, [activeSubType, setActiveSubType]);
 
   const handleTotalClick = useCallback(() => {
-    setActiveSubType('all');
-    setActiveListingType('all');
-    setSearchQuery('');
+    clearFiltersFromHook();
     if (searchInputRef.current) searchInputRef.current.focus();
-  }, []);
+  }, [clearFiltersFromHook]);
 
   // ============ CLEAR ALL FILTERS ============
   const clearAllFilters = useCallback(() => {
-    setSearchQuery('');
-    setActiveSubType('all');
-    setActiveListingType('all');
+    clearFiltersFromHook();
     if (searchInputRef.current) searchInputRef.current.focus();
     setToast({ message: 'All filters cleared', type: 'info' });
-  }, []);
+  }, [clearFiltersFromHook]);
 
   // ============ REFRESH DATA ============
-  const handleRefresh = useCallback(() => {
-    setLoading(true);
-    setTimeout(() => {
-      try {
-        const mockProperties = normalizeProperties(generateMockProperties());
-        setProperties(mockProperties);
-        setFilteredProperties(mockProperties);
-        setToast({ message: 'Data refreshed successfully', type: 'success' });
-      } catch (error) {
-        console.error('Error refreshing data:', error);
-        setToast({ message: 'Error refreshing data', type: 'error' });
-      }
-      setLoading(false);
-    }, 1000);
-  }, [generateMockProperties, normalizeProperties]);
+  const handleRefresh = useCallback(async () => {
+    try {
+      await refetchAll();
+      setToast({ message: 'Data refreshed successfully', type: 'success' });
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      setToast({ message: 'Error refreshing data', type: 'error' });
+    }
+  }, [refetchAll]);
 
   // ============ EXPORT DATA ============
-  const handleExport = useCallback(() => {
-    if (filteredProperties.length === 0) {
+  const handleExport = useCallback(async () => {
+    let allFiltered;
+    try {
+      allFiltered = await fetchAllFiltered();
+    } catch (error) {
+      console.error('Error fetching data to export:', error);
+      setToast({ message: 'Error exporting data', type: 'error' });
+      return;
+    }
+
+    if (allFiltered.length === 0) {
       setToast({ message: 'No data to export', type: 'warning' });
       return;
     }
     try {
-      const data = filteredProperties.map(p => ({
+      const data = allFiltered.map(p => ({
         'Property ID': p.propertyId || '',
         'Property Title': p.propertyTitle || '',
         'Property Type': MAIN_TYPE_LABEL,
         'Property Sub Type': (SUB_TYPES[p.propertySubType]?.label) || p.propertySubType || '',
         'Listing Type': p.listingType || '',
         'Description': p.description || '',
-        'Street': p.street || '',
+        'Location': p.location || '',
         'Area / Locality': p.area || '',
         'City': p.city || '',
         'District': p.district || '',
@@ -1012,12 +932,12 @@ const IndustrialLand = () => {
       a.download = `industrial_land_${new Date().toISOString().split('T')[0]}.csv`;
       a.click();
       window.URL.revokeObjectURL(url);
-      setToast({ message: `${filteredProperties.length} records exported successfully`, type: 'success' });
+      setToast({ message: `${allFiltered.length} records exported successfully`, type: 'success' });
     } catch (error) {
       console.error('Error exporting data:', error);
       setToast({ message: 'Error exporting data', type: 'error' });
     }
-  }, [filteredProperties]);
+  }, [fetchAllFiltered]);
 
   // ============ BULK DELETE ============
   const handleBulkDelete = useCallback(() => {
@@ -1032,25 +952,27 @@ const IndustrialLand = () => {
       confirmText: 'Delete All',
       cancelText: 'Cancel',
       type: 'danger',
-      onConfirm: () => {
+      onConfirm: async () => {
         setActionLoading('bulk-delete');
-        setTimeout(() => {
-          const selectedIds = new Set(selectedProperties);
-          const count = properties.filter(p => selectedIds.has(p.id)).length;
-          const updated = properties.filter(p => !selectedIds.has(p.id));
-          setProperties(updated);
-          computeStats(updated);
+        try {
+          const count = selectedProperties.length;
+          await Promise.all(selectedProperties.map(id => adminDashboardService.deleteProperty(id)));
+          await refetchAll();
           setSelectedProperties([]);
-          setActionLoading(null);
           setToast({ message: `${count} property(ies) deleted`, type: 'warning' });
-        }, 800);
+        } catch (error) {
+          console.error('Failed to bulk delete properties:', error);
+          setToast({ message: error?.response?.data?.detail || 'Failed to delete some properties', type: 'error' });
+        } finally {
+          setActionLoading(null);
+        }
       },
       onCancel: () => setConfirmationModal(prev => ({ ...prev, isOpen: false }))
     });
-  }, [selectedProperties, properties, computeStats]);
+  }, [selectedProperties, refetchAll]);
 
   // ============ FILTER OPTIONS ============
-  const subTypeOptions = Object.keys(SUB_TYPES).map(sub => ({ value: sub, label: SUB_TYPES[sub].label }));
+  const subTypeOptions = Object.keys(SUB_TYPES).map(sub => ({ value: SUB_TYPES[sub].filterValue, label: SUB_TYPES[sub].label }));
   const listingTypeOptions = ALL_LISTING_TYPES.map(type => ({ value: type, label: type }));
 
   // ============================================================
@@ -1108,7 +1030,7 @@ const IndustrialLand = () => {
                 Industrial Land
               </h1>
               <span className="px-3 py-1 bg-[#E8F4F2] text-[#00695C] text-xs font-semibold rounded-full animate-pulse">
-                {filteredProperties.length} Properties
+                {totalCount} Properties
               </span>
               {filterCount > 0 && (
                 <span className="px-3 py-1 bg-[#FEF3E2] text-amber-700 text-xs font-semibold rounded-full">
@@ -1176,8 +1098,8 @@ const IndustrialLand = () => {
                     value={stats[sub] || 0}
                     color={`bg-gradient-to-br ${config.color}`}
                     delay={(idx + 1) * 50}
-                    isActive={activeSubType === sub}
-                    onClick={() => handleSubTypeClick(sub)}
+                    isActive={activeSubType === config.filterValue}
+                    onClick={() => handleSubTypeClick(config.filterValue)}
                   />
                 );
               })}
@@ -1201,7 +1123,7 @@ const IndustrialLand = () => {
             />
             {searchQuery && (
               <button
-                onClick={() => setSearchQuery('')}
+                onClick={clearSearch}
                 className="absolute right-4 top-1/2 transform -translate-y-1/2 text-[#5A7D78] hover:text-[#1A2E2A] transition-colors hover:scale-110"
               >
                 <FiX className="text-sm" />
@@ -1331,7 +1253,7 @@ const IndustrialLand = () => {
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-[#5A7D78]">
                       <FiMapPin className="text-[#00695C] flex-shrink-0" />
-                      <span className="truncate font-medium">{property.street}</span>
+                      <span className="truncate font-medium">{property.location}</span>
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-[#5A7D78]">
                       <FiMapPin className="text-[#00695C] flex-shrink-0" />
@@ -1548,8 +1470,8 @@ const IndustrialLand = () => {
           <div className="flex items-center gap-2 text-sm text-[#5A7D78] flex-wrap">
             <span className="font-medium">
               Showing {(currentPage - 1) * pageSize + 1} to{' '}
-              {Math.min(currentPage * pageSize, filteredProperties.length)} of{' '}
-              {filteredProperties.length} properties
+              {Math.min(currentPage * pageSize, totalCount)} of{' '}
+              {totalCount} properties
             </span>
             <select
               value={pageSize}

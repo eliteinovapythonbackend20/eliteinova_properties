@@ -65,11 +65,13 @@ class FieldMappingService:
         'companyWebsite': 'company_website',
         'companyDescription': 'company_description',
         'builderOfficeAddress': 'office_address',
-        'builderCity': 'city',
-        'builderDistrict': 'district',
-        'builderState': 'state',
-        'builderPincode': 'pincode',
-        'builderLandmark': 'landmark',
+        # Routed to vendor_* (not city/district/state/pincode/landmark
+        # directly) - see the VENDOR_ADDRESS_TARGET_MAP comment below for why.
+        'builderCity': 'vendor_city',
+        'builderDistrict': 'vendor_district',
+        'builderState': 'vendor_state',
+        'builderPincode': 'vendor_pincode',
+        'builderLandmark': 'vendor_landmark',
         'builderWebsite': 'website',
         'builderFacebook': 'facebook',
         'builderInstagram': 'instagram',
@@ -94,11 +96,13 @@ class FieldMappingService:
         'pmCompanyWebsite': 'company_website',
         'pmCompanyDescription': 'company_description',
         'pmOfficeAddress': 'office_address',
-        'pmCity': 'city',
-        'pmDistrict': 'district',
-        'pmState': 'state',
-        'pmPincode': 'pincode',
-        'pmLandmark': 'landmark',
+        # Routed to vendor_* (not city/district/state/pincode/landmark
+        # directly) - see the VENDOR_ADDRESS_TARGET_MAP comment below for why.
+        'pmCity': 'vendor_city',
+        'pmDistrict': 'vendor_district',
+        'pmState': 'vendor_state',
+        'pmPincode': 'vendor_pincode',
+        'pmLandmark': 'vendor_landmark',
         'pmWebsite': 'website',
         'pmFacebook': 'facebook',
         'pmInstagram': 'instagram',
@@ -235,11 +239,28 @@ class FieldMappingService:
         'landType': 'property_type',
         'landCategory': 'sub_category',
         'landFacing': 'facing_direction',
-        'officeCity': 'city',
-        'officeDistrict': 'district',
-        'officeState': 'state',
-        'officePinCode': 'pin_code',
-        'officeLandmark': 'landmark',
+        # ---- vendor's own office/company address (Builder & Property
+        # Management "Office Address" step) ----
+        # These must NOT resolve to 'city'/'district'/'state'/'pin_code'/
+        # 'landmark' directly: those are also the exact column names
+        # BaseProperty uses for the PROPERTY's own location, and both the
+        # office step and the property step feed the same flat dict here
+        # (map_frontend_to_db_fields has no notion of "which step" a field
+        # came from). Routing straight to those names meant whichever step
+        # was processed last silently clobbered the other's value - the
+        # vendor's own office city ending up overwritten with the
+        # property's city (or vice versa), and BaseProperty.district/state/
+        # landmark ending up holding the vendor's office address instead of
+        # the property's. VENDOR_ADDRESS_TARGET_MAP (below) is the one place
+        # that resolves vendor_city/vendor_district/vendor_state/
+        # vendor_pincode/vendor_landmark back onto the real 'city'/
+        # 'district'/'state'/'pincode'/'landmark' columns - but only on the
+        # vendor's own detail-table row, never on BaseProperty.
+        'officeCity': 'vendor_city',
+        'officeDistrict': 'vendor_district',
+        'officeState': 'vendor_state',
+        'officePinCode': 'vendor_pincode',
+        'officeLandmark': 'vendor_landmark',
         'rentNegotiable': 'price_negotiable',
         'priceNegotiable': 'price_negotiable',
         'sellPriceNegotiable': 'price_negotiable',
@@ -297,13 +318,23 @@ class FieldMappingService:
         'nearbyAccess': 'nearby_places',
     }
 
-    # The Builder / Property Management detail tables name a column differently from
-    # BaseProperty (pincode vs pin_code), yet the same form key feeds both. Mirror the
-    # value onto the detail-table name as well - without it that NOT NULL column gets
-    # None and the whole create fails with a 500. (aadhaar_number is now the same
-    # name on every role table, so it needs no alias any more.)
-    DETAIL_TABLE_ALIASES = {
-        'officePinCode': 'pincode',
+    # The vendor's own office/company address (officeCity, builderCity, pmCity
+    # and their district/state/pincode/landmark siblings) all resolve to these
+    # vendor_* keys instead of the real column names - see the comment above
+    # the 'officeCity' entry in FIELD_MAPPING for why. This map translates
+    # them back to the real 'city'/'district'/'state'/'pincode'/'landmark'
+    # column names, but only where the vendor's own detail-table row
+    # (PropertyBuilderDetails / PropertyManagementProperty) is actually being
+    # built or updated - app.repositories.property_repository's
+    # _create_role_specific_details and app.services.property_service's
+    # _update_vendor_details_from_data are the only two places that read
+    # these vendor_* keys.
+    VENDOR_ADDRESS_TARGET_MAP = {
+        'vendor_city': 'city',
+        'vendor_district': 'district',
+        'vendor_state': 'state',
+        'vendor_pincode': 'pincode',
+        'vendor_landmark': 'landmark',
     }
 
     # Default values for missing fields
@@ -400,10 +431,6 @@ class FieldMappingService:
                 if db_field == 'price_negotiable' and mapped_data.get(db_field) == 'Negotiable':
                     converted = 'Negotiable'
                 mapped_data[db_field] = converted
-                alias = self.DETAIL_TABLE_ALIASES.get(key)
-                if alias:
-                    # setdefault: an explicit builderPincode/pmAadhaar-style key wins
-                    mapped_data.setdefault(alias, value)
             else:
                 # Pass through unmapped fields
                 mapped_data[key] = value

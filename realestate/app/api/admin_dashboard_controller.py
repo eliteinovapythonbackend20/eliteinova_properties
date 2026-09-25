@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -25,6 +26,8 @@ async def admin_list_properties(
     featured: Optional[bool] = None,
     verification_status: Optional[str] = Query(None, description="Verified, Pending, Rejected, or Not Verified"),
     search: Optional[str] = None,
+    created_from: Optional[date] = Query(None, description="Only properties created on/after this calendar date - powers PropertiesOverview's period selector"),
+    created_to: Optional[date] = Query(None, description="Only properties created on/before this calendar date - powers PropertiesOverview's period selector"),
     current_user: Dict[str, Any] = Depends(require_admin),
     service: AdminDashboardService = Depends(get_admin_dashboard_service),
 ):
@@ -33,6 +36,7 @@ async def admin_list_properties(
             page=page, limit=limit, posted_by=posted_by, property_category=property_category,
             property_type=property_type, sub_category=sub_category, status=status, listing_purpose=listing_purpose,
             featured=featured, verification_status=verification_status, search=search,
+            created_from=created_from, created_to=created_to,
         )
     except ValidationError as e:
         raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=e.errors()[0]["msg"])
@@ -49,6 +53,8 @@ async def admin_list_properties(
         featured=params.featured,
         verification_status=params.verification_status,
         search=params.search,
+        created_from=params.created_from,
+        created_to=params.created_to,
     )
     return strip_none_values({"success": True, **result})
 
@@ -59,6 +65,8 @@ async def admin_property_stats(
     property_category: Optional[str] = Query(None, description="INDIVIDUAL, APARTMENT, COMMERCIAL, LAND_PLOT, or HOSTEL - when set, also returns a byType breakdown for that category's Overview page"),
     property_type: Optional[str] = Query(None, description="Exact property_type value - when set, also returns a byListingPurpose (Buy/Rent/Lease) breakdown for that subtype's list page"),
     sub_category: Optional[str] = Query(None, description="Exact sub_category value, e.g. 'Residential Land / Plots' - when set, scopes byType/byListingPurpose to that Land & Plots subtype; when property_category is set and this isn't, also returns a bySubCategory breakdown for the Land & Plots Overview page"),
+    created_from: Optional[date] = Query(None, description="Only properties created on/after this calendar date - powers PropertiesOverview's period selector"),
+    created_to: Optional[date] = Query(None, description="Only properties created on/before this calendar date - powers PropertiesOverview's period selector"),
     current_user: Dict[str, Any] = Depends(require_admin),
     service: AdminDashboardService = Depends(get_admin_dashboard_service),
 ):
@@ -67,6 +75,8 @@ async def admin_property_stats(
         property_category=property_category.upper() if property_category else None,
         property_type=property_type,
         sub_category=sub_category,
+        created_from=created_from,
+        created_to=created_to,
     )
     return strip_none_values({"success": True, "data": stats})
 

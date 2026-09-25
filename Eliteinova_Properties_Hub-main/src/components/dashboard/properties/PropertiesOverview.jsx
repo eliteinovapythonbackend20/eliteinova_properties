@@ -14,6 +14,37 @@ import {
 } from 'react-icons/fa';
 import { MdOutlineApartment, MdOutlineBusiness } from 'react-icons/md';
 import { HiOutlineBuildingOffice2 } from 'react-icons/hi2';
+import adminDashboardService from '../../../services/adminDashboardService';
+
+// ============ CATEGORY MAPPING (backend enum <-> UI label) ============
+const CATEGORY_FROM_BACKEND = {
+  INDIVIDUAL: 'Individual',
+  APARTMENT: 'Apartment',
+  COMMERCIAL: 'Commercial',
+  LAND_PLOT: 'Land & Plots',
+  HOSTEL: 'Hostel',
+};
+const CATEGORY_TO_BACKEND = Object.fromEntries(
+  Object.entries(CATEGORY_FROM_BACKEND).map(([backend, ui]) => [ui, backend])
+);
+const CATEGORY_PATHS = {
+  Individual: '/admin/properties/individual/overview',
+  Apartment: '/admin/properties/apartment/overview',
+  Commercial: '/admin/properties/commercial/overview',
+  'Land & Plots': '/admin/properties/land-plots/overview',
+  Hostel: '/admin/properties/hostel/overview',
+};
+
+// expectedPrice is the one price field every category always has;
+// priceMin/priceMax are an optional negotiation range some vendors also
+// set, used only as a fallback when expectedPrice itself is missing.
+function formatCardPrice(card) {
+  const amount = card.expectedPrice ?? card.priceMin ?? card.priceMax;
+  if (amount == null) return '';
+  if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(1)} Cr`;
+  if (amount >= 100000) return `₹${(amount / 100000).toFixed(1)} L`;
+  return `₹${Number(amount).toLocaleString('en-IN')}`;
+}
 
 // ============ EXPORT UTILITIES ============
 const exportToCSV = (data, filename = 'export.csv') => {
@@ -116,51 +147,6 @@ const getTimeAgo = (date) => {
   return date.toLocaleDateString();
 };
 
-// ============ MOCK DATA GENERATOR ============
-const generateMockData = () => {
-  const categories = ['Individual', 'Apartment', 'Commercial', 'Land & Plots', 'Hostel'];
-  const statuses = ['Active', 'Under Review', 'Sold', 'Rented', 'Draft'];
-  const locations = [
-    'Adyar, Chennai', 'Velachery, Chennai', 'OMR, Chennai', 'Porur, Chennai',
-    'Guindy, Chennai', 'T. Nagar, Chennai', 'Mylapore, Chennai', 'Anna Nagar, Chennai',
-    'Nungambakkam, Chennai', 'Egmore, Chennai'
-  ];
-  const propertyTitles = [
-    'Luxury Villa with Private Pool', 'Premium 3BHK Gated Community',
-    'Grade-A Office Space', 'Corner Residential Plot, DTCP Approved',
-    'Co-living Space for Professionals', 'Modern 2BHK Apartment',
-    'Beachfront Villa', 'Commercial Showroom',
-    'Independent House with Garden', 'Student Hostel Near College'
-  ];
-
-  const properties = [];
-  const startDate = new Date('2025-01-01');
-  const endDate = new Date('2026-09-04');
-
-  for (let i = 1; i <= 4872; i++) {
-    const randomDate = new Date(startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime()));
-    const category = categories[Math.floor(Math.random() * categories.length)];
-    const status = statuses[Math.floor(Math.random() * statuses.length)];
-    const location = locations[Math.floor(Math.random() * locations.length)];
-    const title = propertyTitles[Math.floor(Math.random() * propertyTitles.length)] + ` #${i}`;
-    const price = Math.floor(Math.random() * 50000000) + 500000;
-    
-    properties.push({
-      id: i,
-      title,
-      type: category,
-      location,
-      price: `₹${(price / 100000).toFixed(1)}${price > 10000000 ? ' Cr' : ' L'}`,
-      status,
-      addedDate: randomDate,
-      category,
-      thumbnail: `https://ui-avatars.com/api/?name=${category.substring(0, 3)}&background=00695C&color=fff&size=64`
-    });
-  }
-
-  return properties;
-};
-
 // ============ MAIN COMPONENT ============
 const PropertiesOverview = () => {
   const navigate = useNavigate();
@@ -174,8 +160,15 @@ const PropertiesOverview = () => {
   const [endDate, setEndDate] = useState('');
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: '' });
-  const [properties] = useState(generateMockData());
-  const [filteredProperties, setFilteredProperties] = useState([]);
+
+  // ============ REAL BACKEND DATA (see src/services/adminDashboardService.js) ============
+  // `stats` is the current period's getPropertyStats() response (total,
+  // active/sold/rented, byCategory, topLocalities); `prevStats` is the same
+  // call for the immediately preceding window of equal length, used only to
+  // compute each stat card's real period-over-period % change.
+  const [stats, setStats] = useState({});
+  const [prevStats, setPrevStats] = useState({});
+  const [recentProperties, setRecentProperties] = useState([]);
 
   // ============ TOAST ============
   const showToast = (message, type = 'info') => {
@@ -183,42 +176,67 @@ const PropertiesOverview = () => {
     setTimeout(() => setToast({ show: false, message: '', type: '' }), 3000);
   };
 
-  // ============ FILTER PROPERTIES BY DATE RANGE ============
-  const filterPropertiesByDate = (period, customStart = null, customEnd = null) => {
-    const { start, end } = getDateRange(period, customStart, customEnd);
-    
-    // Set time to start of day for start and end of day for end
-    const startOfDay = new Date(start);
-    startOfDay.setHours(0, 0, 0, 0);
-    
-    const endOfDay = new Date(end);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const filtered = properties.filter(prop => {
-      const propDate = new Date(prop.addedDate);
-      return propDate >= startOfDay && propDate <= endOfDay;
-    });
-
-    return filtered;
+  const toIsoDate = (d) => {
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return local.toISOString().split('T')[0];
   };
 
-  // ============ UPDATE FILTERED DATA ============
-  const updateFilteredData = (period, customStart = null, customEnd = null) => {
+  // The window immediately preceding [start, end] with the same length -
+  // works uniformly for every period type (today/week/month/year/custom)
+  // without any calendar-specific logic (leap years, varying month
+  // lengths, ...).
+  const getPreviousRange = (start, end) => {
+    const lengthMs = end.getTime() - start.getTime();
+    const prevEnd = new Date(start.getTime() - 1);
+    const prevStart = new Date(prevEnd.getTime() - lengthMs);
+    return { prevStart, prevEnd };
+  };
+
+  const mapRecentProperty = (card) => {
+    const categoryLabel = CATEGORY_FROM_BACKEND[card.propertyCategory] || card.propertyCategory;
+    return {
+      id: card.id,
+      title: card.propertyTitle || 'Untitled Property',
+      type: categoryLabel,
+      location: [card.area, card.city].filter(Boolean).join(', ') || card.address || '',
+      price: formatCardPrice(card),
+      status: card.status || 'Active',
+      addedDate: card.createdAt ? getTimeAgo(new Date(card.createdAt)) : '',
+      thumbnail: card.coverImage || `https://ui-avatars.com/api/?name=${(categoryLabel || 'P').substring(0, 3)}&background=00695C&color=fff&size=64`,
+      path: CATEGORY_PATHS[categoryLabel] || '/admin/properties/all',
+    };
+  };
+
+  // ============ LOAD OVERVIEW DATA FROM BACKEND ============
+  const loadOverviewData = async (period, customStart = null, customEnd = null) => {
     setLoading(true);
-    setTimeout(() => {
-      let filtered;
-      if (period === 'custom' && customStart && customEnd) {
-        filtered = filterPropertiesByDate('custom', customStart, customEnd);
-      } else {
-        filtered = filterPropertiesByDate(period);
-      }
-      setFilteredProperties(filtered);
-      
+    try {
+      const { start, end } = getDateRange(period, customStart, customEnd);
+      const { prevStart, prevEnd } = getPreviousRange(start, end);
+      const createdFrom = toIsoDate(start);
+      const createdTo = toIsoDate(end);
+
+      const [statsRes, prevStatsRes, listRes] = await Promise.all([
+        adminDashboardService.getPropertyStats({ createdFrom, createdTo }),
+        adminDashboardService.getPropertyStats({
+          createdFrom: toIsoDate(prevStart),
+          createdTo: toIsoDate(prevEnd),
+        }),
+        adminDashboardService.listProperties({ page: 1, limit: 5, createdFrom, createdTo }),
+      ]);
+
+      setStats(statsRes?.data || {});
+      setPrevStats(prevStatsRes?.data || {});
+      setRecentProperties((listRes?.data || []).map(mapRecentProperty));
+
       const label = getPeriodLabel(period);
-      const count = filtered.length;
-      showToast(`📊 Showing ${count} properties for ${label}`, 'info');
+      showToast(`📊 Showing ${statsRes?.data?.total || 0} properties for ${label}`, 'info');
+    } catch (error) {
+      console.error('Error loading properties overview:', error);
+      showToast('❌ Failed to load properties overview', 'error');
+    } finally {
       setLoading(false);
-    }, 300);
+    }
   };
 
   // ============ PERIOD HANDLERS ============
@@ -240,12 +258,12 @@ const PropertiesOverview = () => {
       setShowCustomDatePicker(false);
       setStartDate('');
       setEndDate('');
-      updateFilteredData(period);
+      loadOverviewData(period);
     } else {
       setShowCustomDatePicker(true);
       // If custom dates already set, apply them
       if (startDate && endDate) {
-        updateFilteredData('custom', startDate, endDate);
+        loadOverviewData('custom', startDate, endDate);
       }
     }
   };
@@ -255,7 +273,7 @@ const PropertiesOverview = () => {
       setShowCustomDatePicker(false);
       const start = new Date(startDate);
       const end = new Date(endDate);
-      updateFilteredData('custom', startDate, endDate);
+      loadOverviewData('custom', startDate, endDate);
       showToast(`📅 Showing data from ${start.toLocaleDateString()} to ${end.toLocaleDateString()}`, 'info');
     } else {
       showToast('⚠️ Please select both start and end dates', 'error');
@@ -263,39 +281,60 @@ const PropertiesOverview = () => {
   };
 
   const handleRefresh = () => {
-    updateFilteredData(selectedPeriod, startDate, endDate);
-    showToast('🔄 Properties data refreshed successfully!', 'success');
+    loadOverviewData(selectedPeriod, startDate, endDate).then(() => {
+      showToast('🔄 Properties data refreshed successfully!', 'success');
+    });
   };
 
   // ============ INITIAL LOAD ============
   useEffect(() => {
-    updateFilteredData('this-month');
+    loadOverviewData('this-month');
   }, []);
 
   // ============ COMPUTED STATISTICS ============
   const statsData = useMemo(() => {
-    const total = filteredProperties.length;
-    const individual = filteredProperties.filter(p => p.category === 'Individual').length;
-    const apartments = filteredProperties.filter(p => p.category === 'Apartment').length;
-    const commercial = filteredProperties.filter(p => p.category === 'Commercial').length;
-    const landPlots = filteredProperties.filter(p => p.category === 'Land & Plots').length;
-    const hostels = filteredProperties.filter(p => p.category === 'Hostel').length;
-    const active = filteredProperties.filter(p => p.status === 'Active').length;
-    const soldRented = filteredProperties.filter(p => p.status === 'Sold' || p.status === 'Rented').length;
+    const byCategory = stats.byCategory || {};
+    const prevByCategory = prevStats.byCategory || {};
 
-    // Calculate changes (mock - using percentage of total)
-    const getChange = (count) => {
-      const pct = (count / Math.max(total, 1)) * 100;
-      return `${(pct / 10).toFixed(1)}%`;
+    const total = stats.total || 0;
+    const individual = byCategory.INDIVIDUAL || 0;
+    const apartments = byCategory.APARTMENT || 0;
+    const commercial = byCategory.COMMERCIAL || 0;
+    const landPlots = byCategory.LAND_PLOT || 0;
+    const hostels = byCategory.HOSTEL || 0;
+    const active = stats.active || 0;
+    const soldRented = (stats.sold || 0) + (stats.rented || 0);
+
+    const prevTotal = prevStats.total || 0;
+    const prevActive = prevStats.active || 0;
+    const prevSoldRented = (prevStats.sold || 0) + (prevStats.rented || 0);
+
+    // Real period-over-period % change against the immediately preceding
+    // window of equal length (see getPreviousRange) - not a mock heuristic.
+    const getChange = (current, previous) => {
+      if (previous === 0) {
+        return { text: current > 0 ? '+100%' : '0.0%', trend: 'up' };
+      }
+      const pct = ((current - previous) / previous) * 100;
+      return { text: `${Math.abs(pct).toFixed(1)}%`, trend: pct >= 0 ? 'up' : 'down' };
     };
+
+    const totalChange = getChange(total, prevTotal);
+    const individualChange = getChange(individual, prevByCategory.INDIVIDUAL || 0);
+    const apartmentsChange = getChange(apartments, prevByCategory.APARTMENT || 0);
+    const commercialChange = getChange(commercial, prevByCategory.COMMERCIAL || 0);
+    const landPlotsChange = getChange(landPlots, prevByCategory.LAND_PLOT || 0);
+    const hostelsChange = getChange(hostels, prevByCategory.HOSTEL || 0);
+    const activeChange = getChange(active, prevActive);
+    const soldRentedChange = getChange(soldRented, prevSoldRented);
 
     return [
       {
         id: 1,
         title: 'Total Properties',
         value: total.toLocaleString(),
-        change: getChange(total),
-        trend: 'up',
+        change: totalChange.text,
+        trend: totalChange.trend,
         icon: <FiHome className="text-[#00695C]" />,
         color: 'from-[#E0F2F1] to-[#B2DFDB]',
         path: '/admin/properties/all',
@@ -305,8 +344,8 @@ const PropertiesOverview = () => {
         id: 2,
         title: 'Individual',
         value: individual.toLocaleString(),
-        change: getChange(individual),
-        trend: 'up',
+        change: individualChange.text,
+        trend: individualChange.trend,
         icon: <FaHome className="text-[#26A69A]" />,
         color: 'from-[#E8F5E9] to-[#C8E6C9]',
         path: '/admin/properties/individual/overview',
@@ -316,8 +355,8 @@ const PropertiesOverview = () => {
         id: 3,
         title: 'Apartments',
         value: apartments.toLocaleString(),
-        change: getChange(apartments),
-        trend: 'up',
+        change: apartmentsChange.text,
+        trend: apartmentsChange.trend,
         icon: <MdOutlineApartment className="text-[#9C27B0]" />,
         color: 'from-[#F3E5F5] to-[#E1BEE7]',
         path: '/admin/properties/apartment/overview',
@@ -327,8 +366,8 @@ const PropertiesOverview = () => {
         id: 4,
         title: 'Commercial',
         value: commercial.toLocaleString(),
-        change: getChange(commercial),
-        trend: 'up',
+        change: commercialChange.text,
+        trend: commercialChange.trend,
         icon: <MdOutlineBusiness className="text-[#2196F3]" />,
         color: 'from-[#E3F2FD] to-[#BBDEFB]',
         path: '/admin/properties/commercial/overview',
@@ -338,8 +377,8 @@ const PropertiesOverview = () => {
         id: 5,
         title: 'Land & Plots',
         value: landPlots.toLocaleString(),
-        change: getChange(landPlots),
-        trend: 'up',
+        change: landPlotsChange.text,
+        trend: landPlotsChange.trend,
         icon: <FaMapMarkedAlt className="text-[#FF9800]" />,
         color: 'from-[#FFF3E0] to-[#FFE0B2]',
         path: '/admin/properties/land-plots/overview',
@@ -349,8 +388,8 @@ const PropertiesOverview = () => {
         id: 6,
         title: 'Hostels',
         value: hostels.toLocaleString(),
-        change: getChange(hostels),
-        trend: 'up',
+        change: hostelsChange.text,
+        trend: hostelsChange.trend,
         icon: <FaBed className="text-[#E91E63]" />,
         color: 'from-[#FCE4EC] to-[#F8BBD0]',
         path: '/admin/properties/hostel/overview',
@@ -360,8 +399,8 @@ const PropertiesOverview = () => {
         id: 7,
         title: 'Active Listings',
         value: active.toLocaleString(),
-        change: getChange(active),
-        trend: 'up',
+        change: activeChange.text,
+        trend: activeChange.trend,
         icon: <FaCheckCircleIcon className="text-[#4CAF50]" />,
         color: 'from-[#E8F5E9] to-[#C8E6C9]',
         path: '/admin/properties/all',
@@ -371,15 +410,15 @@ const PropertiesOverview = () => {
         id: 8,
         title: 'Sold / Rented',
         value: soldRented.toLocaleString(),
-        change: getChange(soldRented),
-        trend: 'down',
+        change: soldRentedChange.text,
+        trend: soldRentedChange.trend,
         icon: <FiTrendingUp className="text-[#FF6B6B]" />,
         color: 'from-[#FFEBEE] to-[#FFCDD2]',
         path: '/admin/properties/all',
         notification: 'Navigating to Sold / Rented Properties...',
       },
     ];
-  }, [filteredProperties]);
+  }, [stats, prevStats]);
 
   // ============ CATEGORY BREAKDOWN ============
   const categoryBreakdown = useMemo(() => {
@@ -407,40 +446,25 @@ const PropertiesOverview = () => {
     };
 
     return categories.map(label => {
-      const value = filteredProperties.filter(p => p.category === label).length;
+      const value = stats.byCategory?.[CATEGORY_TO_BACKEND[label]] || 0;
       return { label, value, icon: icons[label], color: colors[label], path: paths[label] };
     });
-  }, [filteredProperties]);
+  }, [stats]);
 
   const totalCategoryValue = categoryBreakdown.reduce((sum, c) => sum + c.value, 0);
 
-  // ============ RECENTLY ADDED PROPERTIES ============
-  const recentProperties = useMemo(() => {
-    return filteredProperties
-      .sort((a, b) => new Date(b.addedDate) - new Date(a.addedDate))
-      .slice(0, 5)
-      .map(p => ({
-        ...p,
-        addedDate: getTimeAgo(new Date(p.addedDate)),
-        path: `/admin/properties/${p.category.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-')}`
-      }));
-  }, [filteredProperties]);
-
   // ============ TOP LOCALITIES ============
+  // Comes straight from getPropertyStats' topLocalities (already the top 5
+  // by count, server-side) - just given the id/name shape this page's
+  // render already expects.
   const topLocalities = useMemo(() => {
-    const localityMap = {};
-    filteredProperties.forEach(p => {
-      const locality = p.location.split(',')[0].trim();
-      if (!localityMap[locality]) {
-        localityMap[locality] = { name: locality, city: 'Chennai', count: 0 };
-      }
-      localityMap[locality].count++;
-    });
-    return Object.values(localityMap)
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5)
-      .map((l, index) => ({ ...l, id: index + 1 }));
-  }, [filteredProperties]);
+    return (stats.topLocalities || []).map((l, index) => ({
+      id: index + 1,
+      name: l.area,
+      city: l.city || '',
+      count: l.count,
+    }));
+  }, [stats]);
 
   const maxLocalityCount = useMemo(() => {
     return Math.max(...topLocalities.map(l => l.count), 1);
@@ -568,7 +592,7 @@ const PropertiesOverview = () => {
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#26A69A] animate-pulse" />
-                {filteredProperties.length} properties in this view
+                {(stats.total || 0).toLocaleString()} properties in this view
               </p>
             </div>
           </div>
@@ -703,7 +727,7 @@ const PropertiesOverview = () => {
                 : getPeriodLabel(selectedPeriod)}
             </span>
             <span className="ml-2 text-gray-400">
-              ({filteredProperties.length} properties)
+              ({(stats.total || 0).toLocaleString()} properties)
             </span>
           </span>
         </div>
@@ -1037,7 +1061,7 @@ const PropertiesOverview = () => {
         </div>
         <div className="flex items-center gap-1 text-[10px] text-gray-400">
           <FiMapPin className="text-[#00695C]" />
-          <span>{filteredProperties.length} listings</span>
+          <span>{(stats.total || 0).toLocaleString()} listings</span>
         </div>
       </div>
     )}
@@ -1066,7 +1090,7 @@ const PropertiesOverview = () => {
           </span>
         </div>
         <div className="text-2xl font-bold text-gray-800">
-          {filteredProperties.filter(p => p.status === 'Active').length}
+          {(stats.active || 0).toLocaleString()}
         </div>
         <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
           <span className="w-1 h-1 rounded-full bg-green-400 animate-pulse" />
@@ -1095,8 +1119,12 @@ const PropertiesOverview = () => {
             Views
           </span>
         </div>
+        {/* Placeholder estimate - no view-tracking table is wired up yet
+            (CustomerPropertyView exists in app.models.customer_activity but
+            nothing writes to it). Scales off the real total so it's not
+            static, but isn't a real metric until that feature is built. */}
         <div className="text-2xl font-bold text-gray-800 flex items-end gap-1">
-          {(filteredProperties.length * 3.8).toFixed(0)}
+          {((stats.total || 0) * 3.8).toFixed(0)}
           <span className="text-sm font-normal text-gray-400">K</span>
         </div>
         <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
@@ -1113,7 +1141,7 @@ const PropertiesOverview = () => {
       <div className="mt-6 text-center animate-fade-in">
         <p className="text-xs text-gray-500 flex items-center justify-center gap-2">
           <span className="w-1 h-1 rounded-full bg-[#26A69A] animate-pulse" />
-          Showing {filteredProperties.length} properties for {getPeriodLabel(selectedPeriod)}
+          Showing {(stats.total || 0).toLocaleString()} properties for {getPeriodLabel(selectedPeriod)}
           <span className="w-1 h-1 rounded-full bg-gray-300" />
           Last Updated: {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
           <button

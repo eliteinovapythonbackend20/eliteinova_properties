@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -19,13 +19,21 @@ class CustomerRequirement(Base):
     preferred_location = Column(Text, nullable=True)
     city = Column(String(100), nullable=True)
     state = Column(String(100), nullable=True)
+    pincode = Column(String(10), nullable=True)
 
     budget_min = Column(Float, nullable=True)
     budget_max = Column(Float, nullable=True)
     furnishing_status = Column(String(20), nullable=True)
 
+    tenant_type = Column(String(50), nullable=True)   # Family / Bachelor / Couple / Students / Working Professionals
+    family_size = Column(Integer, nullable=True)
+    move_in_date = Column(Date, nullable=True)
+    rental_duration = Column(String(20), nullable=True)
+    parking_required = Column(Boolean, default=False, nullable=False)
+    pets_allowed = Column(Boolean, default=False, nullable=False)
+
     notes = Column(Text, nullable=True)
-    is_active = Column(Boolean, default=True, nullable=False)
+    status = Column(String(20), default="active", nullable=False)   # pending | active | expired
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

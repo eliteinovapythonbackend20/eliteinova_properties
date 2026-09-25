@@ -362,11 +362,14 @@ class PropertyRepository:
                 company_website=property_data.get('company_website'),
                 company_description=property_data.get('company_description'),
                 office_address=property_data.get('office_address'),
-                city=property_data.get('city'),
-                district=property_data.get('district'),
-                state=property_data.get('state'),
-                pincode=property_data.get('pincode'),
-                landmark=property_data.get('landmark'),
+                # vendor_* keys, not city/district/state/pincode/landmark -
+                # those are shared with BaseProperty's own address columns
+                # (see FieldMappingService.VENDOR_ADDRESS_TARGET_MAP).
+                city=property_data.get('vendor_city'),
+                district=property_data.get('vendor_district'),
+                state=property_data.get('vendor_state'),
+                pincode=property_data.get('vendor_pincode'),
+                landmark=property_data.get('vendor_landmark'),
                 website=property_data.get('website'),
                 facebook=property_data.get('facebook'),
                 instagram=property_data.get('instagram'),
@@ -406,11 +409,14 @@ class PropertyRepository:
                 company_website=property_data.get('company_website'),
                 company_description=property_data.get('company_description'),
                 office_address=property_data.get('office_address'),
-                city=property_data.get('city'),
-                district=property_data.get('district'),
-                state=property_data.get('state'),
-                pincode=property_data.get('pincode'),
-                landmark=property_data.get('landmark'),
+                # vendor_* keys, not city/district/state/pincode/landmark -
+                # those are shared with BaseProperty's own address columns
+                # (see FieldMappingService.VENDOR_ADDRESS_TARGET_MAP).
+                city=property_data.get('vendor_city'),
+                district=property_data.get('vendor_district'),
+                state=property_data.get('vendor_state'),
+                pincode=property_data.get('vendor_pincode'),
+                landmark=property_data.get('vendor_landmark'),
                 website=property_data.get('website'),
                 facebook=property_data.get('facebook'),
                 instagram=property_data.get('instagram'),

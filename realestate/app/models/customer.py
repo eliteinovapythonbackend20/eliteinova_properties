@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, Date, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -26,6 +26,35 @@ class Customer(Base):
     state = Column(String, nullable=True)
     district = Column(String, nullable=True)
     country = Column(String, nullable=True)
+    pincode = Column(String(10), nullable=True)
+
+    # buyer | tenant | both - explicit, not derived from requirements.
+    customer_type = Column(String(20), nullable=True)
+
+    date_of_birth = Column(Date, nullable=True)
+    gender = Column(String(20), nullable=True)
+    marital_status = Column(String(20), nullable=True)
+    alternate_phone = Column(String(20), nullable=True)
+
+    occupation = Column(String(100), nullable=True)
+    employment_type = Column(String(50), nullable=True)
+    company_name = Column(String(255), nullable=True)
+    designation = Column(String(100), nullable=True)
+    annual_income = Column(Float, nullable=True)
+
+    email_verified = Column(Boolean, default=False, nullable=False)
+    phone_verified = Column(Boolean, default=False, nullable=False)
+
+    kyc_status = Column(String(20), default="pending", nullable=False)
+    kyc_aadhaar_verified = Column(Boolean, default=False, nullable=False)
+    kyc_pan_verified = Column(Boolean, default=False, nullable=False)
+    kyc_gst_verified = Column(Boolean, default=False, nullable=False)
+    kyc_rera_verified = Column(Boolean, default=False, nullable=False)
+
+    preferred_contact_channel = Column(String(20), nullable=True)
+    preferred_contact_time = Column(String(20), nullable=True)
+    preferred_language = Column(String(50), nullable=True)
+    newsletter_opt_in = Column(Boolean, default=False, nullable=False)
 
     # What the customer is looking for - can have several active at once.
     requirements = relationship(

@@ -688,7 +688,7 @@ class PropertyService:
                 'rera_registration_number', 'gst_number', 'experience',
                 'aadhaar_number', 'service_area', 'pan_number', 'company_name', 'company_reg_number',
                 'company_website', 'company_description', 'office_address',
-                'city', 'district', 'state', 'pincode', 'landmark',
+                'vendor_city', 'vendor_district', 'vendor_state', 'vendor_pincode', 'vendor_landmark',
                 'website', 'facebook', 'instagram', 'linkedin', 'youtube',
                 'bank_name', 'account_holder_name', 'account_number',
                 'ifsc_code', 'upi_id', 'signature', 'signature_date',
@@ -699,18 +699,24 @@ class PropertyService:
                 'rera_registration_number', 'gst_number', 'experience',
                 'aadhaar_number', 'service_area', 'pan_number', 'company_name', 'company_reg_number',
                 'company_website', 'company_description', 'office_address',
-                'city', 'district', 'state', 'pincode', 'landmark',
+                'vendor_city', 'vendor_district', 'vendor_state', 'vendor_pincode', 'vendor_landmark',
                 'website', 'facebook', 'instagram', 'linkedin', 'youtube',
                 'bank_name', 'account_holder_name', 'account_number',
                 'ifsc_code', 'upi_id', 'signature', 'signature_date',
                 'signature_place', 'declaration_accepted'
             ]
         }
-        
+
+        # vendor_city/district/state/pincode/landmark are field_mapping_service's
+        # collision-safe stand-ins for the office/company address (see
+        # FieldMappingService.VENDOR_ADDRESS_TARGET_MAP) - translate back to
+        # the real column name here, since update_vendor_detail() setattr's
+        # vendor_data's keys directly onto the ORM row.
         fields = field_mappings.get(posted_by, [])
         for field in fields:
             if field in property_data and property_data[field] is not None:
-                vendor_data[field] = property_data[field]
+                target_field = FieldMappingService.VENDOR_ADDRESS_TARGET_MAP.get(field, field)
+                vendor_data[target_field] = property_data[field]
         
         if vendor_data:
             await self.repository.update_vendor_detail(

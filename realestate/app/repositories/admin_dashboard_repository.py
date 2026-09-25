@@ -9,6 +9,7 @@ It shares only the SQLAlchemy models (the DB schema itself), never the other
 repository's methods.
 """
 
+from datetime import date, datetime, time, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import and_, delete, func, or_, select
@@ -22,6 +23,14 @@ from app.models.property_document import PropertyDocument
 from app.models.property_media import PropertyMedia
 from app.models.property_owner import OwnerProperty
 from app.models.property_pm import PropertyManagementProperty
+
+
+def _day_bounds(d: date, end_of_day: bool) -> datetime:
+    """A calendar date's start-of-day/end-of-day boundary in UTC, for
+    inclusive created_at range filters - PropertiesOverview's period
+    selector (Today/This Week/This Month/custom range/...) sends plain
+    dates, not timestamps."""
+    return datetime.combine(d, time.max if end_of_day else time.min, tzinfo=timezone.utc)
 
 
 class AdminDashboardRepository:
@@ -51,6 +60,8 @@ class AdminDashboardRepository:
         featured: Optional[bool] = None,
         verification_status: Optional[str] = None,
         search: Optional[str] = None,
+        created_from: Optional[date] = None,
+        created_to: Optional[date] = None,
     ) -> Tuple[List[BaseProperty], int]:
         query = select(BaseProperty)
         count_query = select(func.count()).select_from(BaseProperty)
@@ -72,6 +83,10 @@ class AdminDashboardRepository:
             filters.append(BaseProperty.featured.is_(featured))
         if verification_status:
             filters.append(BaseProperty.verification_status == verification_status)
+        if created_from:
+            filters.append(BaseProperty.created_at >= _day_bounds(created_from, end_of_day=False))
+        if created_to:
+            filters.append(BaseProperty.created_at <= _day_bounds(created_to, end_of_day=True))
         if search:
             term = f"%{search}%"
             filters.append(or_(
@@ -109,16 +124,31 @@ class AdminDashboardRepository:
         property_category: Optional[str] = None,
         property_type: Optional[str] = None,
         sub_category: Optional[str] = None,
+        created_from: Optional[date] = None,
+        created_to: Optional[date] = None,
     ) -> Dict[str, Any]:
-        base = select(BaseProperty.status, func.count()).group_by(BaseProperty.status)
+        # Shared across every query below - the caller's scope (role/
+        # category/type/sub-category) plus the optional created_at window
+        # PropertiesOverview's period selector sends. Individual queries add
+        # their own extra narrowing (e.g. byType additionally groups by
+        # property_type) on top of this common set.
+        common_filters = []
         if posted_by:
-            base = base.where(BaseProperty.posted_by == posted_by)
+            common_filters.append(BaseProperty.posted_by == posted_by)
         if property_category:
-            base = base.where(BaseProperty.property_category == property_category)
+            common_filters.append(BaseProperty.property_category == property_category)
         if property_type:
-            base = base.where(BaseProperty.property_type == property_type)
+            common_filters.append(BaseProperty.property_type == property_type)
         if sub_category:
-            base = base.where(BaseProperty.sub_category == sub_category)
+            common_filters.append(BaseProperty.sub_category == sub_category)
+        if created_from:
+            common_filters.append(BaseProperty.created_at >= _day_bounds(created_from, end_of_day=False))
+        if created_to:
+            common_filters.append(BaseProperty.created_at <= _day_bounds(created_to, end_of_day=True))
+
+        base = select(BaseProperty.status, func.count()).group_by(BaseProperty.status)
+        if common_filters:
+            base = base.where(and_(*common_filters))
 
         result = await self.db.execute(base)
         counts = {status: count for status, count in result.all()}
@@ -139,18 +169,9 @@ class AdminDashboardRepository:
         # so they're counted separately.
         featured_query = select(func.count()).select_from(BaseProperty).where(BaseProperty.featured.is_(True))
         verified_query = select(func.count()).select_from(BaseProperty).where(BaseProperty.verification_status == "Verified")
-        if posted_by:
-            featured_query = featured_query.where(BaseProperty.posted_by == posted_by)
-            verified_query = verified_query.where(BaseProperty.posted_by == posted_by)
-        if property_category:
-            featured_query = featured_query.where(BaseProperty.property_category == property_category)
-            verified_query = verified_query.where(BaseProperty.property_category == property_category)
-        if property_type:
-            featured_query = featured_query.where(BaseProperty.property_type == property_type)
-            verified_query = verified_query.where(BaseProperty.property_type == property_type)
-        if sub_category:
-            featured_query = featured_query.where(BaseProperty.sub_category == sub_category)
-            verified_query = verified_query.where(BaseProperty.sub_category == sub_category)
+        if common_filters:
+            featured_query = featured_query.where(and_(*common_filters))
+            verified_query = verified_query.where(and_(*common_filters))
         stats["featured"] = (await self.db.execute(featured_query)).scalar() or 0
         stats["verified"] = (await self.db.execute(verified_query)).scalar() or 0
 
@@ -164,13 +185,9 @@ class AdminDashboardRepository:
         if property_category:
             by_type_query = (
                 select(BaseProperty.property_type, func.count())
-                .where(BaseProperty.property_category == property_category)
+                .where(and_(*common_filters))
                 .group_by(BaseProperty.property_type)
             )
-            if posted_by:
-                by_type_query = by_type_query.where(BaseProperty.posted_by == posted_by)
-            if sub_category:
-                by_type_query = by_type_query.where(BaseProperty.sub_category == sub_category)
             by_type_result = await self.db.execute(by_type_query)
             stats["byType"] = {ptype: count for ptype, count in by_type_result.all() if ptype}
 
@@ -181,11 +198,9 @@ class AdminDashboardRepository:
         if property_category and not sub_category:
             by_sub_category_query = (
                 select(BaseProperty.sub_category, func.count())
-                .where(BaseProperty.property_category == property_category)
+                .where(and_(*common_filters))
                 .group_by(BaseProperty.sub_category)
             )
-            if posted_by:
-                by_sub_category_query = by_sub_category_query.where(BaseProperty.posted_by == posted_by)
             by_sub_category_result = await self.db.execute(by_sub_category_query)
             stats["bySubCategory"] = {sc: count for sc, count in by_sub_category_result.all() if sc}
 
@@ -195,17 +210,46 @@ class AdminDashboardRepository:
         # "Residential Land / Plots"), mirroring how byType above only fires
         # once narrowed to one category.
         if property_type or sub_category:
-            by_purpose_query = select(BaseProperty.listing_purpose, func.count()).group_by(BaseProperty.listing_purpose)
-            if property_type:
-                by_purpose_query = by_purpose_query.where(BaseProperty.property_type == property_type)
-            if sub_category:
-                by_purpose_query = by_purpose_query.where(BaseProperty.sub_category == sub_category)
-            if property_category:
-                by_purpose_query = by_purpose_query.where(BaseProperty.property_category == property_category)
-            if posted_by:
-                by_purpose_query = by_purpose_query.where(BaseProperty.posted_by == posted_by)
+            by_purpose_query = (
+                select(BaseProperty.listing_purpose, func.count())
+                .where(and_(*common_filters))
+                .group_by(BaseProperty.listing_purpose)
+            )
             by_purpose_result = await self.db.execute(by_purpose_query)
             stats["byListingPurpose"] = {purpose: count for purpose, count in by_purpose_result.all() if purpose}
+
+        # Per-category breakdown - only meaningful when the caller hasn't
+        # already scoped to one category (PropertiesOverview's stat cards
+        # and category-distribution chart, across Individual/Apartment/
+        # Commercial/Land & Plot/Hostel), mirroring how bySubCategory above
+        # only fires once narrowed to one category.
+        if not property_category:
+            by_category_query = (
+                select(BaseProperty.property_category, func.count())
+                .where(and_(*common_filters))
+                .group_by(BaseProperty.property_category)
+            )
+            by_category_result = await self.db.execute(by_category_query)
+            stats["byCategory"] = {cat: count for cat, count in by_category_result.all() if cat}
+
+            # Top 5 localities by listing density - area is the free-text
+            # locality a vendor typed (e.g. "Adyar"), city is its city (e.g.
+            # "Chennai"); grouping by the pair keeps same-named areas in
+            # different cities distinct. Only meaningful at the same
+            # cross-category scope as byCategory above (PropertiesOverview's
+            # "Top Localities" panel).
+            top_localities_query = (
+                select(BaseProperty.area, BaseProperty.city, func.count())
+                .where(and_(*common_filters, BaseProperty.area.isnot(None), BaseProperty.area != ""))
+                .group_by(BaseProperty.area, BaseProperty.city)
+                .order_by(func.count().desc())
+                .limit(5)
+            )
+            top_localities_result = await self.db.execute(top_localities_query)
+            stats["topLocalities"] = [
+                {"area": area, "city": city, "count": count}
+                for area, city, count in top_localities_result.all()
+            ]
 
         return stats
 

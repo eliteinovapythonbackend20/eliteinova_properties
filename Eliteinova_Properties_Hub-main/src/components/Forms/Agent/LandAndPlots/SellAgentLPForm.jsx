@@ -341,7 +341,7 @@ export default function SellAgentLPForm({ isOpen, onClose }) {
 
     // Identity Verification (Step 1)
     aadhaarNumber: "", panNumber: "", aadhaarCard: null, panCard: null, passportPhoto: null,
-    addressLine1: "", addressLine2: "", city: "", district: "", state: "", pinCode: "",
+    addressLine1: "", addressLine2: "", agentKycCity: "", agentKycDistrict: "", agentKycState: "", agentKycPinCode: "",
 
     // Property Category & Posted By
     propertyCategory: "land_plot", postedBy: "agent", listingPurpose: "sell",
@@ -629,29 +629,29 @@ export default function SellAgentLPForm({ isOpen, onClose }) {
         e.addressLine1 = "Address contains invalid characters";
       }
       
-      if (!formData.city.trim()) {
-        e.city = "City is required";
-      } else if (!/^[a-zA-Z\s]+$/.test(formData.city)) {
-        e.city = "City can only contain letters and spaces";
+      if (!formData.agentKycCity.trim()) {
+        e.agentKycCity = "City is required";
+      } else if (!/^[a-zA-Z\s]+$/.test(formData.agentKycCity)) {
+        e.agentKycCity = "City can only contain letters and spaces";
       }
-      
-      if (!formData.district.trim()) {
-        e.district = "District is required";
-      } else if (!/^[a-zA-Z\s]+$/.test(formData.district)) {
-        e.district = "District can only contain letters and spaces";
+
+      if (!formData.agentKycDistrict.trim()) {
+        e.agentKycDistrict = "District is required";
+      } else if (!/^[a-zA-Z\s]+$/.test(formData.agentKycDistrict)) {
+        e.agentKycDistrict = "District can only contain letters and spaces";
       }
-      
-      if (!formData.state.trim()) {
-        e.state = "State is required";
-      } else if (!/^[a-zA-Z\s]+$/.test(formData.state)) {
-        e.state = "State can only contain letters and spaces";
+
+      if (!formData.agentKycState.trim()) {
+        e.agentKycState = "State is required";
+      } else if (!/^[a-zA-Z\s]+$/.test(formData.agentKycState)) {
+        e.agentKycState = "State can only contain letters and spaces";
       }
-      
+
       // PIN Code - exactly 6 digits
-      if (!formData.pinCode.trim()) {
-        e.pinCode = "PIN code is required";
-      } else if (!/^[0-9]{6}$/.test(formData.pinCode)) {
-        e.pinCode = "PIN code must be exactly 6 digits";
+      if (!formData.agentKycPinCode.trim()) {
+        e.agentKycPinCode = "PIN code is required";
+      } else if (!/^[0-9]{6}$/.test(formData.agentKycPinCode)) {
+        e.agentKycPinCode = "PIN code must be exactly 6 digits";
       }
     }
     if (s === 2) {
@@ -1263,38 +1263,38 @@ function MobContentSellAgentLP({
           onChange={(e) => updateForm("addressLine2", e.target.value.replace(/[^a-zA-Z0-9\s,.-]/g, ''))} 
         />
       </Field>
-      <Field label="City" required error={errors.city}>
-        <input 
-          className={inp} 
-          placeholder="Enter city" 
-          value={formData.city} 
-          onChange={(e) => updateForm("city", e.target.value.replace(/[^a-zA-Z\s]/g, ''))} 
+      <Field label="City" required error={errors.agentKycCity}>
+        <input
+          className={inp}
+          placeholder="Enter city"
+          value={formData.agentKycCity}
+          onChange={(e) => updateForm("agentKycCity", e.target.value.replace(/[^a-zA-Z\s]/g, ''))}
         />
       </Field>
-      <Field label="District" required error={errors.district}>
-        <input 
-          className={inp} 
-          placeholder="Enter district" 
-          value={formData.district} 
-          onChange={(e) => updateForm("district", e.target.value.replace(/[^a-zA-Z\s]/g, ''))} 
+      <Field label="District" required error={errors.agentKycDistrict}>
+        <input
+          className={inp}
+          placeholder="Enter district"
+          value={formData.agentKycDistrict}
+          onChange={(e) => updateForm("agentKycDistrict", e.target.value.replace(/[^a-zA-Z\s]/g, ''))}
         />
       </Field>
-      <Field label="State" required error={errors.state}>
-        <input 
-          className={inp} 
-          placeholder="Enter state" 
-          value={formData.state} 
-          onChange={(e) => updateForm("state", e.target.value.replace(/[^a-zA-Z\s]/g, ''))} 
+      <Field label="State" required error={errors.agentKycState}>
+        <input
+          className={inp}
+          placeholder="Enter state"
+          value={formData.agentKycState}
+          onChange={(e) => updateForm("agentKycState", e.target.value.replace(/[^a-zA-Z\s]/g, ''))}
         />
       </Field>
-      <Field label="PIN Code" required error={errors.pinCode}>
-        <input 
-          className={inp} 
-          inputMode="numeric" 
-          maxLength={6} 
-          placeholder="Enter 6-digit PIN code" 
-          value={formData.pinCode} 
-          onChange={(e) => updateForm("pinCode", e.target.value.replace(/\D/g, '').slice(0, 6))} 
+      <Field label="PIN Code" required error={errors.agentKycPinCode}>
+        <input
+          className={inp}
+          inputMode="numeric"
+          maxLength={6}
+          placeholder="Enter 6-digit PIN code"
+          value={formData.agentKycPinCode}
+          onChange={(e) => updateForm("agentKycPinCode", e.target.value.replace(/\D/g, '').slice(0, 6))}
         />
       </Field>
     </>
@@ -2179,38 +2179,38 @@ function DtContentSellAgentLP({
           onChange={(e) => updateForm("addressLine2", e.target.value.replace(/[^a-zA-Z0-9\s,.-]/g, ''))} 
         />
       </FieldDt>
-      <FieldDt label="City" required error={errors.city}>
-        <input 
-          className={inp} 
-          placeholder="Enter city" 
-          value={formData.city} 
-          onChange={(e) => updateForm("city", e.target.value.replace(/[^a-zA-Z\s]/g, ''))} 
+      <FieldDt label="City" required error={errors.agentKycCity}>
+        <input
+          className={inp}
+          placeholder="Enter city"
+          value={formData.agentKycCity}
+          onChange={(e) => updateForm("agentKycCity", e.target.value.replace(/[^a-zA-Z\s]/g, ''))}
         />
       </FieldDt>
-      <FieldDt label="District" required error={errors.district}>
-        <input 
-          className={inp} 
-          placeholder="Enter district" 
-          value={formData.district} 
-          onChange={(e) => updateForm("district", e.target.value.replace(/[^a-zA-Z\s]/g, ''))} 
+      <FieldDt label="District" required error={errors.agentKycDistrict}>
+        <input
+          className={inp}
+          placeholder="Enter district"
+          value={formData.agentKycDistrict}
+          onChange={(e) => updateForm("agentKycDistrict", e.target.value.replace(/[^a-zA-Z\s]/g, ''))}
         />
       </FieldDt>
-      <FieldDt label="State" required error={errors.state}>
-        <input 
-          className={inp} 
-          placeholder="Enter state" 
-          value={formData.state} 
-          onChange={(e) => updateForm("state", e.target.value.replace(/[^a-zA-Z\s]/g, ''))} 
+      <FieldDt label="State" required error={errors.agentKycState}>
+        <input
+          className={inp}
+          placeholder="Enter state"
+          value={formData.agentKycState}
+          onChange={(e) => updateForm("agentKycState", e.target.value.replace(/[^a-zA-Z\s]/g, ''))}
         />
       </FieldDt>
-      <FieldDt label="PIN Code" required error={errors.pinCode}>
-        <input 
-          className={inp} 
-          inputMode="numeric" 
-          maxLength={6} 
-          placeholder="Enter 6-digit PIN code" 
-          value={formData.pinCode} 
-          onChange={(e) => updateForm("pinCode", e.target.value.replace(/\D/g, '').slice(0, 6))} 
+      <FieldDt label="PIN Code" required error={errors.agentKycPinCode}>
+        <input
+          className={inp}
+          inputMode="numeric"
+          maxLength={6}
+          placeholder="Enter 6-digit PIN code"
+          value={formData.agentKycPinCode}
+          onChange={(e) => updateForm("agentKycPinCode", e.target.value.replace(/\D/g, '').slice(0, 6))}
         />
       </FieldDt>
     </>

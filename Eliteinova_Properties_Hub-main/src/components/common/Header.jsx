@@ -965,6 +965,33 @@ const Header = ({ onPostPropertyClick }) => {
     }
   };
 
+  // ============ LOAN NAVIGATION ============
+  // CHANGED: Added navigation for the existing Find Loan menu.
+  const handleLoanClick = () => {
+    navigate("/loan");
+    setActiveTab("loan");
+    setActiveDropdown(null);
+    setMobileMenuOpen(false);
+  };
+
+  // ============ INSURANCE NAVIGATION ============
+  // CHANGED: Added Insurance navigation to the shared Loan & Insurance menu.
+  const handleInsuranceClick = () => {
+    navigate("/insurance");
+    setActiveTab("insurance");
+    setActiveDropdown(null);
+    setMobileMenuOpen(false);
+  };
+
+  // ============ SERVICES NAVIGATION ============
+  // CHANGED: Services website now uses /services as its root route.
+  const handleServicesClick = () => {
+    navigate("/services");
+    setActiveTab("services");
+    setActiveDropdown(null);
+    setMobileMenuOpen(false);
+  };
+
   const handleSearch = (e) => {
     e.preventDefault();
     if (searchQuery.trim()) {
@@ -1032,14 +1059,11 @@ const Header = ({ onPostPropertyClick }) => {
 
   const handleDropdownLeave = (e, dropdown) => {
     const relatedTarget = e.relatedTarget;
-    const currentRef = dropdownRefs[dropdown];
+    const currentElement = dropdownRefs[dropdown]?.current;
     
-    if (currentRef && currentRef.current && relatedTarget) {
-      if (currentRef.current.contains(relatedTarget)) {
-        return;
-      }
+    if (currentElement && relatedTarget instanceof Node && currentElement.contains(relatedTarget)) {
+      return;
     }
-    
     hoverTimerRef.current = setTimeout(() => {
       setActiveDropdown(null);
       hoverTimerRef.current = null;
@@ -1410,57 +1434,54 @@ const Header = ({ onPostPropertyClick }) => {
               </div>
             )}
 
+            {/* ============ LOAN & INSURANCE - CHANGED ============ */}
             <div
               ref={dropdownRefs.loan}
               className="relative h-full"
               onMouseEnter={() => handleDropdownEnter("loan")}
               onMouseLeave={(e) => handleDropdownLeave(e, "loan")}
             >
-              <button className="group relative px-5 h-full text-white font-medium text-sm tracking-wide hover:bg-white/5 flex items-center gap-2 transition-all duration-300">
+              <button
+                onClick={() => handleDropdownToggle("loan")}
+                className="group relative px-5 h-full text-white font-medium text-sm tracking-wide hover:bg-white/5 flex items-center gap-2 transition-all duration-300"
+              >
                 <Landmark className="w-4 h-4" />
-                <span>Find Loan</span>
+                <span>Loan & Insurance</span>
                 <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${activeDropdown === "loan" ? 'rotate-180' : ''}`} />
               </button>
 
               {activeDropdown === "loan" && (
-                <div className="absolute top-full left-0 bg-white/95 backdrop-blur-xl rounded-xl shadow-2xl shadow-[#00695C]/20 z-50 min-w-[180px] border border-white/30 animate-dropdown">
-                  {loanMenu.map((item) => (
-                    <button
-                      key={item}
-                      className="w-full px-5 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-gradient-to-r from-[#00695C]/5 to-[#26A69A]/5 transition-all duration-300"
-                    >
-                      {item}
-                    </button>
-                  ))}
+                <div className="absolute top-full left-0 bg-white/95 backdrop-blur-xl rounded-xl shadow-2xl shadow-[#00695C]/20 z-50 min-w-[190px] border border-white/30 animate-dropdown">
+                  <button
+                    onClick={handleLoanClick}
+                    className="w-full px-5 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-gradient-to-r from-[#00695C]/5 to-[#26A69A]/5 transition-all duration-300 flex items-center gap-2"
+                  >
+                    <Landmark className="w-4 h-4" />
+                    Find Loan
+                  </button>
+
+                  <button
+                    onClick={handleInsuranceClick}
+                    className="w-full px-5 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-gradient-to-r from-[#00695C]/5 to-[#26A69A]/5 transition-all duration-300 flex items-center gap-2"
+                  >
+                    <Shield className="w-4 h-4" />
+                    Insurance
+                  </button>
                 </div>
               )}
             </div>
 
-            <div
-              ref={dropdownRefs.services}
-              className="relative h-full"
-              onMouseEnter={() => handleDropdownEnter("services")}
-              onMouseLeave={(e) => handleDropdownLeave(e, "services")}
+            {/* ============ SERVICES WEBSITE - CHANGED ============ */}
+            <button
+              onClick={handleServicesClick}
+              className={`group relative px-5 h-full text-white font-medium text-sm tracking-wide hover:bg-white/5 flex items-center gap-2 transition-all duration-300 ${activeTab === "services" ? 'bg-gradient-to-r from-white/10 to-transparent' : ''}`}
             >
-              <button className="group relative px-5 h-full text-white font-medium text-sm tracking-wide hover:bg-white/5 flex items-center gap-2 transition-all duration-300">
-                <Settings className="w-4 h-4" />
-                <span>Services</span>
-                <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${activeDropdown === "services" ? 'rotate-180' : ''}`} />
-              </button>
-
-              {activeDropdown === "services" && (
-                <div className="absolute top-full left-0 bg-white/95 backdrop-blur-xl rounded-xl shadow-2xl shadow-[#00695C]/20 z-50 min-w-[160px] border border-white/30 animate-dropdown">
-                  {servicesMenu.map((item) => (
-                    <button
-                      key={item}
-                      className="w-full px-5 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-gradient-to-r from-[#00695C]/5 to-[#26A69A]/5 transition-all duration-300"
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
+              <Settings className="w-4 h-4" />
+              <span>Services</span>
+              {activeTab === "services" && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-yellow-300 to-amber-400 animate-pulse-glow" />
               )}
-            </div>
+            </button>
           </div> 
         </nav>
       </header>
@@ -3020,61 +3041,52 @@ const Header = ({ onPostPropertyClick }) => {
                 </div>
               )}
 
+              {/* ============ MOBILE LOAN & INSURANCE - CHANGED ============ */}
               <div className="border-b border-white/5 animate-slide-item" style={{ animationDelay: '250ms' }}>
                 <div 
                   className="flex items-center justify-between py-3 cursor-pointer"
                   onClick={() => toggleMobileDropdown('loan')}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-white font-medium text-sm">💰 Find Loan</span>
+                    <Landmark className="w-4 h-4 text-white" />
+                    <span className="text-white font-medium text-sm">Loan & Insurance</span>
                   </div>
                   <ChevronDown className={`w-3.5 h-3.5 text-white transition-transform duration-300 ${mobileDropdowns.loan ? 'rotate-180' : ''}`} />
                 </div>
-                
+
                 {mobileDropdowns.loan && (
                   <div className="pl-4 pb-2 space-y-1">
-                    {loanMenu.map((item) => (
-                      <button 
-                        key={item} 
-                        onClick={() => {
-                          toggleMobileMenu();
-                        }}
-                        className="block text-white/90 text-xs py-2 w-full text-left hover:text-white transition-colors"
-                      >
-                        {item}
-                      </button>
-                    ))}
+                    <button
+                      onClick={() => {
+                        handleLoanClick();
+                      }}
+                      className="flex items-center gap-2 text-white/90 text-xs py-2 w-full text-left hover:text-white transition-colors"
+                    >
+                      <Landmark className="w-3.5 h-3.5" />
+                      Find Loan
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleInsuranceClick();
+                      }}
+                      className="flex items-center gap-2 text-white/90 text-xs py-2 w-full text-left hover:text-white transition-colors"
+                    >
+                      <Shield className="w-3.5 h-3.5" />
+                      Insurance
+                    </button>
                   </div>
                 )}
               </div>
-              
-              <div className="border-b border-white/5 animate-slide-item" style={{ animationDelay: '300ms' }}>
-                <div 
-                  className="flex items-center justify-between py-3 cursor-pointer"
-                  onClick={() => toggleMobileDropdown('services')}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-white font-medium text-sm">🛠️ Services</span>
-                  </div>
-                  <ChevronDown className={`w-3.5 h-3.5 text-white transition-transform duration-300 ${mobileDropdowns.services ? 'rotate-180' : ''}`} />
-                </div>
-                
-                {mobileDropdowns.services && (
-                  <div className="pl-4 pb-2 space-y-1">
-                    {servicesMenu.map((item) => (
-                      <button 
-                        key={item} 
-                        onClick={() => {
-                          toggleMobileMenu();
-                        }}
-                        className="block text-white/90 text-xs py-2 w-full text-left hover:text-white transition-colors"
-                      >
-                        {item}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+
+              {/* ============ MOBILE SERVICES WEBSITE - CHANGED ============ */}
+              <button
+                onClick={handleServicesClick}
+                className="w-full text-left text-white font-medium py-3 border-b border-white/5 text-sm animate-slide-item flex items-center gap-2"
+                style={{ animationDelay: '300ms' }}
+              >
+                <Settings className="w-4 h-4" />
+                Services
+              </button>
             </div>
           </div>
         </div>

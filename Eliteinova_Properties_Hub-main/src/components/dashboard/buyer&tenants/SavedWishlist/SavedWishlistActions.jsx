@@ -19,6 +19,7 @@ import {
   FaImage, FaUser, FaUserCircle, FaEnvelope, FaBell, FaEye,
   FaTrashAlt, FaUserFriends
 } from 'react-icons/fa';
+import adminCustomerService from '../../../../services/adminCustomerService';
 
 // ============================================================
 // SHARED PROPERTY IMAGES
@@ -36,6 +37,49 @@ const PROPERTY_IMAGES = [
 
 const getRandomPropertyImage = () =>
   PROPERTY_IMAGES[Math.floor(Math.random() * PROPERTY_IMAGES.length)];
+
+/* ============================================================
+   REAL BACKEND MAPPING (CustomerWishlistItem, via /wishlist)
+   ------------------------------------------------------------
+   Field names confirmed against the real backend
+   (app/services/admin_customer_service.py's _to_wishlist_card /
+   _base_activity_fields), read once the parallel backend agent's code
+   landed mid-task - see Wishlist.jsx's mapWishlistRow for the same
+   mapping in detail. wishlistCount ("how many people have this property
+   wishlisted"), notified and removed have no backing field or endpoint
+   anywhere in the real backend (no aggregate-by-property count, no
+   notification system) - they stay exactly as decorative/random as the
+   mock had them. Only Remove (delete) is real; Notify stays local-only
+   (see handleSendNotification below).
+============================================================ */
+const CATEGORY_FROM_BACKEND = {
+  INDIVIDUAL: 'Individual',
+  APARTMENT: 'Apartment',
+  COMMERCIAL: 'Commercial',
+  LAND_PLOT: 'Land & Plots',
+  HOSTEL: 'Hostel',
+};
+
+function mapWishlistActionRow(row) {
+  return {
+    id: row.id,
+    buyerId: row.customerId || '',
+    buyerName: row.customerName || '',
+    buyerEmail: row.customerEmail || '',
+    propertyId: row.propertyId || '',
+    propertyName: row.propertyTitle || 'Untitled Property',
+    propertyType: CATEGORY_FROM_BACKEND[row.propertyCategory] || row.propertyCategory || '',
+    location: row.address || '',
+    price: row.currentPrice ?? row.price ?? 0,
+    wishlistCount: Math.floor(Math.random() * 15) + 1,
+    availabilityStatus: row.propertyStatus === 'Active' ? 'available' : 'pending',
+    addedDate: row.addedAt || new Date().toISOString(),
+    notified: false,
+    removed: false,
+    notes: row.notes || '',
+    imageUrl: row.coverImage || getRandomPropertyImage(),
+  };
+}
 
 // ============================================================
 // TOAST COMPONENT
@@ -279,8 +323,9 @@ const ViewWishlistActionsModal = ({ item, show, onClose, onRemove, onNotify, onV
   };
 
   // Fix: item.imageUrl is now always a valid, working Unsplash URL
-  // (assigned from PROPERTY_IMAGES in generateMockWishlist), so we
-  // no longer need a separate random-id fallback here. Kept a safe
+  // (assigned from PROPERTY_IMAGES in mapWishlistActionRow when the real
+  // row has no coverImage), so we no longer need a separate random-id
+  // fallback here. Kept a safe
   // fallback to PROPERTY_IMAGES in case imageUrl is ever missing.
   const imageUrl = item.imageUrl || getRandomPropertyImage();
 
@@ -521,73 +566,45 @@ const SavedWishlistActions = () => {
     });
   }, []);
 
-  // ============ GENERATE MOCK DATA ============
-  const generateMockWishlist = useCallback(() => {
-    const buyerNames = ['Rahul Kumar', 'Anita Sharma', 'Sanjay Singh', 'Divya Patel', 'Karthik Reddy', 'Neha Gupta', 'Manoj Verma', 'Swati Joshi', 'Rohit Malhotra', 'Pallavi Mehta'];
-    const buyerEmails = ['rahul@email.com', 'anita@email.com', 'sanjay@email.com', 'divya@email.com', 'karthik@email.com', 'neha@email.com', 'manoj@email.com', 'swati@email.com', 'rohit@email.com', 'pallavi@email.com'];
-    const propertyNames = ['Green Valley Villa', 'Lake View Apartments', 'Sunrise Heights', 'Royal Palm Estate', 'Silver Oak Residency', 'Golden Meadows', 'Cedar Woods', 'Maple Leaf Homes', 'Orchid Garden', 'Tulip Tower'];
-    const propertyTypes = ['Individual', 'Apartment', 'Commercial', 'Land & Plots', 'Hostel'];
-    const locations = ['MG Road', 'Banjara Hills', 'Indiranagar', 'Koramangala', 'Whitefield', 'Jubilee Hills', 'Connaught Place', 'Salt Lake'];
-    const statuses = ['available', 'pending', 'sold', 'rented'];
-
-    const wishlist = [];
-    const usedNames = new Set();
-
-    for (let i = 1; i <= 60; i++) {
-      let propertyName, buyerName;
-      let attempts = 0;
-      do {
-        propertyName = propertyNames[Math.floor(Math.random() * propertyNames.length)];
-        buyerName = buyerNames[Math.floor(Math.random() * buyerNames.length)];
-        attempts++;
-      } while (usedNames.has(`${propertyName}_${buyerName}`) && attempts < 50);
-      usedNames.add(`${propertyName}_${buyerName}`);
-
-      const price = Math.floor(Math.random() * 8000000 + 2000000);
-      const wishlistCount = Math.floor(Math.random() * 15) + 1;
-
-      const addedDate = new Date();
-      addedDate.setDate(addedDate.getDate() - Math.floor(Math.random() * 30));
-
-      wishlist.push({
-        id: `wish_${i}`,
-        buyerId: `buyer_${Math.floor(Math.random() * 10) + 1}`,
-        buyerName: buyerName,
-        buyerEmail: buyerEmails[Math.floor(Math.random() * buyerEmails.length)],
-        propertyId: `prop_${Math.floor(Math.random() * 10) + 1}`,
-        propertyName: propertyName,
-        propertyType: propertyTypes[Math.floor(Math.random() * propertyTypes.length)],
-        location: locations[Math.floor(Math.random() * locations.length)],
-        price: price,
-        wishlistCount: wishlistCount,
-        availabilityStatus: statuses[Math.floor(Math.random() * statuses.length)],
-        addedDate: addedDate.toISOString(),
-        notified: Math.random() > 0.7,
-        removed: Math.random() > 0.9,
-        notes: Math.random() > 0.7 ? 'Interested in this property' : '',
-        // Fix: use a real, working image from the shared PROPERTY_IMAGES
-        // list instead of a randomly-generated (almost always broken)
-        // Unsplash photo id. This is what was causing "Image not available".
-        imageUrl: getRandomPropertyImage()
-      });
+  // ============ FETCH ALL WISHLIST ITEMS (every page) ============
+  const fetchAllWishlistItems = useCallback(async () => {
+    let all = [];
+    let page = 1;
+    let total = Infinity;
+    while (all.length < total) {
+      const response = await adminCustomerService.listWishlist({ page, limit: 100 });
+      const mapped = (response?.data || []).map(mapWishlistActionRow);
+      if (mapped.length === 0) break;
+      all = all.concat(mapped);
+      total = response?.pagination?.total ?? all.length;
+      page += 1;
     }
-
-    computeStats(wishlist);
-    return wishlist;
-  }, [computeStats]);
+    return all;
+  }, []);
 
   // ============ INITIALIZE DATA ============
   useEffect(() => {
-    try {
-      const mockWishlist = generateMockWishlist();
-      setWishlistItems(mockWishlist);
-      setFilteredItems(mockWishlist);
-      setStatsAnimating(true);
-      setTimeout(() => setStatsAnimating(false), 1000);
-    } catch (error) {
-      console.error('Error generating mock wishlist:', error);
-    }
-  }, [generateMockWishlist]);
+    let cancelled = false;
+    setLoading(true);
+    fetchAllWishlistItems()
+      .then((real) => {
+        if (cancelled) return;
+        setWishlistItems(real);
+        setFilteredItems(real);
+        computeStats(real);
+        setStatsAnimating(true);
+        setTimeout(() => setStatsAnimating(false), 1000);
+      })
+      .catch((error) => {
+        console.error('Error loading wishlist:', error);
+        setToast({ message: 'Failed to load wishlist', type: 'error' });
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ============ FILTER ITEMS ============
   const filterItems = useCallback(() => {
@@ -689,6 +706,9 @@ const SavedWishlistActions = () => {
   }, [showViewModal]);
 
   // ============ SEND NOTIFICATION ============
+  // Decorative/local-only: the contract has no notification endpoint at
+  // all, so there is nowhere real to send this - it only flips a local
+  // "notified" flag that itself has no backing field on the server.
   const handleSendNotification = useCallback((subject, message) => {
     if (!viewingItem) return;
 
@@ -718,24 +738,29 @@ const SavedWishlistActions = () => {
   }, [showViewModal]);
 
   // ============ CONFIRM REMOVE ============
-  const confirmRemove = useCallback(() => {
+  const confirmRemove = useCallback(async () => {
     if (!confirmItem) return;
 
     setActionLoading(confirmItem.id);
-    setTimeout(() => {
+    try {
+      await adminCustomerService.deleteWishlistItem(confirmItem.id);
       setWishlistItems(prev => {
         const updated = prev.filter(item => item.id !== confirmItem.id);
         computeStats(updated);
         return updated;
       });
-      setActionLoading(null);
-      setShowConfirmModal(false);
-      setConfirmItem(null);
       setToast({
         message: `Removed "${confirmItem.propertyName}" from wishlist`,
         type: 'warning'
       });
-    }, 700);
+    } catch (error) {
+      console.error('Error removing wishlist item:', error);
+      setToast({ message: 'Failed to remove wishlist item', type: 'error' });
+    } finally {
+      setActionLoading(null);
+      setShowConfirmModal(false);
+      setConfirmItem(null);
+    }
   }, [confirmItem, computeStats]);
 
   // ============ VIEW PROPERTY ============
@@ -779,23 +804,23 @@ const SavedWishlistActions = () => {
   }, []);
 
   // ============ REFRESH DATA ============
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     setLoading(true);
-    setTimeout(() => {
-      try {
-        const mockWishlist = generateMockWishlist();
-        setWishlistItems(mockWishlist);
-        setFilteredItems(mockWishlist);
-        setStatsAnimating(true);
-        setTimeout(() => setStatsAnimating(false), 1000);
-        setToast({ message: 'Data refreshed successfully', type: 'success' });
-      } catch (error) {
-        console.error('Error refreshing data:', error);
-        setToast({ message: 'Error refreshing data', type: 'error' });
-      }
+    try {
+      const real = await fetchAllWishlistItems();
+      setWishlistItems(real);
+      setFilteredItems(real);
+      computeStats(real);
+      setStatsAnimating(true);
+      setTimeout(() => setStatsAnimating(false), 1000);
+      setToast({ message: 'Data refreshed successfully', type: 'success' });
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      setToast({ message: 'Error refreshing data', type: 'error' });
+    } finally {
       setLoading(false);
-    }, 1000);
-  }, [generateMockWishlist]);
+    }
+  }, [fetchAllWishlistItems, computeStats]);
 
   // ============ EXPORT DATA ============
   const handleExport = useCallback(() => {

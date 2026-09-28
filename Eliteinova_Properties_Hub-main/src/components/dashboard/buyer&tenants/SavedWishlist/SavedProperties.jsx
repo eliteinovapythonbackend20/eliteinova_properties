@@ -16,6 +16,59 @@ import {
   FaTimes, FaStar as FaStarSolid, FaUserTie, FaHome as FaHomeSolid,
   FaImage
 } from 'react-icons/fa';
+import adminCustomerService from '../../../../services/adminCustomerService';
+
+/* ============================================================
+   REAL BACKEND MAPPING (CustomerSavedProperty, via /saved-properties)
+   ------------------------------------------------------------
+   Field names confirmed against the real backend
+   (app/services/admin_customer_service.py's _to_saved_property_card /
+   _base_activity_fields), read once the parallel backend agent's code
+   landed mid-task: id, customerId, customerName, customerEmail,
+   customerPhone, propertyId, propertyTitle, propertyType, propertyCategory,
+   listingPurpose, city, state, address, price, propertyStatus, coverImage,
+   notes, savedAt. propertyType maps mock's category dropdown to the
+   backend's own PROPERTY CATEGORY enum (propertyCategory), not the
+   finer-grained propertyType field, which is a different value. bedrooms/
+   bathrooms/sqft area have no field on this card at all (the backend never
+   selects them here) - kept at 0, decorative, not invented. propertyStatus
+   is really just BaseProperty's simple "Active"/"Inactive" visibility flag,
+   not the richer available/pending/sold/rented lifecycle this mock's UI
+   was built around - compressed to available/pending here (no real
+   sold/rented signal exists on this endpoint), so those two buckets can
+   never populate from real data. There is no update endpoint for a
+   saved-property row (only list + delete) - editing one stays
+   local/decorative only.
+============================================================ */
+const CATEGORY_FROM_BACKEND = {
+  INDIVIDUAL: 'Individual',
+  APARTMENT: 'Apartment',
+  COMMERCIAL: 'Commercial',
+  LAND_PLOT: 'Land & Plots',
+  HOSTEL: 'Hostel',
+};
+
+function mapSavedPropertyRow(row) {
+  return {
+    id: row.id,
+    buyerName: row.customerName || '',
+    buyerEmail: row.customerEmail || '',
+    buyerPhone: row.customerPhone || '',
+    propertyName: row.propertyTitle || 'Untitled Property',
+    propertyType: CATEGORY_FROM_BACKEND[row.propertyCategory] || row.propertyCategory || '',
+    location: row.address || '',
+    city: row.city || '',
+    state: row.state || '',
+    price: row.price ?? 0,
+    savedDate: row.savedAt || new Date().toISOString(),
+    propertyStatus: row.propertyStatus === 'Active' ? 'available' : 'pending',
+    notes: row.notes || '',
+    bedrooms: 0,
+    bathrooms: 0,
+    area: 0,
+    imageUrl: row.coverImage || '',
+  };
+}
 
 // ============================================================
 // TOAST COMPONENT
@@ -700,83 +753,45 @@ const SavedProperties = () => {
     });
   }, []);
 
-  // ============ GENERATE MOCK DATA ============
-  const generateMockProperties = useCallback(() => {
-    const buyerNames = ['Rahul Kumar', 'Anita Sharma', 'Sanjay Singh', 'Divya Patel', 'Karthik Reddy', 'Neha Gupta', 'Manoj Verma', 'Swati Joshi', 'Rohit Malhotra', 'Pallavi Mehta', 'Vivek Nair', 'Shalini Pillai'];
-    const propertyNames = ['Green Valley Villa', 'Lake View Apartments', 'Sunrise Heights', 'Royal Palm Estate', 'Silver Oak Residency', 'Golden Meadows', 'Cedar Woods', 'Maple Leaf Homes', 'Orchid Garden', 'Tulip Tower', 'Lotus Heights', 'Jasmine Villa'];
-    const cities = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune', 'Ahmedabad', 'Jaipur'];
-    const states = ['Maharashtra', 'Delhi', 'Karnataka', 'Tamil Nadu', 'Telangana', 'Uttar Pradesh', 'Gujarat', 'Rajasthan'];
-    const propertyTypes = ['Individual', 'Apartment', 'Commercial', 'Land & Plots', 'Hostel'];
-    const statuses = ['available', 'pending', 'sold', 'rented'];
-    const locations = ['MG Road', 'Banjara Hills', 'Indiranagar', 'Koramangala', 'Whitefield', 'Jubilee Hills', 'Connaught Place', 'Salt Lake', 'Marine Drive', 'Andheri'];
-
-    const propertyImages = [
-      'https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=800',
-      'https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=800',
-      'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=800',
-      'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800',
-      'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800',
-      'https://images.unsplash.com/photo-1582268611958-ebfd161ef9cf?w=800',
-      'https://images.unsplash.com/photo-1574362848149-11496d93a7c7?w=800',
-      'https://images.unsplash.com/photo-1583608205776-bfd35f0d9f83?w=800'
-    ];
-
-    const propertiesList = [];
-    const usedNames = new Set();
-
-    for (let i = 1; i <= 60; i++) {
-      let propertyName, buyerName;
-      let attempts = 0;
-      do {
-        propertyName = propertyNames[Math.floor(Math.random() * propertyNames.length)];
-        buyerName = buyerNames[Math.floor(Math.random() * buyerNames.length)];
-        attempts++;
-      } while (usedNames.has(`${propertyName}_${buyerName}`) && attempts < 50);
-      usedNames.add(`${propertyName}_${buyerName}`);
-
-      const city = cities[Math.floor(Math.random() * cities.length)];
-      const price = Math.floor(Math.random() * 8000000 + 2000000);
-
-      const savedDate = new Date();
-      savedDate.setDate(savedDate.getDate() - Math.floor(Math.random() * 90));
-
-      propertiesList.push({
-        id: `saved_${i}`,
-        buyerName: buyerName,
-        buyerEmail: `${buyerName.toLowerCase().replace(' ', '.')}${Math.floor(Math.random() * 100)}@email.com`,
-        buyerPhone: `+91 ${Math.floor(Math.random() * 9000000000 + 1000000000)}`,
-        propertyName: propertyName,
-        propertyType: propertyTypes[Math.floor(Math.random() * propertyTypes.length)],
-        location: locations[Math.floor(Math.random() * locations.length)],
-        city: city,
-        state: states[Math.floor(Math.random() * states.length)],
-        price: price,
-        savedDate: savedDate.toISOString(),
-        propertyStatus: statuses[Math.floor(Math.random() * statuses.length)],
-        notes: Math.random() > 0.7 ? 'Interested in this property' : '',
-        bedrooms: Math.floor(Math.random() * 4) + 1,
-        bathrooms: Math.floor(Math.random() * 3) + 1,
-        area: Math.floor(Math.random() * 1500 + 500),
-        imageUrl: propertyImages[Math.floor(Math.random() * propertyImages.length)]
-      });
+  // ============ FETCH ALL SAVED PROPERTIES (every page) ============
+  const fetchAllSavedProperties = useCallback(async () => {
+    let all = [];
+    let page = 1;
+    let total = Infinity;
+    while (all.length < total) {
+      const response = await adminCustomerService.listSavedProperties({ page, limit: 100 });
+      const mapped = (response?.data || []).map(mapSavedPropertyRow);
+      if (mapped.length === 0) break;
+      all = all.concat(mapped);
+      total = response?.pagination?.total ?? all.length;
+      page += 1;
     }
-
-    computeStats(propertiesList);
-    return propertiesList;
-  }, [computeStats]);
+    return all;
+  }, []);
 
   // ============ INITIALIZE DATA ============
   useEffect(() => {
-    try {
-      const mockProperties = generateMockProperties();
-      setProperties(mockProperties);
-      setFilteredProperties(mockProperties);
-      setStatsAnimating(true);
-      setTimeout(() => setStatsAnimating(false), 1000);
-    } catch (error) {
-      console.error('Error generating mock properties:', error);
-    }
-  }, [generateMockProperties]);
+    let cancelled = false;
+    setLoading(true);
+    fetchAllSavedProperties()
+      .then((real) => {
+        if (cancelled) return;
+        setProperties(real);
+        setFilteredProperties(real);
+        computeStats(real);
+        setStatsAnimating(true);
+        setTimeout(() => setStatsAnimating(false), 1000);
+      })
+      .catch((error) => {
+        console.error('Error loading saved properties:', error);
+        setToast({ message: 'Failed to load saved properties', type: 'error' });
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ============ FILTER PROPERTIES ============
   const filterProperties = useCallback(() => {
@@ -888,6 +903,9 @@ const SavedProperties = () => {
   }, []);
 
   // ============ SAVE EDITED PROPERTY ============
+  // Decorative/local-only: the contract only exposes list + delete for a
+  // saved-property row (no update endpoint), so there is nowhere real to
+  // send this - it only ever updates the in-memory list.
   const handleSaveProperty = useCallback((updatedProperty) => {
     setProperties(prev => {
       const updated = prev.map(p =>
@@ -900,23 +918,28 @@ const SavedProperties = () => {
   }, [computeStats]);
 
   // ============ REMOVE FROM SAVED ============
-  const handleRemoveSaved = useCallback((propId) => {
+  const handleRemoveSaved = useCallback(async (propId) => {
     const prop = properties.find(p => p.id === propId);
     if (!prop) return;
 
     if (!window.confirm(`Remove "${prop.propertyName}" from saved properties?`)) return;
 
     setActionLoading(propId);
-    setTimeout(() => {
+    try {
+      await adminCustomerService.deleteSavedProperty(propId);
       setProperties(prev => {
         const updated = prev.filter(p => p.id !== propId);
         computeStats(updated);
         return updated;
       });
-      setActionLoading(null);
       setShowViewModal(false);
       setToast({ message: `Removed "${prop.propertyName}" from saved properties`, type: 'warning' });
-    }, 700);
+    } catch (error) {
+      console.error('Error removing saved property:', error);
+      setToast({ message: 'Failed to remove saved property', type: 'error' });
+    } finally {
+      setActionLoading(null);
+    }
   }, [properties, computeStats]);
 
   // ============ STAT CLICK HANDLER ============
@@ -960,23 +983,23 @@ const SavedProperties = () => {
   }, []);
 
   // ============ REFRESH DATA ============
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     setLoading(true);
-    setTimeout(() => {
-      try {
-        const mockProperties = generateMockProperties();
-        setProperties(mockProperties);
-        setFilteredProperties(mockProperties);
-        setStatsAnimating(true);
-        setTimeout(() => setStatsAnimating(false), 1000);
-        setToast({ message: 'Data refreshed successfully', type: 'success' });
-      } catch (error) {
-        console.error('Error refreshing data:', error);
-        setToast({ message: 'Error refreshing data', type: 'error' });
-      }
+    try {
+      const real = await fetchAllSavedProperties();
+      setProperties(real);
+      setFilteredProperties(real);
+      computeStats(real);
+      setStatsAnimating(true);
+      setTimeout(() => setStatsAnimating(false), 1000);
+      setToast({ message: 'Data refreshed successfully', type: 'success' });
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      setToast({ message: 'Error refreshing data', type: 'error' });
+    } finally {
       setLoading(false);
-    }, 1000);
-  }, [generateMockProperties]);
+    }
+  }, [fetchAllSavedProperties, computeStats]);
 
   // ============ EXPORT DATA ============
   const handleExport = useCallback(() => {

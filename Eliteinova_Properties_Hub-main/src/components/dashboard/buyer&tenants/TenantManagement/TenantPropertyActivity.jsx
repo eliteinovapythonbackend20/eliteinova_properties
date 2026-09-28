@@ -14,6 +14,95 @@ import {
   FiGlobe, FiSave, FiSliders, FiFileText, FiClipboard
 } from 'react-icons/fi';
 import { FaCheck, FaStar, FaRegStar, FaBuilding, FaRegCalendarAlt, FaIdCard, FaFileAlt, FaCertificate, FaShieldAlt } from 'react-icons/fa';
+import adminCustomerService from '../../../../services/adminCustomerService';
+
+/* ============================================================
+   REAL BACKEND MAPPING (Customer table, customerType filter)
+   ------------------------------------------------------------
+   Same rationale as BuyerPropertyActivity.jsx: activity.viewedProperties/
+   savedProperties/wishlist are real (CustomerPropertyView/
+   CustomerSavedProperty/CustomerWishlistItem via listPropertyViews/
+   listSavedProperties/listWishlist). rentalEnquiries/rentalRequests/
+   siteVisits/applications/leaseRequests/leadHistory belong to the Lead/
+   SiteVisit/RentalRequest families, out of scope here and with no
+   endpoint at all - kept exactly as decorative/random as the mock had
+   them. budget/preferredPropertyType/preferredLocation are
+   CustomerRequirement-level concepts with no field on Customer itself -
+   also kept decorative.
+============================================================ */
+function decorativeActivityExtras() {
+  return {
+    rentalEnquiries: Math.floor(Math.random() * 15) + 1,
+    rentalRequests: Math.floor(Math.random() * 10) + 1,
+    siteVisits: Math.floor(Math.random() * 10) + 1,
+    applications: Math.floor(Math.random() * 12) + 1,
+    leaseRequests: Math.floor(Math.random() * 8) + 1,
+    leadHistory: Math.floor(Math.random() * 30) + 1,
+  };
+}
+
+const CUSTOMER_TYPE_TO_REQUIREMENT = { buyer: 'Buy', tenant: 'Rent', both: 'Both' };
+
+function mapCustomerToActivityTenant(customer) {
+  const activity = {
+    viewedProperties: 0,
+    savedProperties: 0,
+    wishlist: 0,
+    ...decorativeActivityExtras(),
+  };
+  return {
+    id: customer.id,
+    avatar: (customer.fullName || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'NA',
+    status: (customer.status || 'pending').toLowerCase(),
+    kycStatus: (customer.kycStatus || 'pending').toLowerCase(),
+    kyc: {
+      aadhaar: !!customer.aadhaarVerified,
+      pan: !!customer.panVerified,
+      gst: !!customer.gstVerified,
+      rera: !!customer.reraVerified,
+    },
+    registrationDate: customer.createdAt || new Date().toISOString(),
+    requirement: CUSTOMER_TYPE_TO_REQUIREMENT[customer.customerType] || 'Rent',
+    personal: {
+      name: customer.fullName || '',
+      dob: customer.dateOfBirth || '',
+      gender: customer.gender || '',
+      maritalStatus: customer.maritalStatus || '',
+    },
+    contact: {
+      email: customer.email || '',
+      phone: customer.phoneNumber || '',
+      altPhone: customer.alternatePhone || '',
+      verification: { email: !!customer.emailVerified, phone: !!customer.phoneVerified },
+    },
+    location: {
+      city: customer.city || '',
+      state: customer.state || '',
+      address: customer.address || '',
+      pincode: customer.pincode || '',
+    },
+    budget: customer.budget || { min: '', max: '', label: 'N/A' },
+    preferredPropertyType: customer.preferredPropertyType || [],
+    preferredLocation: customer.preferredLocation || [],
+    employment: {
+      occupation: customer.occupation || '',
+      employmentType: customer.employmentType || 'Salaried',
+      companyName: customer.companyName || '',
+      designation: customer.designation || '',
+      annualIncome: customer.annualIncome || '',
+    },
+    communicationPreferences: {
+      preferredChannel: customer.preferredContactChannel || 'Email',
+      preferredTime: customer.preferredContactTime || 'Morning',
+      language: customer.preferredLanguage || 'English',
+      newsletter: !!customer.newsletterOptIn,
+    },
+    activity,
+    savedProperties: activity.savedProperties,
+    viewedProperties: activity.viewedProperties,
+    inquiries: activity.rentalEnquiries,
+  };
+}
 
 // ============================================================
 // STANDALONE COMPONENTS
@@ -490,132 +579,90 @@ const TenantPropertyActivity = () => {
     setTimeout(() => setToast(null), duration);
   }, []);
 
-  // ============ MOCK DATA WITH ACTIVITY ============
-  const generateMockTenants = useCallback(() => {
-    const firstNames = ['Rajesh', 'Priya', 'Amit', 'Sneha', 'Vikram', 'Ananya', 'Deepak', 'Meera', 'Ravi', 'Kavya', 'Suresh', 'Pooja', 'Arjun', 'Lakshmi', 'Kiran'];
-    const lastNames = ['Kumar', 'Sharma', 'Singh', 'Patel', 'Reddy', 'Gupta', 'Verma', 'Joshi', 'Malhotra', 'Mehta', 'Nair', 'Rao', 'Shetty', 'Agarwal', 'Desai'];
-    const cities = ['Chennai', 'Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Pune', 'Coimbatore', 'Madurai'];
-    const stateByCity = { Chennai: 'Tamil Nadu', Coimbatore: 'Tamil Nadu', Madurai: 'Tamil Nadu', Mumbai: 'Maharashtra', Pune: 'Maharashtra', Delhi: 'Delhi', Bangalore: 'Karnataka', Hyderabad: 'Telangana' };
-    const statuses = ['pending', 'active', 'blocked'];
-    const kycStatuses = ['pending', 'verified', 'rejected'];
-    const requirements = ['Rent', 'Lease', 'Both'];
-    const occupations = ['Software Engineer', 'Doctor', 'Business Owner', 'Bank Manager', 'Architect', 'Government Employee', 'Consultant'];
-    const employmentTypes = ['Salaried', 'Self-Employed', 'Business Owner', 'Retired'];
-    const budgetPairs = [['20L', '50L'], ['50L', '1Cr'], ['1Cr', '2Cr'], ['2Cr', '5Cr']];
-    const localities = ['Anna Nagar', 'T Nagar', 'Velachery', 'Adyar', 'Whitefield', 'Koramangala', 'Bandra', 'Andheri', 'Gachibowli', 'Banjara Hills'];
-
-    const tenants = [];
-    const usedNames = new Set();
-
-    for (let i = 1; i <= 60; i++) {
-      let firstName, lastName, fullName;
-      let attempts = 0;
-      do {
-        firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-        lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-        fullName = `${firstName} ${lastName}`;
-        attempts++;
-      } while (usedNames.has(fullName) && attempts < 50);
-      usedNames.add(fullName);
-
-      const status = statuses[Math.floor(Math.random() * statuses.length)];
-      const kycStatus = kycStatuses[Math.floor(Math.random() * kycStatuses.length)];
-      const city = cities[Math.floor(Math.random() * cities.length)];
-      const requirement = requirements[Math.floor(Math.random() * requirements.length)];
-      const budgetPair = budgetPairs[Math.floor(Math.random() * budgetPairs.length)];
-
-      const date = new Date();
-      date.setDate(date.getDate() - Math.floor(Math.random() * 90));
-      const dob = new Date(1975 + Math.floor(Math.random() * 25), Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1);
-
-      const propertyTypeCount = 1 + Math.floor(Math.random() * 3);
-      const shuffledTypes = ['Apartment', 'Villa', 'Independent House', 'Plot', 'Commercial', 'Farmhouse'].sort(() => Math.random() - 0.5).slice(0, propertyTypeCount);
-      const localityCount = 1 + Math.floor(Math.random() * 2);
-      const shuffledLocalities = [...localities].sort(() => Math.random() - 0.5).slice(0, localityCount);
-
-      // Generate activity data for tenants
-      const activity = {
-        viewedProperties: Math.floor(Math.random() * 50) + 5,
-        savedProperties: Math.floor(Math.random() * 25) + 2,
-        wishlist: Math.floor(Math.random() * 20) + 1,
-        rentalEnquiries: Math.floor(Math.random() * 15) + 1,
-        rentalRequests: Math.floor(Math.random() * 10) + 1,
-        siteVisits: Math.floor(Math.random() * 10) + 1,
-        applications: Math.floor(Math.random() * 12) + 1,
-        leaseRequests: Math.floor(Math.random() * 8) + 1,
-        leadHistory: Math.floor(Math.random() * 30) + 1,
-      };
-
-      tenants.push({
-        id: `tenant_${i}`,
-        avatar: firstName[0] + lastName[0],
-        status,
-        kycStatus,
-        kyc: {
-          aadhaar: Math.random() > 0.3,
-          pan: Math.random() > 0.35,
-          gst: Math.random() > 0.7,
-          rera: Math.random() > 0.6,
-        },
-        registrationDate: date.toISOString(),
-        requirement,
-        personal: {
-          name: fullName,
-          dob: dob.toISOString().split('T')[0],
-          gender: Math.random() > 0.5 ? 'Male' : 'Female',
-          maritalStatus: Math.random() > 0.5 ? 'Married' : 'Single',
-        },
-        contact: {
-          email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}${Math.floor(Math.random() * 100)}@email.com`,
-          phone: `+91 ${Math.floor(Math.random() * 9000000000 + 1000000000)}`,
-          altPhone: `+91 ${Math.floor(Math.random() * 9000000000 + 1000000000)}`,
-          verification: { email: Math.random() > 0.25, phone: Math.random() > 0.3 },
-        },
-        location: {
-          city,
-          state: stateByCity[city],
-          address: `${Math.floor(Math.random() * 200) + 1}, ${shuffledLocalities[0]} Main Road`,
-          pincode: `${600000 + Math.floor(Math.random() * 99999)}`,
-        },
-        budget: { min: budgetPair[0], max: budgetPair[1], label: `₹${budgetPair[0]} - ₹${budgetPair[1]}` },
-        preferredPropertyType: shuffledTypes,
-        preferredLocation: shuffledLocalities,
-        employment: {
-          occupation: occupations[Math.floor(Math.random() * occupations.length)],
-          employmentType: employmentTypes[Math.floor(Math.random() * employmentTypes.length)],
-          companyName: `${lastName} ${['Technologies', 'Enterprises', 'Solutions', 'Industries'][Math.floor(Math.random() * 4)]}`,
-          designation: ['Manager', 'Senior Executive', 'Director', 'Team Lead', 'Consultant'][Math.floor(Math.random() * 5)],
-          annualIncome: `${(Math.floor(Math.random() * 30) + 5)},00,000`,
-        },
-        communicationPreferences: {
-          preferredChannel: ['Email', 'Phone Call', 'WhatsApp', 'SMS'][Math.floor(Math.random() * 4)],
-          preferredTime: ['Morning', 'Afternoon', 'Evening'][Math.floor(Math.random() * 3)],
-          language: ['English', 'Hindi', 'Tamil', 'Telugu', 'Kannada', 'Malayalam'][Math.floor(Math.random() * 6)],
-          newsletter: Math.random() > 0.5,
-        },
-        activity,
-        savedProperties: activity.savedProperties,
-        viewedProperties: activity.viewedProperties,
-        inquiries: activity.rentalEnquiries,
-      });
+  // ============ FETCH ALL TENANTS (customerType=tenant, every page) ============
+  const fetchAllTenants = useCallback(async () => {
+    let all = [];
+    let page = 1;
+    let total = Infinity;
+    while (all.length < total) {
+      const response = await adminCustomerService.listCustomers({ customerType: 'tenant', page, limit: 100 });
+      const mapped = (response?.data || []).map(mapCustomerToActivityTenant);
+      if (mapped.length === 0) break;
+      all = all.concat(mapped);
+      total = response?.pagination?.total ?? all.length;
+      page += 1;
     }
+    return all;
+  }, []);
 
-    const total = tenants.length;
-    const active = tenants.filter(b => b.status === 'active').length;
-    const pending = tenants.filter(b => b.status === 'pending').length;
-    const blocked = tenants.filter(b => b.status === 'blocked').length;
+  // ============ BACKFILL REAL ACTIVITY COUNTS ============
+  // viewedProperties/savedProperties/wishlist are real, but per-customer -
+  // fetched in small concurrent chunks after the list itself is on screen,
+  // rather than blocking the initial render on ~3 requests per tenant.
+  const backfillActivityCounts = useCallback(async (tenantsList) => {
+    const chunkSize = 10;
+    for (let i = 0; i < tenantsList.length; i += chunkSize) {
+      const chunk = tenantsList.slice(i, i + chunkSize);
+      const results = await Promise.all(chunk.map(async (tenant) => {
+        try {
+          const [viewsRes, savedRes, wishlistRes] = await Promise.all([
+            adminCustomerService.listPropertyViews({ customerId: tenant.id, limit: 1 }),
+            adminCustomerService.listSavedProperties({ customerId: tenant.id, limit: 1 }),
+            adminCustomerService.listWishlist({ customerId: tenant.id, limit: 1 }),
+          ]);
+          return {
+            id: tenant.id,
+            viewedProperties: viewsRes?.pagination?.total ?? 0,
+            savedProperties: savedRes?.pagination?.total ?? 0,
+            wishlist: wishlistRes?.pagination?.total ?? 0,
+          };
+        } catch (error) {
+          console.error(`Failed to fetch activity counts for tenant ${tenant.id}:`, error);
+          return null;
+        }
+      }));
 
-    setStats({ total, active, pending, blocked });
-    return tenants;
+      setTenants(prev => prev.map(t => {
+        const found = results.find(r => r && r.id === t.id);
+        if (!found) return t;
+        return {
+          ...t,
+          activity: { ...t.activity, viewedProperties: found.viewedProperties, savedProperties: found.savedProperties, wishlist: found.wishlist },
+          viewedProperties: found.viewedProperties,
+          savedProperties: found.savedProperties,
+        };
+      }));
+    }
   }, []);
 
   useEffect(() => {
-    const mockTenants = generateMockTenants();
-    setTenants(mockTenants);
-    setFilteredTenants(mockTenants);
-    setStatsAnimating(true);
-    setTimeout(() => setStatsAnimating(false), 1000);
-  }, [generateMockTenants]);
+    let cancelled = false;
+    setLoading(true);
+    fetchAllTenants()
+      .then((realTenants) => {
+        if (cancelled) return;
+        setTenants(realTenants);
+        setFilteredTenants(realTenants);
+        const total = realTenants.length;
+        const active = realTenants.filter(b => b.status === 'active').length;
+        const pending = realTenants.filter(b => b.status === 'pending').length;
+        const blocked = realTenants.filter(b => b.status === 'blocked').length;
+        setStats({ total, active, pending, blocked });
+        backfillActivityCounts(realTenants);
+      })
+      .catch((error) => {
+        console.error('Failed to load tenant activity:', error);
+        showToast('Failed to load tenant activity', 'error');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+        setStatsAnimating(true);
+        setTimeout(() => setStatsAnimating(false), 1000);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ============ FILTER ============
   const filterTenants = useCallback(() => {
@@ -671,11 +718,12 @@ const TenantPropertyActivity = () => {
     setIsBlockingAction(isBlocking);
   }, []);
 
-  const confirmBlock = useCallback(() => {
+  const confirmBlock = useCallback(async () => {
     const tenantId = showBlockConfirm;
     const isBlocking = isBlockingAction;
     setActionLoading(`block_${tenantId}`);
-    setTimeout(() => {
+    try {
+      await adminCustomerService.updateCustomerStatus(tenantId, isBlocking ? 'blocked' : 'active');
       setTenants(prev => {
         const updated = prev.map(b => b.id === tenantId ? { ...b, status: isBlocking ? 'blocked' : 'active' } : b);
         recomputeStats(updated);
@@ -684,18 +732,23 @@ const TenantPropertyActivity = () => {
         setViewingTenant(prevView => (prevView && prevView.id === tenantId ? changed : prevView));
         return updated;
       });
+    } catch (error) {
+      console.error('Failed to update tenant status:', error);
+      showToast('Failed to update tenant status', 'error');
+    } finally {
       setShowBlockConfirm(null);
       setIsBlockingAction(false);
       setActionLoading(null);
-    }, 600);
+    }
   }, [showBlockConfirm, isBlockingAction, showToast]);
 
   const handleDelete = useCallback((tenantId) => setShowDeleteConfirm(tenantId), []);
 
-  const confirmDelete = useCallback(() => {
+  const confirmDelete = useCallback(async () => {
     const tenantId = showDeleteConfirm;
     setActionLoading(`delete_${tenantId}`);
-    setTimeout(() => {
+    try {
+      await adminCustomerService.deleteCustomer(tenantId);
       setTenants(prev => {
         const target = prev.find(b => b.id === tenantId);
         const updated = prev.filter(b => b.id !== tenantId);
@@ -703,9 +756,13 @@ const TenantPropertyActivity = () => {
         showToast(`${target?.personal.name || 'Tenant'} profile has been deleted`, 'error');
         return updated;
       });
+    } catch (error) {
+      console.error('Failed to delete tenant:', error);
+      showToast('Failed to delete tenant', 'error');
+    } finally {
       setShowDeleteConfirm(null);
       setActionLoading(null);
-    }, 600);
+    }
   }, [showDeleteConfirm, showToast]);
 
   const handleViewTenant = useCallback((tenant) => {
@@ -727,6 +784,10 @@ const TenantPropertyActivity = () => {
     }
   }, [showViewModal]);
 
+  // Decorative/local-only: there is no backend endpoint to set a
+  // viewed/saved/enquiry/etc. count directly (those are derived from real
+  // rows in their own tables, not a field you PATCH), so this form's
+  // "save" only ever updates the in-memory list, never the server.
   const saveEdit = useCallback((updatedActivity) => {
     if (!editingTenant) return;
 
@@ -788,18 +849,24 @@ const TenantPropertyActivity = () => {
     showToast('All filters cleared', 'info');
   }, [showToast]);
 
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     setLoading(true);
-    setTimeout(() => {
-      const mockTenants = generateMockTenants();
-      setTenants(mockTenants);
-      setFilteredTenants(mockTenants);
+    try {
+      const realTenants = await fetchAllTenants();
+      setTenants(realTenants);
+      setFilteredTenants(realTenants);
+      recomputeStats(realTenants);
+      showToast('Activity data refreshed successfully', 'success');
+      backfillActivityCounts(realTenants);
+    } catch (error) {
+      console.error('Failed to refresh tenant activity:', error);
+      showToast('Failed to refresh activity data', 'error');
+    } finally {
       setLoading(false);
       setStatsAnimating(true);
       setTimeout(() => setStatsAnimating(false), 1000);
-      showToast('Activity data refreshed successfully', 'success');
-    }, 1000);
-  }, [generateMockTenants, showToast]);
+    }
+  }, [fetchAllTenants, backfillActivityCounts, showToast]);
 
   const handleExportTenants = useCallback(() => {
     if (filteredTenants.length === 0) {

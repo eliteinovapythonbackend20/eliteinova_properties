@@ -26,7 +26,7 @@ const DuplexResidentialUnitPage = () => {
     filterLoading, 
     appliedFilters, 
     handleFilterChange 
-  } = usePropertyFilter();
+  } = usePropertyFilter('individual');
 
   // ─── Combine Data from Both Hooks ────────────────────────────────────
   const properties = useMemo(() => {

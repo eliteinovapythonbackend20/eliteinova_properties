@@ -24,7 +24,7 @@ const BusinessCenterPage = () => {
     filterLoading, 
     appliedFilters, 
     handleFilterChange 
-  } = usePropertyFilter();
+  } = usePropertyFilter('commercial');
 
   // ─── Combine Data from Both Hooks ────────────────────────────────────
   const properties = useMemo(() => {

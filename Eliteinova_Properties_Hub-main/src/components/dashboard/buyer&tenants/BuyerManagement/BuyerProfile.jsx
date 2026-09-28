@@ -13,6 +13,109 @@ import {
   FiGlobe, FiClock as FiClockOutline
 } from 'react-icons/fi';
 import { FaCheck, FaIdCard, FaFileAlt, FaCertificate, FaShieldAlt } from 'react-icons/fa';
+import adminCustomerService from '../../../../services/adminCustomerService';
+
+/* ============================================================
+   REAL BACKEND MAPPING (Customer table, customerType filter)
+   ------------------------------------------------------------
+   budget{min,max,label}, preferredPropertyType[] and preferredLocation[]
+   are all CustomerRequirement-level concepts (one customer can have many
+   requirement rows, each with a single propertyType/location, not a list)
+   with no field anywhere on Customer itself - see TenantRequirements.jsx
+   for where those actually live. They stay local/decorative here rather
+   than being invented on the wire. contact.verification.{email,phone} ARE
+   real, writable Customer columns (emailVerified/phoneVerified via
+   updateCustomer) - not decorative.
+============================================================ */
+const CUSTOMER_TYPE_TO_REQUIREMENT = { buyer: 'Buy', tenant: 'Rent', both: 'Both' };
+const REQUIREMENT_TO_CUSTOMER_TYPE = { Buy: 'buyer', Rent: 'tenant', Both: 'both' };
+const generateTempPassword = () => `Temp${Math.random().toString(36).slice(2, 10)}!${Math.floor(Math.random() * 100)}`;
+
+function mapCustomerToBuyerProfile(customer) {
+  return {
+    id: customer.id,
+    avatar: (customer.fullName || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'NA',
+    status: (customer.status || 'pending').toLowerCase(),
+    kycStatus: (customer.kycStatus || 'pending').toLowerCase(),
+    kyc: {
+      aadhaar: !!customer.aadhaarVerified,
+      pan: !!customer.panVerified,
+      gst: !!customer.gstVerified,
+      rera: !!customer.reraVerified,
+    },
+    registrationDate: customer.createdAt || new Date().toISOString(),
+    requirement: CUSTOMER_TYPE_TO_REQUIREMENT[customer.customerType] || 'Buy',
+    personal: {
+      name: customer.fullName || '',
+      dob: customer.dateOfBirth || '',
+      gender: customer.gender || '',
+      maritalStatus: customer.maritalStatus || '',
+    },
+    contact: {
+      email: customer.email || '',
+      phone: customer.phoneNumber || '',
+      altPhone: customer.alternatePhone || '',
+      verification: { email: !!customer.emailVerified, phone: !!customer.phoneVerified },
+    },
+    location: {
+      city: customer.city || '',
+      state: customer.state || '',
+      address: customer.address || '',
+      pincode: customer.pincode || '',
+    },
+    // No backing field on Customer - kept as whatever was locally set.
+    budget: customer.budget || { min: '', max: '', label: 'N/A' },
+    preferredPropertyType: customer.preferredPropertyType || [],
+    preferredLocation: customer.preferredLocation || [],
+    employment: {
+      occupation: customer.occupation || '',
+      employmentType: customer.employmentType || 'Salaried',
+      companyName: customer.companyName || '',
+      designation: customer.designation || '',
+      annualIncome: customer.annualIncome || '',
+    },
+    communicationPreferences: {
+      preferredChannel: customer.preferredContactChannel || 'Email',
+      preferredTime: customer.preferredContactTime || 'Morning',
+      language: customer.preferredLanguage || 'English',
+      newsletter: !!customer.newsletterOptIn,
+    },
+    savedProperties: 0,
+    viewedProperties: 0,
+    inquiries: 0,
+  };
+}
+
+// Builds the createCustomer/updateCustomer payload from the nested
+// Add/Edit profile form's formData shape (see BuyerFormFields above).
+function buildBuyerProfilePayload(formData) {
+  return {
+    fullName: formData.personal?.name,
+    dateOfBirth: formData.personal?.dob,
+    gender: formData.personal?.gender,
+    maritalStatus: formData.personal?.maritalStatus,
+    email: formData.contact?.email,
+    phoneNumber: formData.contact?.phone,
+    alternatePhone: formData.contact?.altPhone,
+    city: formData.location?.city,
+    state: formData.location?.state,
+    address: formData.location?.address,
+    pincode: formData.location?.pincode,
+    occupation: formData.employment?.occupation,
+    employmentType: formData.employment?.employmentType,
+    companyName: formData.employment?.companyName,
+    designation: formData.employment?.designation,
+    annualIncome: formData.employment?.annualIncome,
+    preferredContactChannel: formData.communicationPreferences?.preferredChannel,
+    preferredContactTime: formData.communicationPreferences?.preferredTime,
+    preferredLanguage: formData.communicationPreferences?.language,
+    newsletterOptIn: formData.communicationPreferences?.newsletter,
+    customerType: REQUIREMENT_TO_CUSTOMER_TYPE[formData.requirement] || 'buyer',
+    status: formData.status,
+    emailVerified: formData.contact?.verification?.email,
+    phoneVerified: formData.contact?.verification?.phone,
+  };
+}
 
 /* ============================================================
    STANDALONE COMPONENTS
@@ -1093,121 +1196,54 @@ const BuyerProfile = () => {
     setTimeout(() => setToast(null), duration);
   }, []);
 
-  // ============ MOCK DATA ============
-  const generateMockBuyers = useCallback(() => {
-    const firstNames = ['Rajesh', 'Priya', 'Amit', 'Sneha', 'Vikram', 'Ananya', 'Deepak', 'Meera', 'Ravi', 'Kavya', 'Suresh', 'Pooja', 'Arjun', 'Lakshmi', 'Kiran'];
-    const lastNames = ['Kumar', 'Sharma', 'Singh', 'Patel', 'Reddy', 'Gupta', 'Verma', 'Joshi', 'Malhotra', 'Mehta', 'Nair', 'Rao', 'Shetty', 'Agarwal', 'Desai'];
-    const cities = ['Chennai', 'Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Pune', 'Coimbatore', 'Madurai'];
-    const stateByCity = { Chennai: 'Tamil Nadu', Coimbatore: 'Tamil Nadu', Madurai: 'Tamil Nadu', Mumbai: 'Maharashtra', Pune: 'Maharashtra', Delhi: 'Delhi', Bangalore: 'Karnataka', Hyderabad: 'Telangana' };
-    const statuses = ['pending', 'active', 'blocked'];
-    const kycStatuses = ['pending', 'verified', 'rejected'];
-    const requirements = ['Buy', 'Rent', 'Both'];
-    const occupations = ['Software Engineer', 'Doctor', 'Business Owner', 'Bank Manager', 'Architect', 'Government Employee', 'Consultant'];
-    const employmentTypes = ['Salaried', 'Self-Employed', 'Business Owner', 'Retired'];
-    const budgetPairs = [['20L', '50L'], ['50L', '1Cr'], ['1Cr', '2Cr'], ['2Cr', '5Cr']];
-    const localities = ['Anna Nagar', 'T Nagar', 'Velachery', 'Adyar', 'Whitefield', 'Koramangala', 'Bandra', 'Andheri', 'Gachibowli', 'Banjara Hills'];
-
-    const buyers = [];
-    const usedNames = new Set();
-
-    for (let i = 1; i <= 60; i++) {
-      let firstName, lastName, fullName;
-      let attempts = 0;
-      do {
-        firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-        lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-        fullName = `${firstName} ${lastName}`;
-        attempts++;
-      } while (usedNames.has(fullName) && attempts < 50);
-      usedNames.add(fullName);
-
-      const status = statuses[Math.floor(Math.random() * statuses.length)];
-      const kycStatus = kycStatuses[Math.floor(Math.random() * kycStatuses.length)];
-      const city = cities[Math.floor(Math.random() * cities.length)];
-      const requirement = requirements[Math.floor(Math.random() * requirements.length)];
-      const budgetPair = budgetPairs[Math.floor(Math.random() * budgetPairs.length)];
-
-      const date = new Date();
-      date.setDate(date.getDate() - Math.floor(Math.random() * 90));
-      const dob = new Date(1975 + Math.floor(Math.random() * 25), Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1);
-
-      const propertyTypeCount = 1 + Math.floor(Math.random() * 3);
-      const shuffledTypes = [...PROPERTY_TYPES].sort(() => Math.random() - 0.5).slice(0, propertyTypeCount);
-      const localityCount = 1 + Math.floor(Math.random() * 2);
-      const shuffledLocalities = [...localities].sort(() => Math.random() - 0.5).slice(0, localityCount);
-
-      buyers.push({
-        id: `buyer_${i}`,
-        avatar: firstName[0] + lastName[0],
-        status,
-        kycStatus,
-        kyc: {
-          aadhaar: Math.random() > 0.3,
-          pan: Math.random() > 0.35,
-          gst: Math.random() > 0.7,
-          rera: Math.random() > 0.6,
-        },
-        registrationDate: date.toISOString(),
-        requirement,
-        personal: {
-          name: fullName,
-          dob: dob.toISOString().split('T')[0],
-          gender: Math.random() > 0.5 ? 'Male' : 'Female',
-          maritalStatus: Math.random() > 0.5 ? 'Married' : 'Single',
-        },
-        contact: {
-          email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}${Math.floor(Math.random() * 100)}@email.com`,
-          phone: `+91 ${Math.floor(Math.random() * 9000000000 + 1000000000)}`,
-          altPhone: `+91 ${Math.floor(Math.random() * 9000000000 + 1000000000)}`,
-          verification: { email: Math.random() > 0.25, phone: Math.random() > 0.3 },
-        },
-        location: {
-          city,
-          state: stateByCity[city],
-          address: `${Math.floor(Math.random() * 200) + 1}, ${shuffledLocalities[0]} Main Road`,
-          pincode: `${600000 + Math.floor(Math.random() * 99999)}`,
-        },
-        budget: { min: budgetPair[0], max: budgetPair[1], label: `₹${budgetPair[0]} - ₹${budgetPair[1]}` },
-        preferredPropertyType: shuffledTypes,
-        preferredLocation: shuffledLocalities,
-        employment: {
-          occupation: occupations[Math.floor(Math.random() * occupations.length)],
-          employmentType: employmentTypes[Math.floor(Math.random() * employmentTypes.length)],
-          companyName: `${lastName} ${['Technologies', 'Enterprises', 'Solutions', 'Industries'][Math.floor(Math.random() * 4)]}`,
-          designation: ['Manager', 'Senior Executive', 'Director', 'Team Lead', 'Consultant'][Math.floor(Math.random() * 5)],
-          annualIncome: `${(Math.floor(Math.random() * 30) + 5)},00,000`,
-        },
-        communicationPreferences: {
-          preferredChannel: CHANNELS[Math.floor(Math.random() * CHANNELS.length)],
-          preferredTime: ['Morning', 'Afternoon', 'Evening'][Math.floor(Math.random() * 3)],
-          language: LANGUAGES[Math.floor(Math.random() * LANGUAGES.length)],
-          newsletter: Math.random() > 0.5,
-        },
-        savedProperties: Math.floor(Math.random() * 15),
-        viewedProperties: Math.floor(Math.random() * 30),
-        inquiries: Math.floor(Math.random() * 10),
-      });
+  // ============ FETCH ALL BUYERS (customerType=buyer, every page) ============
+  // Search/filter/pagination below all stay client-side over this
+  // in-memory array exactly as the mock did - only its source changes.
+  const fetchAllBuyers = useCallback(async () => {
+    let all = [];
+    let page = 1;
+    let total = Infinity;
+    while (all.length < total) {
+      const response = await adminCustomerService.listCustomers({ customerType: 'buyer', page, limit: 100 });
+      const mapped = (response?.data || []).map(mapCustomerToBuyerProfile);
+      if (mapped.length === 0) break;
+      all = all.concat(mapped);
+      total = response?.pagination?.total ?? all.length;
+      page += 1;
     }
-
-    const total = buyers.length;
-    const active = buyers.filter(b => b.status === 'active').length;
-    const pending = buyers.filter(b => b.status === 'pending').length;
-    const blocked = buyers.filter(b => b.status === 'blocked').length;
-    const buy = buyers.filter(b => b.requirement === 'Buy').length;
-    const rent = buyers.filter(b => b.requirement === 'Rent').length;
-    const both = buyers.filter(b => b.requirement === 'Both').length;
-
-    setStats({ total, active, pending, blocked, buy, rent, both });
-    return buyers;
+    return all;
   }, []);
 
   useEffect(() => {
-    const mockBuyers = generateMockBuyers();
-    setBuyers(mockBuyers);
-    setFilteredBuyers(mockBuyers);
-    setStatsAnimating(true);
-    setTimeout(() => setStatsAnimating(false), 1000);
-  }, [generateMockBuyers]);
+    let cancelled = false;
+    setLoading(true);
+    fetchAllBuyers()
+      .then((realBuyers) => {
+        if (cancelled) return;
+        setBuyers(realBuyers);
+        setFilteredBuyers(realBuyers);
+        const total = realBuyers.length;
+        const active = realBuyers.filter(b => b.status === 'active').length;
+        const pending = realBuyers.filter(b => b.status === 'pending').length;
+        const blocked = realBuyers.filter(b => b.status === 'blocked').length;
+        const buy = realBuyers.filter(b => b.requirement === 'Buy').length;
+        const rent = realBuyers.filter(b => b.requirement === 'Rent').length;
+        const both = realBuyers.filter(b => b.requirement === 'Both').length;
+        setStats({ total, active, pending, blocked, buy, rent, both });
+      })
+      .catch((error) => {
+        console.error('Failed to load buyer profiles:', error);
+        showToast('Failed to load buyer profiles', 'error');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+        setStatsAnimating(true);
+        setTimeout(() => setStatsAnimating(false), 1000);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ============ FILTER ============
   const filterBuyers = useCallback(() => {
@@ -1263,11 +1299,12 @@ const BuyerProfile = () => {
     setIsBlockingAction(isBlocking);
   }, []);
 
-  const confirmBlock = useCallback(() => {
+  const confirmBlock = useCallback(async () => {
     const buyerId = showBlockConfirm;
     const isBlocking = isBlockingAction;
     setActionLoading(`block_${buyerId}`);
-    setTimeout(() => {
+    try {
+      await adminCustomerService.updateCustomerStatus(buyerId, isBlocking ? 'blocked' : 'active');
       setBuyers(prev => {
         const updated = prev.map(b => b.id === buyerId ? { ...b, status: isBlocking ? 'blocked' : 'active' } : b);
         recomputeStats(updated);
@@ -1276,18 +1313,23 @@ const BuyerProfile = () => {
         setViewingBuyer(prevView => (prevView && prevView.id === buyerId ? changed : prevView));
         return updated;
       });
+    } catch (error) {
+      console.error('Failed to update buyer status:', error);
+      showToast('Failed to update buyer status', 'error');
+    } finally {
       setShowBlockConfirm(null);
       setIsBlockingAction(false);
       setActionLoading(null);
-    }, 600);
+    }
   }, [showBlockConfirm, isBlockingAction, showToast]);
 
   const handleDelete = useCallback((buyerId) => setShowDeleteConfirm(buyerId), []);
 
-  const confirmDelete = useCallback(() => {
+  const confirmDelete = useCallback(async () => {
     const buyerId = showDeleteConfirm;
     setActionLoading(`delete_${buyerId}`);
-    setTimeout(() => {
+    try {
+      await adminCustomerService.deleteCustomer(buyerId);
       setBuyers(prev => {
         const target = prev.find(b => b.id === buyerId);
         const updated = prev.filter(b => b.id !== buyerId);
@@ -1295,9 +1337,13 @@ const BuyerProfile = () => {
         showToast(`${target?.personal.name || 'Buyer'} profile has been deleted`, 'error');
         return updated;
       });
+    } catch (error) {
+      console.error('Failed to delete buyer profile:', error);
+      showToast('Failed to delete buyer profile', 'error');
+    } finally {
       setShowDeleteConfirm(null);
       setActionLoading(null);
-    }, 600);
+    }
   }, [showDeleteConfirm, showToast]);
 
   const handleViewBuyer = useCallback((buyer) => { setViewingBuyer(buyer); setShowViewModal(true); }, []);
@@ -1312,45 +1358,81 @@ const BuyerProfile = () => {
     setShowEditModal(true);
   }, []);
 
-  const saveEdit = useCallback((updatedData) => {
+  const saveEdit = useCallback(async (updatedData) => {
     if (!editingBuyer) return;
+    try {
+      await adminCustomerService.updateCustomer(editingBuyer.id, buildBuyerProfilePayload(updatedData));
+      await adminCustomerService.updateCustomerKyc(editingBuyer.id, {
+        kycStatus: updatedData.kycStatus,
+        aadhaarVerified: updatedData.kyc.aadhaar,
+        panVerified: updatedData.kyc.pan,
+        gstVerified: updatedData.kyc.gst,
+        reraVerified: updatedData.kyc.rera,
+      });
 
-    setBuyers(prev => {
-      const updated = prev.map(b => b.id === editingBuyer.id ? {
-        ...b,
-        ...updatedData,
-        id: b.id,
-        avatar: b.avatar,
-        registrationDate: b.registrationDate,
-        savedProperties: b.savedProperties,
-        viewedProperties: b.viewedProperties,
-        inquiries: b.inquiries
-      } : b);
-      recomputeStats(updated);
-      return updated;
-    });
-    setShowEditModal(false);
-    setEditingBuyer(null);
-    showToast('Buyer profile updated successfully', 'success');
+      setBuyers(prev => {
+        const updated = prev.map(b => b.id === editingBuyer.id ? {
+          ...b,
+          ...updatedData,
+          id: b.id,
+          avatar: b.avatar,
+          registrationDate: b.registrationDate,
+          savedProperties: b.savedProperties,
+          viewedProperties: b.viewedProperties,
+          inquiries: b.inquiries
+        } : b);
+        recomputeStats(updated);
+        return updated;
+      });
+      setShowEditModal(false);
+      setEditingBuyer(null);
+      showToast('Buyer profile updated successfully', 'success');
+    } catch (error) {
+      console.error('Failed to update buyer profile:', error);
+      showToast('Failed to update buyer profile', 'error');
+    }
   }, [editingBuyer, showToast]);
 
-  const handleAddBuyer = useCallback((formData) => {
-    const newBuyer = {
-      id: `buyer_${Date.now()}`,
-      avatar: (formData.personal.name || '').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'NA',
-      registrationDate: new Date().toISOString(),
-      savedProperties: 0,
-      viewedProperties: 0,
-      inquiries: 0,
-      ...formData,
-    };
-    setBuyers(prev => {
-      const updated = [newBuyer, ...prev];
-      recomputeStats(updated);
-      return updated;
-    });
-    setShowAddModal(false);
-    showToast('Buyer profile added successfully', 'success');
+  const handleAddBuyer = useCallback(async (formData) => {
+    try {
+      const created = await adminCustomerService.createCustomer({
+        ...buildBuyerProfilePayload(formData),
+        password: generateTempPassword(),
+      });
+      const newCustomer = created?.data || created;
+      const kycTouched = formData.kycStatus !== 'pending' || Object.values(formData.kyc || {}).some(Boolean);
+      if (newCustomer?.id && kycTouched) {
+        await adminCustomerService.updateCustomerKyc(newCustomer.id, {
+          kycStatus: formData.kycStatus,
+          aadhaarVerified: formData.kyc.aadhaar,
+          panVerified: formData.kyc.pan,
+          gstVerified: formData.kyc.gst,
+          reraVerified: formData.kyc.rera,
+        });
+      }
+
+      const newBuyer = {
+        ...mapCustomerToBuyerProfile(newCustomer || {}),
+        // Form fields with no backing anywhere on Customer - keep exactly
+        // what the admin entered, locally only.
+        budget: formData.budget,
+        preferredPropertyType: formData.preferredPropertyType,
+        preferredLocation: formData.preferredLocation,
+        kycStatus: formData.kycStatus,
+        kyc: { ...formData.kyc },
+      };
+
+      setBuyers(prev => {
+        const updated = [newBuyer, ...prev];
+        recomputeStats(updated);
+        return updated;
+      });
+      setShowAddModal(false);
+      showToast('Buyer profile added successfully', 'success');
+    } catch (error) {
+      console.error('Failed to add buyer profile:', error);
+      showToast('Failed to add buyer profile', 'error');
+    }
   }, [showToast]);
 
   const handleStatClick = useCallback((filter) => {
@@ -1371,18 +1453,23 @@ const BuyerProfile = () => {
     showToast('All filters cleared', 'info');
   }, [showToast]);
 
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     setLoading(true);
-    setTimeout(() => {
-      const mockBuyers = generateMockBuyers();
-      setBuyers(mockBuyers);
-      setFilteredBuyers(mockBuyers);
+    try {
+      const realBuyers = await fetchAllBuyers();
+      setBuyers(realBuyers);
+      setFilteredBuyers(realBuyers);
+      recomputeStats(realBuyers);
+      showToast('Profiles refreshed successfully', 'success');
+    } catch (error) {
+      console.error('Failed to refresh buyer profiles:', error);
+      showToast('Failed to refresh profiles', 'error');
+    } finally {
       setLoading(false);
       setStatsAnimating(true);
       setTimeout(() => setStatsAnimating(false), 1000);
-      showToast('Profiles refreshed successfully', 'success');
-    }, 1000);
-  }, [generateMockBuyers, showToast]);
+    }
+  }, [fetchAllBuyers, showToast]);
 
   const handleExportBuyers = useCallback(() => {
     if (filteredBuyers.length === 0) { showToast('No profiles to export', 'warning'); return; }

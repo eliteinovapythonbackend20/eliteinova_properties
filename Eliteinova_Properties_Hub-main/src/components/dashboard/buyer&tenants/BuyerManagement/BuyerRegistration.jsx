@@ -23,6 +23,81 @@ import {
 } from 'react-icons/fa';
 import { MdOutlineRealEstateAgent, MdApartment, MdOutlineBusiness, MdOutlinePerson } from 'react-icons/md';
 import { HiOutlineBuildingOffice, HiOutlineUserGroup } from 'react-icons/hi2';
+import adminCustomerService from '../../../../services/adminCustomerService';
+
+/* ============================================================
+   REAL BACKEND MAPPING (Customer table, customerType filter)
+   ------------------------------------------------------------
+   "Buyer" is a Customer row where customerType is 'buyer' or 'both'.
+   Several mock-only fields have no real backing at all on the Customer
+   model (budget, lastActive, per-buyer saved/viewed/inquiry counts - those
+   live under CustomerRequirement / CustomerSavedProperty / CustomerWishlistItem
+   / CustomerPropertyView, tracked on their own dedicated pages) - those stay
+   local/decorative here rather than being invented on the wire.
+============================================================ */
+const CUSTOMER_TYPE_TO_INTERESTED = { buyer: 'Buying', tenant: 'Renting', both: 'Both' };
+const INTERESTED_TO_CUSTOMER_TYPE = { Buying: 'buyer', Renting: 'tenant', Both: 'both' };
+
+// Admin-created buyers need SOME password since createCustomer requires one
+// and this form collects no password field - a random temporary one is
+// generated here purely so account creation succeeds; it is not shown or
+// communicated to the buyer by this UI.
+const generateTempPassword = () => `Temp${Math.random().toString(36).slice(2, 10)}!${Math.floor(Math.random() * 100)}`;
+
+function mapCustomerToBuyer(customer) {
+  const status = (customer.status || 'pending').toLowerCase();
+  const kycStatus = (customer.kycStatus || 'pending').toLowerCase();
+  return {
+    id: customer.id,
+    name: customer.fullName || '',
+    email: customer.email || '',
+    phone: customer.phoneNumber || '',
+    city: customer.city || '',
+    state: customer.state || '',
+    status,
+    kycStatus,
+    kyc: {
+      aadhaar: !!customer.aadhaarVerified,
+      pan: !!customer.panVerified,
+      gst: !!customer.gstVerified,
+      rera: !!customer.reraVerified,
+    },
+    // emailVerified/phoneVerified are real, writable Customer columns
+    // (via updateCustomer) - not decorative.
+    verification: {
+      email: !!customer.emailVerified,
+      phone: !!customer.phoneVerified,
+    },
+    registrationDate: customer.createdAt || new Date().toISOString(),
+    interestedIn: CUSTOMER_TYPE_TO_INTERESTED[customer.customerType] || customer.customerType || '',
+    // Budget has no field on Customer (it lives per-requirement on
+    // CustomerRequirement) - kept as a local/decorative value only.
+    budget: customer.budget || '',
+    avatar: (customer.fullName || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
+    bio: customer.bio || '',
+    lastActive: customer.updatedAt || customer.createdAt || new Date().toISOString(),
+    savedProperties: 0,
+    viewedProperties: 0,
+    inquiries: 0,
+  };
+}
+
+// Builds the createCustomer/updateCustomer payload from the Add/Edit form's
+// flat formData shape (see BuyerFormModal above).
+function buildCustomerPayload(formData) {
+  return {
+    fullName: formData.name,
+    email: formData.email,
+    phoneNumber: formData.phone,
+    city: formData.city,
+    state: formData.state,
+    customerType: INTERESTED_TO_CUSTOMER_TYPE[formData.interestedIn] || undefined,
+    bio: formData.bio,
+    status: formData.status,
+    emailVerified: formData.verification?.email,
+    phoneVerified: formData.verification?.phone,
+  };
+}
 
 /* ============================================================
    STANDALONE COMPONENTS
@@ -832,104 +907,64 @@ const BuyerRegistration = () => {
     setTimeout(() => setToast(null), duration);
   }, []);
 
-  // ============ GENERATE MOCK BUYERS ============
-  const generateMockBuyers = useCallback(() => {
-    const firstNames = ['Rajesh', 'Priya', 'Amit', 'Sneha', 'Vikram', 'Ananya', 'Deepak', 'Meera', 'Ravi', 'Kavya', 'Suresh', 'Pooja', 'Arjun', 'Lakshmi', 'Kiran', 'Mohan', 'Ritu', 'Gautam', 'Nisha', 'Tarun'];
-    const lastNames = ['Kumar', 'Sharma', 'Singh', 'Patel', 'Reddy', 'Gupta', 'Verma', 'Joshi', 'Malhotra', 'Mehta', 'Nair', 'Pillai', 'Rao', 'Shetty', 'Agarwal', 'Khanna', 'Chopra', 'Saxena', 'Tiwari', 'Desai'];
-    const cities = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune', 'Ahmedabad', 'Jaipur', 'Lucknow', 'Nagpur', 'Kolkata', 'Surat', 'Indore'];
-    const statuses = ['pending', 'active', 'blocked'];
-    const kycStatuses = ['pending', 'verified', 'rejected'];
-    const interestedIn = ['Buying', 'Renting', 'Both'];
-    const budgets = ['20L - 50L', '50L - 1Cr', '1Cr - 2Cr', '2Cr - 5Cr', '5Cr+'];
+  // ============ RECOMPUTE STATS FROM THE FULL FETCHED LIST ============
+  // Computed client-side (not from getCustomerStats) so this doesn't have
+  // to guess at that endpoint's exact response field names - it mirrors
+  // what the mock's own tally logic already did, just over real rows.
+  const recomputeStats = useCallback((list) => {
+    const total = list.length;
+    const active = list.filter(b => b.status === 'active').length;
+    const pending = list.filter(b => b.status === 'pending').length;
+    const blocked = list.filter(b => b.status === 'blocked').length;
+    const verifiedKyc = list.filter(b => b.kycStatus === 'verified').length;
+    const pendingKyc = list.filter(b => b.kycStatus === 'pending').length;
+    const emailVerified = list.filter(b => b.verification.email).length;
+    const phoneVerified = list.filter(b => b.verification.phone).length;
+    setStats({ totalBuyers: total, active, pending, blocked, verifiedKyc, pendingKyc, emailVerified, phoneVerified });
+  }, []);
 
-    const buyers = [];
-    const usedNames = new Set();
-
-    for (let i = 1; i <= 80; i++) {
-      let firstName, lastName, fullName;
-      let attempts = 0;
-      do {
-        firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-        lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-        fullName = `${firstName} ${lastName}`;
-        attempts++;
-      } while (usedNames.has(fullName) && attempts < 50);
-      usedNames.add(fullName);
-
-      const status = statuses[Math.floor(Math.random() * statuses.length)];
-      const kycStatus = kycStatuses[Math.floor(Math.random() * kycStatuses.length)];
-      const city = cities[Math.floor(Math.random() * cities.length)];
-
-      const date = new Date();
-      date.setDate(date.getDate() - Math.floor(Math.random() * 90));
-
-      const kyc = {
-        aadhaar: Math.random() > 0.3,
-        pan: Math.random() > 0.35,
-        gst: Math.random() > 0.7,
-        rera: Math.random() > 0.6,
-      };
-
-      const verification = {
-        email: Math.random() > 0.25,
-        phone: Math.random() > 0.3,
-      };
-
-      buyers.push({
-        id: `buyer_${i}`,
-        name: fullName,
-        email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}${Math.floor(Math.random() * 100)}@email.com`,
-        phone: `+91 ${Math.floor(Math.random() * 9000000000 + 1000000000)}`,
-        city: city,
-        state: ['Maharashtra', 'Delhi', 'Karnataka', 'Tamil Nadu', 'Telangana', 'Uttar Pradesh', 'Gujarat', 'Rajasthan'][Math.floor(Math.random() * 8)],
-        status: status,
-        kycStatus: kycStatus,
-        kyc: kyc,
-        verification: verification,
-        registrationDate: date.toISOString(),
-        interestedIn: interestedIn[Math.floor(Math.random() * interestedIn.length)],
-        budget: budgets[Math.floor(Math.random() * budgets.length)],
-        avatar: firstName[0] + lastName[0],
-        bio: `Interested in ${interestedIn[Math.floor(Math.random() * interestedIn.length)]} properties in ${city}.`,
-        lastActive: new Date(Date.now() - Math.floor(Math.random() * 14 * 24 * 60 * 60 * 1000)).toISOString(),
-        savedProperties: Math.floor(Math.random() * 15),
-        viewedProperties: Math.floor(Math.random() * 30),
-        inquiries: Math.floor(Math.random() * 10),
-      });
+  // ============ FETCH ALL BUYERS (customerType=buyer, every page) ============
+  // The rest of this page (search/filter/sort/pagination) all operates on
+  // the in-memory array exactly as the mock did - only the source of that
+  // array changes here, from generateMockBuyers() to the real backend.
+  const fetchAllBuyers = useCallback(async () => {
+    let all = [];
+    let page = 1;
+    let total = Infinity;
+    while (all.length < total) {
+      const response = await adminCustomerService.listCustomers({ customerType: 'buyer', page, limit: 100 });
+      const mapped = (response?.data || []).map(mapCustomerToBuyer);
+      if (mapped.length === 0) break;
+      all = all.concat(mapped);
+      total = response?.pagination?.total ?? all.length;
+      page += 1;
     }
-
-    // Update stats
-    const total = buyers.length;
-    const active = buyers.filter(b => b.status === 'active').length;
-    const pending = buyers.filter(b => b.status === 'pending').length;
-    const blocked = buyers.filter(b => b.status === 'blocked').length;
-    const verifiedKyc = buyers.filter(b => b.kycStatus === 'verified').length;
-    const pendingKyc = buyers.filter(b => b.kycStatus === 'pending').length;
-    const emailVerified = buyers.filter(b => b.verification.email).length;
-    const phoneVerified = buyers.filter(b => b.verification.phone).length;
-
-    setStats({
-      totalBuyers: total,
-      active,
-      pending,
-      blocked,
-      verifiedKyc,
-      pendingKyc,
-      emailVerified,
-      phoneVerified,
-    });
-
-    return buyers;
+    return all;
   }, []);
 
   // ============ INITIALIZE DATA ============
   useEffect(() => {
-    const mockBuyers = generateMockBuyers();
-    setBuyers(mockBuyers);
-    setFilteredBuyers(mockBuyers);
-    setStatsAnimating(true);
-    setTimeout(() => setStatsAnimating(false), 1000);
-  }, [generateMockBuyers]);
+    let cancelled = false;
+    setLoading(true);
+    fetchAllBuyers()
+      .then((realBuyers) => {
+        if (cancelled) return;
+        setBuyers(realBuyers);
+        setFilteredBuyers(realBuyers);
+        recomputeStats(realBuyers);
+      })
+      .catch((error) => {
+        console.error('Failed to load buyers:', error);
+        showToast('Failed to load buyers', 'error');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+        setStatsAnimating(true);
+        setTimeout(() => setStatsAnimating(false), 1000);
+      });
+    return () => { cancelled = true; };
+  }, [fetchAllBuyers, recomputeStats, showToast]);
 
   // ============ FILTER BUYERS ============
   const filterBuyers = useCallback(() => {
@@ -1027,26 +1062,27 @@ const BuyerRegistration = () => {
   }, []);
 
   // ============ HANDLE ACTIVATE ============
-  const handleActivate = useCallback((buyerId) => {
+  const handleActivate = useCallback(async (buyerId) => {
     setActionLoading(buyerId);
-    setTimeout(() => {
+    try {
+      await adminCustomerService.updateCustomerStatus(buyerId, 'active');
       let updatedBuyers = [...buyers];
       let buyer = updatedBuyers.find(b => b.id === buyerId);
       if (buyer) {
         buyer = { ...buyer, status: 'active' };
         updatedBuyers = updatedBuyers.map(b => b.id === buyerId ? buyer : b);
         setBuyers(updatedBuyers);
-        setStats(prev => ({
-          ...prev,
-          pending: Math.max(0, prev.pending - 1),
-          active: prev.active + 1,
-        }));
+        recomputeStats(updatedBuyers);
         showToast(`${buyer.name} has been activated`, 'success');
         setViewingBuyer(prev => (prev && prev.id === buyerId ? buyer : prev));
       }
+    } catch (error) {
+      console.error('Failed to activate buyer:', error);
+      showToast('Failed to activate buyer', 'error');
+    } finally {
       setActionLoading(null);
-    }, 600);
-  }, [buyers, showToast]);
+    }
+  }, [buyers, recomputeStats, showToast]);
 
   // ============ HANDLE BLOCK/UNBLOCK WITH CONFIRM ============
   const handleBlockClick = useCallback((buyerId, isBlocking) => {
@@ -1056,73 +1092,58 @@ const BuyerRegistration = () => {
     setIsBlockingAction(isBlocking);
   }, [buyers]);
 
-  const confirmBlock = useCallback(() => {
+  const confirmBlock = useCallback(async () => {
     const buyerId = showBlockConfirm;
     const isBlocking = isBlockingAction;
     setActionLoading(`block_${buyerId}`);
-    
-    setTimeout(() => {
+
+    try {
+      await adminCustomerService.updateCustomerStatus(buyerId, isBlocking ? 'blocked' : 'active');
       let updatedBuyers = [...buyers];
       let buyer = updatedBuyers.find(b => b.id === buyerId);
       if (buyer) {
-        if (isBlocking) {
-          buyer = { ...buyer, status: 'blocked' };
-          setStats(prev => ({
-            ...prev,
-            active: Math.max(0, prev.active - 1),
-            blocked: prev.blocked + 1,
-          }));
-          showToast(`${buyer.name} has been blocked`, 'warning');
-        } else {
-          buyer = { ...buyer, status: 'active' };
-          setStats(prev => ({
-            ...prev,
-            blocked: Math.max(0, prev.blocked - 1),
-            active: prev.active + 1,
-          }));
-          showToast(`${buyer.name} has been unblocked`, 'success');
-        }
+        buyer = { ...buyer, status: isBlocking ? 'blocked' : 'active' };
         updatedBuyers = updatedBuyers.map(b => b.id === buyerId ? buyer : b);
         setBuyers(updatedBuyers);
+        recomputeStats(updatedBuyers);
+        showToast(`${buyer.name} has been ${isBlocking ? 'blocked' : 'unblocked'}`, isBlocking ? 'warning' : 'success');
         setViewingBuyer(prev => (prev && prev.id === buyerId ? buyer : prev));
       }
+    } catch (error) {
+      console.error('Failed to update buyer status:', error);
+      showToast('Failed to update buyer status', 'error');
+    } finally {
       setShowBlockConfirm(null);
       setIsBlockingAction(false);
       setActionLoading(null);
-    }, 600);
-  }, [showBlockConfirm, isBlockingAction, buyers, showToast]);
+    }
+  }, [showBlockConfirm, isBlockingAction, buyers, recomputeStats, showToast]);
 
   // ============ HANDLE DELETE ============
   const handleDelete = useCallback((buyerId) => {
     setShowDeleteConfirm(buyerId);
   }, []);
 
-  const confirmDelete = useCallback(() => {
+  const confirmDelete = useCallback(async () => {
     const buyerId = showDeleteConfirm;
     setActionLoading(`delete_${buyerId}`);
     const buyer = buyers.find(b => b.id === buyerId);
-    
-    setTimeout(() => {
-      let updatedBuyers = buyers.filter(b => b.id !== buyerId);
+
+    try {
+      await adminCustomerService.deleteCustomer(buyerId);
+      const updatedBuyers = buyers.filter(b => b.id !== buyerId);
       setBuyers(updatedBuyers);
-      
-      setStats(prev => ({
-        totalBuyers: Math.max(0, prev.totalBuyers - 1),
-        active: buyer?.status === 'active' ? Math.max(0, prev.active - 1) : prev.active,
-        pending: buyer?.status === 'pending' ? Math.max(0, prev.pending - 1) : prev.pending,
-        blocked: buyer?.status === 'blocked' ? Math.max(0, prev.blocked - 1) : prev.blocked,
-        verifiedKyc: buyer?.kycStatus === 'verified' ? Math.max(0, prev.verifiedKyc - 1) : prev.verifiedKyc,
-        pendingKyc: buyer?.kycStatus === 'pending' ? Math.max(0, prev.pendingKyc - 1) : prev.pendingKyc,
-        emailVerified: buyer?.verification?.email ? Math.max(0, prev.emailVerified - 1) : prev.emailVerified,
-        phoneVerified: buyer?.verification?.phone ? Math.max(0, prev.phoneVerified - 1) : prev.phoneVerified,
-      }));
-      
-      setShowDeleteConfirm(null);
-      setActionLoading(null);
+      recomputeStats(updatedBuyers);
       setSelectedBuyers(prev => prev.filter(id => id !== buyerId));
       showToast(`${buyer?.name || 'Buyer'} has been deleted`, 'error');
-    }, 600);
-  }, [showDeleteConfirm, buyers, showToast]);
+    } catch (error) {
+      console.error('Failed to delete buyer:', error);
+      showToast('Failed to delete buyer', 'error');
+    } finally {
+      setShowDeleteConfirm(null);
+      setActionLoading(null);
+    }
+  }, [showDeleteConfirm, buyers, recomputeStats, showToast]);
 
   // ============ VIEW BUYER DETAIL ============
   const handleViewBuyer = useCallback((buyer) => {
@@ -1143,63 +1164,84 @@ const BuyerRegistration = () => {
   }, []);
 
   // ============ SAVE EDIT ============
-  const saveEdit = useCallback((updatedData) => {
-    setBuyers(prev => {
-      const updated = prev.map(buyer => {
-        if (buyer.id !== editingBuyer.id) return buyer;
-        return { ...buyer, ...updatedData };
+  const saveEdit = useCallback(async (updatedData) => {
+    try {
+      await adminCustomerService.updateCustomer(editingBuyer.id, buildCustomerPayload(updatedData));
+      // KYC doc flags + kycStatus live on a separate endpoint from the rest
+      // of the customer record (updateCustomer has no kyc fields at all).
+      await adminCustomerService.updateCustomerKyc(editingBuyer.id, {
+        kycStatus: updatedData.kycStatus,
+        aadhaarVerified: updatedData.kyc.aadhaar,
+        panVerified: updatedData.kyc.pan,
+        gstVerified: updatedData.kyc.gst,
+        reraVerified: updatedData.kyc.rera,
       });
 
-      // Recompute stats
-      const total = updated.length;
-      const active = updated.filter(b => b.status === 'active').length;
-      const pending = updated.filter(b => b.status === 'pending').length;
-      const blocked = updated.filter(b => b.status === 'blocked').length;
-      const verifiedKyc = updated.filter(b => b.kycStatus === 'verified').length;
-      const pendingKyc = updated.filter(b => b.kycStatus === 'pending').length;
-      const emailVerified = updated.filter(b => b.verification.email).length;
-      const phoneVerified = updated.filter(b => b.verification.phone).length;
+      setBuyers(prev => {
+        const updated = prev.map(buyer => {
+          if (buyer.id !== editingBuyer.id) return buyer;
+          // verification.email/phone were just persisted above via
+          // buildCustomerPayload's emailVerified/phoneVerified.
+          return { ...buyer, ...updatedData };
+        });
+        recomputeStats(updated);
+        return updated;
+      });
 
-      setStats({ totalBuyers: total, active, pending, blocked, verifiedKyc, pendingKyc, emailVerified, phoneVerified });
-      return updated;
-    });
-
-    setShowEditModal(false);
-    setEditingBuyer(null);
-    showToast('Buyer updated successfully', 'success');
-  }, [editingBuyer, showToast]);
+      setShowEditModal(false);
+      setEditingBuyer(null);
+      showToast('Buyer updated successfully', 'success');
+    } catch (error) {
+      console.error('Failed to update buyer:', error);
+      showToast('Failed to update buyer', 'error');
+    }
+  }, [editingBuyer, recomputeStats, showToast]);
 
   // ============ ADD BUYER ============
-  const handleAddBuyer = useCallback((formData) => {
-    const newBuyer = {
-      id: `buyer_${Date.now()}`,
-      ...formData,
-      registrationDate: new Date().toISOString(),
-      avatar: formData.name.split(' ').map(n => n[0]).join(''),
-      savedProperties: 0,
-      viewedProperties: 0,
-      inquiries: 0,
-      lastActive: new Date().toISOString(),
-    };
+  const handleAddBuyer = useCallback(async (formData) => {
+    try {
+      const created = await adminCustomerService.createCustomer({
+        ...buildCustomerPayload(formData),
+        password: generateTempPassword(),
+      });
+      const newCustomer = created?.data || created;
+      // createCustomer has no kyc fields - follow up with the KYC endpoint
+      // only if the admin actually set anything on the Add form.
+      const kycTouched = formData.kycStatus !== 'pending' || Object.values(formData.kyc || {}).some(Boolean);
+      if (newCustomer?.id && kycTouched) {
+        await adminCustomerService.updateCustomerKyc(newCustomer.id, {
+          kycStatus: formData.kycStatus,
+          aadhaarVerified: formData.kyc.aadhaar,
+          panVerified: formData.kyc.pan,
+          gstVerified: formData.kyc.gst,
+          reraVerified: formData.kyc.rera,
+        });
+      }
 
-    setBuyers(prev => {
-      const updated = [newBuyer, ...prev];
-      const total = updated.length;
-      const active = updated.filter(b => b.status === 'active').length;
-      const pending = updated.filter(b => b.status === 'pending').length;
-      const blocked = updated.filter(b => b.status === 'blocked').length;
-      const verifiedKyc = updated.filter(b => b.kycStatus === 'verified').length;
-      const pendingKyc = updated.filter(b => b.kycStatus === 'pending').length;
-      const emailVerified = updated.filter(b => b.verification.email).length;
-      const phoneVerified = updated.filter(b => b.verification.phone).length;
+      const newBuyer = {
+        ...mapCustomerToBuyer(newCustomer || {}),
+        // Preserve form-only fields the mapper can't derive from the bare
+        // create response (budget has no backing field either way).
+        budget: formData.budget,
+        bio: formData.bio,
+        kycStatus: formData.kycStatus,
+        kyc: { ...formData.kyc },
+        verification: { ...formData.verification },
+      };
 
-      setStats({ totalBuyers: total, active, pending, blocked, verifiedKyc, pendingKyc, emailVerified, phoneVerified });
-      return updated;
-    });
+      setBuyers(prev => {
+        const updated = [newBuyer, ...prev];
+        recomputeStats(updated);
+        return updated;
+      });
 
-    setShowAddModal(false);
-    showToast('Buyer added successfully', 'success');
-  }, [showToast]);
+      setShowAddModal(false);
+      showToast('Buyer added successfully', 'success');
+    } catch (error) {
+      console.error('Failed to add buyer:', error);
+      showToast('Failed to add buyer', 'error');
+    }
+  }, [recomputeStats, showToast]);
 
   // ============ STAT CLICK HANDLER ============
   const handleStatClick = useCallback((filter) => {
@@ -1262,18 +1304,23 @@ const BuyerRegistration = () => {
   }, [showToast]);
 
   // ============ REFRESH DATA ============
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     setLoading(true);
-    setTimeout(() => {
-      const mockBuyers = generateMockBuyers();
-      setBuyers(mockBuyers);
-      setFilteredBuyers(mockBuyers);
+    try {
+      const realBuyers = await fetchAllBuyers();
+      setBuyers(realBuyers);
+      setFilteredBuyers(realBuyers);
+      recomputeStats(realBuyers);
+      showToast('Data refreshed successfully', 'success');
+    } catch (error) {
+      console.error('Failed to refresh buyers:', error);
+      showToast('Failed to refresh data', 'error');
+    } finally {
       setLoading(false);
       setStatsAnimating(true);
       setTimeout(() => setStatsAnimating(false), 1000);
-      showToast('Data refreshed successfully', 'success');
-    }, 1000);
-  }, [generateMockBuyers, showToast]);
+    }
+  }, [fetchAllBuyers, recomputeStats, showToast]);
 
   // ============ EXPORT BUYERS ============
   const handleExportBuyers = useCallback(() => {

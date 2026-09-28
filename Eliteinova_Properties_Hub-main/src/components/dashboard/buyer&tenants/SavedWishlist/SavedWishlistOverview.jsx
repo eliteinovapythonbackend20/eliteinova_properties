@@ -18,6 +18,7 @@ import {
   FaHeart as FaHeartSolid
 } from 'react-icons/fa';
 import { MdVerified, MdOutlinePersonSearch, MdOutlineFavorite, MdOutlinePriceChange } from 'react-icons/md';
+import adminCustomerService from '../../../../services/adminCustomerService';
 
 // ============================================================
 // STAT CARD - Enhanced with Glassmorphism & Elegant Design (compact)
@@ -305,15 +306,89 @@ const SavedWishlistOverview = () => {
     { icon: <FiUser className="text-white text-base" />, label: 'View User Profile', color: 'bg-gradient-to-br from-cyan-600 to-cyan-400', route: '/admin/buyers-tenants/saved/actions' },
   ], []);
 
+  // ============ REAL BACKEND STATS ============
+  // totalSaved/activeSavedListings/inactiveSavedListings/avgSavedPrice come
+  // from a full fetch of listSavedProperties (admin-wide, no customerId
+  // filter); totalWishlist/wishlistUsers/unavailableWishlist from a full
+  // fetch of listWishlist. savedThisWeek/wishlistThisWeek are derived from
+  // each row's saved/added timestamp where the response provides one.
+  // priceDrops/priceIncreases (no reliable price-at-save snapshot in the
+  // contract) and invalidPropertiesFlagged/notificationsSent/
+  // pendingNotifications (no flagging or notification endpoint at all)
+  // stay exactly as decorative as they always were, including
+  // handleRefresh's jiggle.
+  const loadRealStats = useCallback(async () => {
+    try {
+      const fetchAllPages = async (fn) => {
+        let all = [];
+        let page = 1;
+        let total = Infinity;
+        while (all.length < total) {
+          const response = await fn({ page, limit: 100 });
+          const rows = response?.data || [];
+          if (rows.length === 0) break;
+          all = all.concat(rows);
+          total = response?.pagination?.total ?? all.length;
+          page += 1;
+        }
+        return all;
+      };
+
+      const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+      const [savedRows, wishlistRows] = await Promise.all([
+        fetchAllPages(adminCustomerService.listSavedProperties.bind(adminCustomerService)),
+        fetchAllPages(adminCustomerService.listWishlist.bind(adminCustomerService)),
+      ]);
+
+      const totalSaved = savedRows.length;
+      const activeSavedListings = savedRows.filter(r => (r.status || r.propertyStatus || '').toLowerCase() === 'available').length;
+      const inactiveSavedListings = totalSaved - activeSavedListings;
+      const prices = savedRows.map(r => r.price ?? r.expectedPrice ?? 0).filter(Boolean);
+      const avgSavedPrice = prices.length > 0 ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 0;
+      const savedThisWeek = savedRows.filter(r => {
+        const d = r.savedAt || r.createdAt;
+        return d && new Date(d).getTime() > weekAgo;
+      }).length;
+
+      const totalWishlist = wishlistRows.length;
+      const wishlistUsers = new Set(wishlistRows.map(r => r.customerId || r.customer?.id).filter(Boolean)).size;
+      const unavailableWishlist = wishlistRows.filter(r => {
+        const status = (r.status || r.propertyStatus || '').toLowerCase();
+        return status && status !== 'available';
+      }).length;
+      const wishlistThisWeek = wishlistRows.filter(r => {
+        const d = r.addedAt || r.createdAt;
+        return d && new Date(d).getTime() > weekAgo;
+      }).length;
+
+      setStats(prev => ({
+        ...prev,
+        totalSaved,
+        activeSavedListings,
+        inactiveSavedListings,
+        avgSavedPrice: avgSavedPrice || prev.avgSavedPrice,
+        savedThisWeek,
+        totalWishlist,
+        wishlistUsers: wishlistUsers || prev.wishlistUsers,
+        unavailableWishlist,
+        wishlistThisWeek,
+      }));
+    } catch (error) {
+      console.error('Failed to load saved/wishlist overview stats:', error);
+    }
+  }, []);
+
   useEffect(() => {
     setStatsAnimating(true);
     const t = setTimeout(() => setStatsAnimating(false), 1000);
     const timer = setInterval(() => setTime(new Date()), 60000);
+    loadRealStats();
     return () => {
       clearTimeout(t);
       clearInterval(timer);
     };
-  }, []);
+  }, [loadRealStats]);
 
   const handleRefresh = useCallback(() => {
     setLoading(true);
@@ -321,22 +396,17 @@ const SavedWishlistOverview = () => {
     setTimeout(() => {
       setStats(prev => ({
         ...prev,
-        totalSaved: prev.totalSaved + Math.floor(Math.random() * 8),
-        savedThisWeek: prev.savedThisWeek + Math.floor(Math.random() * 3),
-        activeSavedListings: prev.activeSavedListings + Math.floor(Math.random() * 5),
-        totalWishlist: prev.totalWishlist + Math.floor(Math.random() * 6),
-        wishlistThisWeek: prev.wishlistThisWeek + Math.floor(Math.random() * 3),
-        wishlistUsers: prev.wishlistUsers + Math.floor(Math.random() * 2),
         priceDrops: prev.priceDrops + Math.floor(Math.random() * 3),
         priceIncreases: Math.max(0, prev.priceIncreases + Math.floor(Math.random() * 3) - 1),
-        unavailableWishlist: Math.max(0, prev.unavailableWishlist + Math.floor(Math.random() * 3) - 1),
         notificationsSent: prev.notificationsSent + Math.floor(Math.random() * 5),
         pendingNotifications: Math.max(0, prev.pendingNotifications + Math.floor(Math.random() * 3) - 1),
       }));
-      setLoading(false);
-      setStatsAnimating(false);
+      loadRealStats().finally(() => {
+        setLoading(false);
+        setStatsAnimating(false);
+      });
     }, 900);
-  }, []);
+  }, [loadRealStats]);
 
   const navigateTo = useCallback((route) => {
     navigate(route);

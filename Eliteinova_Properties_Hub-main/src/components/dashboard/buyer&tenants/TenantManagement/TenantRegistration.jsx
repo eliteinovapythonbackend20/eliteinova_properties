@@ -19,6 +19,79 @@ import {
 } from 'react-icons/fa';
 import { MdOutlineVerifiedUser, MdOutlineFamilyRestroom } from 'react-icons/md';
 import { HiOutlineUserGroup } from 'react-icons/hi2';
+import adminCustomerService from '../../../../services/adminCustomerService';
+
+/* ============================================================
+   REAL BACKEND MAPPING (Customer table, customerType filter)
+   ------------------------------------------------------------
+   "Tenant" is a Customer row where customerType is 'tenant' or 'both'.
+   The mock's tenant.verification = {mobile, email, kyc} is a 4-state
+   ('not_submitted'|'pending'|'verified'|'rejected') cycle for all three,
+   but the real Customer model only has boolean phoneVerified/emailVerified
+   (both real, writable via updateCustomer) plus a separate kycStatus
+   string via updateCustomerKyc. So mobile/email collapse to a 2-value
+   projection of the boolean on read, and cycling to 'verified' vs anything
+   else maps back to true/false on save; only kyc keeps its full 4-state
+   range (degrading 'not_submitted' to 'pending' on the wire - see
+   kycStatusToBackend below). familySize / monthlyBudget / moveInDate /
+   propertyPreference / notes /
+   activeLeases / documentsCount have no field anywhere on Customer (they
+   are CustomerRequirement-level concepts, tracked on TenantRequirements.jsx
+   instead) - they stay local/decorative here, never sent on save.
+============================================================ */
+const normalizeKycStatus = (value) => {
+  const v = (value || '').toLowerCase();
+  return ['pending', 'verified', 'rejected'].includes(v) ? v : 'not_submitted';
+};
+// The backend only knows pending/verified/rejected - 'not_submitted' is a
+// UI-only fourth state, so it degrades to 'pending' on the wire.
+const kycStatusToBackend = (value) => (value === 'not_submitted' ? 'pending' : value);
+
+function mapCustomerToTenant(customer) {
+  return {
+    id: customer.id,
+    name: customer.fullName || '',
+    email: customer.email || '',
+    phone: customer.phoneNumber || '',
+    city: customer.city || '',
+    state: customer.state || '',
+    status: (customer.status || 'pending').toLowerCase(),
+    verification: {
+      mobile: customer.phoneVerified ? 'verified' : 'not_submitted',
+      email: customer.emailVerified ? 'verified' : 'not_submitted',
+      kyc: normalizeKycStatus(customer.kycStatus),
+    },
+    registrationDate: customer.createdAt || new Date().toISOString(),
+    occupation: customer.occupation || '',
+    propertyPreference: customer.propertyPreference || 'Individual',
+    familySize: customer.familySize || 1,
+    monthlyBudget: customer.monthlyBudget || 0,
+    moveInDate: customer.moveInDate || new Date().toISOString(),
+    activeLeases: 0,
+    documentsCount: 0,
+    avatar: (customer.fullName || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(),
+    notes: customer.notes || '',
+  };
+}
+
+// Builds the createCustomer/updateCustomer payload from the Add/Edit
+// form's flat formData shape (see AddEditTenantModal above).
+function buildTenantCustomerPayload(formData) {
+  return {
+    fullName: formData.name,
+    email: formData.email,
+    phoneNumber: formData.phone,
+    city: formData.city,
+    state: formData.state,
+    customerType: 'tenant',
+    occupation: formData.occupation,
+    status: formData.status,
+    emailVerified: formData.verification?.email === 'verified',
+    phoneVerified: formData.verification?.mobile === 'verified',
+  };
+}
+
+const generateTempPassword = () => `Temp${Math.random().toString(36).slice(2, 10)}!${Math.floor(Math.random() * 100)}`;
 
 /* ============================================================
    STANDALONE COMPONENTS
@@ -898,80 +971,46 @@ const TenantRegistration = () => {
     });
   }, []);
 
-  // ============ GENERATE MOCK TENANTS ============
-  const generateMockTenants = useCallback(() => {
-    const firstNames = ['Rahul', 'Anita', 'Sanjay', 'Divya', 'Karthik', 'Neha', 'Manoj', 'Swati', 'Rohit', 'Pallavi', 'Vivek', 'Shalini', 'Ajay', 'Bhavana', 'Naveen', 'Radhika', 'Sameer', 'Anjali', 'Harish', 'Preeti'];
-    const lastNames = ['Kumar', 'Sharma', 'Singh', 'Patel', 'Reddy', 'Gupta', 'Verma', 'Joshi', 'Malhotra', 'Mehta', 'Nair', 'Pillai', 'Rao', 'Shetty', 'Agarwal', 'Khanna', 'Chopra', 'Saxena', 'Tiwari', 'Desai'];
-    const cities = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune', 'Ahmedabad', 'Jaipur', 'Lucknow', 'Nagpur', 'Kolkata', 'Surat', 'Indore'];
-    const states = ['Maharashtra', 'Delhi', 'Karnataka', 'Tamil Nadu', 'Telangana', 'Uttar Pradesh', 'Gujarat', 'Rajasthan'];
-    const statuses = ['pending', 'active', 'blocked'];
-    const verificationStates = ['not_submitted', 'pending', 'verified', 'rejected'];
-    const requiredVerificationStates = ['pending', 'verified', 'rejected'];
-    const occupations = ['Software Engineer', 'Teacher', 'Doctor', 'Accountant', 'Business Owner', 'Student', 'Marketing Executive', 'Government Employee', 'Freelancer', 'Consultant'];
-    const propertyPreferences = ['Individual', 'Apartment', 'Commercial', 'Land & Plots', 'Hostel'];
-
-    const tenants = [];
-    const usedNames = new Set();
-
-    for (let i = 1; i <= 80; i++) {
-      let firstName, lastName, fullName;
-      let attempts = 0;
-      do {
-        firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-        lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-        fullName = `${firstName} ${lastName}`;
-        attempts++;
-      } while (usedNames.has(fullName) && attempts < 50);
-      usedNames.add(fullName);
-
-      const status = statuses[Math.floor(Math.random() * statuses.length)];
-      const city = cities[Math.floor(Math.random() * cities.length)];
-
-      const date = new Date();
-      date.setDate(date.getDate() - Math.floor(Math.random() * 90));
-
-      const moveIn = new Date();
-      moveIn.setDate(moveIn.getDate() + Math.floor(Math.random() * 60));
-
-      const verification = {
-        mobile: requiredVerificationStates[Math.floor(Math.random() * requiredVerificationStates.length)],
-        email: requiredVerificationStates[Math.floor(Math.random() * requiredVerificationStates.length)],
-        kyc: verificationStates[Math.floor(Math.random() * verificationStates.length)],
-      };
-
-      tenants.push({
-        id: `tenant_${i}`,
-        name: fullName,
-        email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}${Math.floor(Math.random() * 100)}@email.com`,
-        phone: `+91 ${Math.floor(Math.random() * 9000000000 + 1000000000)}`,
-        city: city,
-        state: states[Math.floor(Math.random() * states.length)],
-        status: status,
-        verification: verification,
-        registrationDate: date.toISOString(),
-        occupation: occupations[Math.floor(Math.random() * occupations.length)],
-        propertyPreference: propertyPreferences[Math.floor(Math.random() * propertyPreferences.length)],
-        familySize: Math.floor(Math.random() * 5) + 1,
-        monthlyBudget: Math.floor(Math.random() * 40000 + 8000),
-        moveInDate: moveIn.toISOString(),
-        activeLeases: Math.floor(Math.random() * 2),
-        documentsCount: Math.floor(Math.random() * 5),
-        avatar: firstName[0] + lastName[0],
-        notes: '',
-      });
+  // ============ FETCH ALL TENANTS (customerType=tenant, every page) ============
+  // Search/filter/sort/pagination below all stay client-side over this
+  // in-memory array exactly as the mock did - only its source changes.
+  const fetchAllTenants = useCallback(async () => {
+    let all = [];
+    let page = 1;
+    let total = Infinity;
+    while (all.length < total) {
+      const response = await adminCustomerService.listCustomers({ customerType: 'tenant', page, limit: 100 });
+      const mapped = (response?.data || []).map(mapCustomerToTenant);
+      if (mapped.length === 0) break;
+      all = all.concat(mapped);
+      total = response?.pagination?.total ?? all.length;
+      page += 1;
     }
-
-    computeStats(tenants);
-    return tenants;
-  }, [computeStats]);
+    return all;
+  }, []);
 
   // ============ INITIALIZE DATA ============
   useEffect(() => {
-    const mockTenants = generateMockTenants();
-    setTenants(mockTenants);
-    setFilteredTenants(mockTenants);
-    setStatsAnimating(true);
-    setTimeout(() => setStatsAnimating(false), 1000);
+    let cancelled = false;
+    setLoading(true);
+    fetchAllTenants()
+      .then((realTenants) => {
+        if (cancelled) return;
+        setTenants(realTenants);
+        setFilteredTenants(realTenants);
+        computeStats(realTenants);
+      })
+      .catch((error) => {
+        console.error('Failed to load tenants:', error);
+        showToast('Failed to load tenants', 'error');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+        setStatsAnimating(true);
+        setTimeout(() => setStatsAnimating(false), 1000);
+      });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1073,40 +1112,49 @@ const TenantRegistration = () => {
   }, []);
 
   // ============ CONFIRM ACTION (activate / block / unblock / delete) ============
-  const confirmActionHandler = useCallback(() => {
+  const confirmActionHandler = useCallback(async () => {
     const tenantId = confirmTarget;
     const action = confirmAction;
     setActionLoading(action === 'block' || action === 'unblock' ? `block_${tenantId}` : action);
     setConfirmTarget(null);
 
-    setTimeout(() => {
+    const tenant = tenants.find(t => t.id === tenantId);
+    if (!tenant) {
+      setActionLoading(null);
+      setConfirmAction(null);
+      return;
+    }
+
+    try {
+      if (action === 'activate') {
+        await adminCustomerService.updateCustomerStatus(tenantId, 'active');
+      } else if (action === 'block') {
+        await adminCustomerService.updateCustomerStatus(tenantId, 'blocked');
+      } else if (action === 'unblock') {
+        await adminCustomerService.updateCustomerStatus(tenantId, 'active');
+      } else if (action === 'delete') {
+        await adminCustomerService.deleteCustomer(tenantId);
+      }
+
       setTenants(prev => {
         let updated;
-        const tenant = prev.find(t => t.id === tenantId);
-        if (!tenant) return prev;
-
-        if (action === 'activate') {
+        if (action === 'activate' || action === 'unblock') {
           updated = prev.map(t => t.id === tenantId ? { ...t, status: 'active' } : t);
-          showToast(`${tenant.name} has been activated`, 'success');
         } else if (action === 'block') {
           updated = prev.map(t => t.id === tenantId ? { ...t, status: 'blocked' } : t);
-          showToast(`${tenant.name} has been blocked`, 'warning');
-        } else if (action === 'unblock') {
-          updated = prev.map(t => t.id === tenantId ? { ...t, status: 'active' } : t);
-          showToast(`${tenant.name} has been unblocked`, 'success');
         } else if (action === 'delete') {
           updated = prev.filter(t => t.id !== tenantId);
-          showToast(`${tenant.name} has been deleted`, 'error');
         } else {
           updated = prev;
         }
-
         computeStats(updated);
         return updated;
       });
 
-      setActionLoading(null);
-      setConfirmAction(null);
+      if (action === 'activate') showToast(`${tenant.name} has been activated`, 'success');
+      else if (action === 'block') showToast(`${tenant.name} has been blocked`, 'warning');
+      else if (action === 'unblock') showToast(`${tenant.name} has been unblocked`, 'success');
+      else if (action === 'delete') showToast(`${tenant.name} has been deleted`, 'error');
 
       if (action === 'delete') {
         setShowViewModal(false);
@@ -1114,14 +1162,19 @@ const TenantRegistration = () => {
       } else {
         setViewingTenant(prev => {
           if (!prev || prev.id !== tenantId) return prev;
-          if (action === 'activate') return { ...prev, status: 'active' };
+          if (action === 'activate' || action === 'unblock') return { ...prev, status: 'active' };
           if (action === 'block') return { ...prev, status: 'blocked' };
-          if (action === 'unblock') return { ...prev, status: 'active' };
           return prev;
         });
       }
-    }, 700);
-  }, [confirmTarget, confirmAction, computeStats, showToast]);
+    } catch (error) {
+      console.error(`Failed to ${action} tenant:`, error);
+      showToast(`Failed to ${action} tenant`, 'error');
+    } finally {
+      setActionLoading(null);
+      setConfirmAction(null);
+    }
+  }, [confirmTarget, confirmAction, tenants, computeStats, showToast]);
 
   // ============ VIEW TENANT DETAIL ============
   const handleViewTenant = useCallback((tenant) => {
@@ -1150,29 +1203,56 @@ const TenantRegistration = () => {
   }, []);
 
   // ============ SAVE FORM (ADD OR EDIT) ============
-  const saveForm = useCallback((data) => {
-    setTenants(prev => {
-      let updated;
+  const saveForm = useCallback(async (data) => {
+    try {
       if (formMode === 'add') {
+        const created = await adminCustomerService.createCustomer({
+          ...buildTenantCustomerPayload(data),
+          password: generateTempPassword(),
+        });
+        const newCustomer = created?.data || created;
+        const kycTouched = data.verification.kyc !== 'not_submitted';
+        if (newCustomer?.id && kycTouched) {
+          await adminCustomerService.updateCustomerKyc(newCustomer.id, {
+            kycStatus: kycStatusToBackend(data.verification.kyc),
+          });
+        }
         const newTenant = {
-          ...data,
-          id: `tenant_${Date.now()}`,
-          registrationDate: new Date().toISOString(),
-          activeLeases: 0,
-          documentsCount: 0,
-          avatar: (data.name || 'T N').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(),
+          ...mapCustomerToTenant(newCustomer || {}),
+          // Requirement-level fields with no Customer-side backing - keep
+          // whatever the admin entered on the form, locally only.
+          occupation: data.occupation,
+          propertyPreference: data.propertyPreference,
+          familySize: data.familySize,
+          monthlyBudget: data.monthlyBudget,
+          moveInDate: data.moveInDate,
+          notes: data.notes,
+          verification: { ...data.verification },
         };
-        updated = [newTenant, ...prev];
+        setTenants(prev => {
+          const updated = [newTenant, ...prev];
+          computeStats(updated);
+          return updated;
+        });
       } else {
-        updated = prev.map(t => t.id === formTenant.id ? { ...t, ...data } : t);
+        await adminCustomerService.updateCustomer(formTenant.id, buildTenantCustomerPayload(data));
+        await adminCustomerService.updateCustomerKyc(formTenant.id, {
+          kycStatus: kycStatusToBackend(data.verification.kyc),
+        });
+        setTenants(prev => {
+          const updated = prev.map(t => (t.id === formTenant.id ? { ...t, ...data } : t));
+          computeStats(updated);
+          return updated;
+        });
       }
-      computeStats(updated);
-      return updated;
-    });
 
-    setShowFormModal(false);
-    setFormTenant(null);
-    showToast(formMode === 'add' ? 'Tenant added successfully' : 'Tenant updated successfully', 'success');
+      setShowFormModal(false);
+      setFormTenant(null);
+      showToast(formMode === 'add' ? 'Tenant added successfully' : 'Tenant updated successfully', 'success');
+    } catch (error) {
+      console.error('Failed to save tenant:', error);
+      showToast('Failed to save tenant', 'error');
+    }
   }, [formMode, formTenant, computeStats, showToast]);
 
   // ============ STAT CLICK HANDLER ============
@@ -1212,18 +1292,23 @@ const TenantRegistration = () => {
   }, [showToast]);
 
   // ============ REFRESH DATA ============
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     setLoading(true);
-    setTimeout(() => {
-      const mockTenants = generateMockTenants();
-      setTenants(mockTenants);
-      setFilteredTenants(mockTenants);
+    try {
+      const realTenants = await fetchAllTenants();
+      setTenants(realTenants);
+      setFilteredTenants(realTenants);
+      computeStats(realTenants);
+      showToast('Data refreshed successfully', 'success');
+    } catch (error) {
+      console.error('Failed to refresh tenants:', error);
+      showToast('Failed to refresh data', 'error');
+    } finally {
       setLoading(false);
       setStatsAnimating(true);
       setTimeout(() => setStatsAnimating(false), 1000);
-      showToast('Data refreshed successfully', 'success');
-    }, 1000);
-  }, [generateMockTenants, showToast]);
+    }
+  }, [fetchAllTenants, computeStats, showToast]);
 
   // ============ EXPORT TENANTS ============
   const handleExportTenants = useCallback(() => {
@@ -1287,17 +1372,23 @@ const TenantRegistration = () => {
   }, [viewingTenant, handleEditTenant]);
 
   // ============ BULK ACTIONS ============
-  const handleBulkAction = useCallback((action) => {
+  const handleBulkAction = useCallback(async (action) => {
     if (selectedTenants.length === 0) {
       showToast('Please select tenants first', 'warning');
       return;
     }
 
     setActionLoading(action);
+    const selectedIds = new Set(selectedTenants);
+    let count = 0;
 
-    setTimeout(() => {
-      const selectedIds = new Set(selectedTenants);
-      let count = 0;
+    try {
+      if (action === 'delete') {
+        await Promise.all(selectedTenants.map(id => adminCustomerService.deleteCustomer(id)));
+      } else {
+        const status = action === 'activate' ? 'active' : 'blocked';
+        await Promise.all(selectedTenants.map(id => adminCustomerService.updateCustomerStatus(id, status)));
+      }
 
       setTenants(prev => {
         let updated;
@@ -1318,12 +1409,16 @@ const TenantRegistration = () => {
       });
 
       setSelectedTenants([]);
-      setActionLoading(null);
 
       if (action === 'activate') showToast(`${count} tenant(s) activated successfully`, 'success');
       else if (action === 'block') showToast(`${count} tenant(s) blocked successfully`, 'warning');
       else if (action === 'delete') showToast(`${count} tenant(s) deleted successfully`, 'error');
-    }, 800);
+    } catch (error) {
+      console.error(`Failed to bulk ${action} tenants:`, error);
+      showToast(`Failed to ${action} selected tenants`, 'error');
+    } finally {
+      setActionLoading(null);
+    }
   }, [selectedTenants, computeStats, showToast]);
 
   // ============ RENDER ============

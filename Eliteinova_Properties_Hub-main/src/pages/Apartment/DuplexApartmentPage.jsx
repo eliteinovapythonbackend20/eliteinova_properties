@@ -42,7 +42,7 @@ const DuplexApartmentPage = () => {
     filterLoading, 
     appliedFilters, 
     handleFilterChange 
-  } = usePropertyFilter();
+  } = usePropertyFilter('apartment');
 
   // ─── Combine Data from Both Hooks ────────────────────────────────────
   const properties = useMemo(() => {

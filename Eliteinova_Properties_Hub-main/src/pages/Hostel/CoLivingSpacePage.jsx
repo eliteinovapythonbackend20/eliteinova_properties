@@ -26,7 +26,7 @@ const CoLivingSpacePage = () => {
     filterLoading, 
     appliedFilters, 
     handleFilterChange 
-  } = usePropertyFilter();
+  } = usePropertyFilter('hostel');
 
   const properties = useMemo(() => {
     if (appliedFilters && filteredData.length > 0) {

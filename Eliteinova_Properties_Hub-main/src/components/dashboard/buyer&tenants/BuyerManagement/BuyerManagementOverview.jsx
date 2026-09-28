@@ -16,6 +16,7 @@ import {
   FaClipboardList, FaMapMarkerAlt, FaIdCard, FaRegBuilding
 } from 'react-icons/fa';
 import { MdVerified, MdOutlinePersonSearch, MdOutlineFavorite } from 'react-icons/md';
+import adminCustomerService from '../../../../services/adminCustomerService';
 
 // ============================================================
 // STAT CARD - Enhanced with Glassmorphism & Elegant Design (compact)
@@ -312,15 +313,77 @@ const BuyerManagementOverview = () => {
     { icon: <FiTrash2 className="text-white text-base" />, label: 'Delete Buyer', color: 'bg-gradient-to-br from-red-600 to-red-400', route: '/admin/buyers-tenants/buyer/registration' },
   ], []);
 
+  // ============ REAL BACKEND STATS ============
+  // totalBuyers/pendingKyc/verifiedBuyers/activeBuyers/blockedBuyers/
+  // mobileVerified/emailVerified/verificationRate are computed from the
+  // real customerType=buyer list; wishlistCount/savedProperties/
+  // viewedProperties are real admin-wide totals (listWishlist/
+  // listSavedProperties/listPropertyViews' pagination.total, limit 1 so
+  // only the count is fetched). newThisWeek/profilesCompleted/
+  // profilesIncomplete/enquiries/siteVisits/purchaseRequests/
+  // offersSubmitted/leadHistoryCount/growthRate/monthlyGrowth have no
+  // backing anywhere in the contract (Lead/SiteVisit/PurchaseRequest
+  // families are out of scope, and there's no "profile completeness" or
+  // historical-growth field on Customer) - they stay exactly as
+  // decorative as they always were, including handleRefresh's jiggle.
+  const loadRealStats = useCallback(async () => {
+    try {
+      let buyers = [];
+      let page = 1;
+      let total = Infinity;
+      while (buyers.length < total) {
+        const response = await adminCustomerService.listCustomers({ customerType: 'buyer', page, limit: 100 });
+        const rows = response?.data || [];
+        if (rows.length === 0) break;
+        buyers = buyers.concat(rows);
+        total = response?.pagination?.total ?? buyers.length;
+        page += 1;
+      }
+
+      const totalBuyers = buyers.length;
+      const activeBuyers = buyers.filter(b => (b.status || '').toLowerCase() === 'active').length;
+      const blockedBuyers = buyers.filter(b => (b.status || '').toLowerCase() === 'blocked').length;
+      const verifiedBuyers = buyers.filter(b => (b.kycStatus || '').toLowerCase() === 'verified').length;
+      const pendingKyc = buyers.filter(b => (b.kycStatus || '').toLowerCase() === 'pending').length;
+      const mobileVerified = buyers.filter(b => b.phoneVerified).length;
+      const emailVerified = buyers.filter(b => b.emailVerified).length;
+      const verificationRate = totalBuyers > 0 ? Math.round((mobileVerified / totalBuyers) * 100) : 0;
+
+      const [savedRes, wishlistRes, viewsRes] = await Promise.all([
+        adminCustomerService.listSavedProperties({ limit: 1 }),
+        adminCustomerService.listWishlist({ limit: 1 }),
+        adminCustomerService.listPropertyViews({ limit: 1 }),
+      ]);
+
+      setStats(prev => ({
+        ...prev,
+        totalBuyers,
+        activeBuyers,
+        blockedBuyers,
+        verifiedBuyers,
+        pendingKyc,
+        mobileVerified,
+        emailVerified,
+        verificationRate,
+        savedProperties: savedRes?.pagination?.total ?? prev.savedProperties,
+        wishlistCount: wishlistRes?.pagination?.total ?? prev.wishlistCount,
+        viewedProperties: viewsRes?.pagination?.total ?? prev.viewedProperties,
+      }));
+    } catch (error) {
+      console.error('Failed to load buyer management stats:', error);
+    }
+  }, []);
+
   useEffect(() => {
     setStatsAnimating(true);
     const t = setTimeout(() => setStatsAnimating(false), 1000);
     const timer = setInterval(() => setTime(new Date()), 60000);
+    loadRealStats();
     return () => {
       clearTimeout(t);
       clearInterval(timer);
     };
-  }, []);
+  }, [loadRealStats]);
 
   const handleRefresh = useCallback(() => {
     setLoading(true);
@@ -328,23 +391,18 @@ const BuyerManagementOverview = () => {
     setTimeout(() => {
       setStats(prev => ({
         ...prev,
-        totalBuyers: prev.totalBuyers + Math.floor(Math.random() * 6),
-        pendingKyc: Math.max(0, prev.pendingKyc + Math.floor(Math.random() * 7) - 3),
-        verifiedBuyers: prev.verifiedBuyers + Math.floor(Math.random() * 4),
-        activeBuyers: prev.activeBuyers + Math.floor(Math.random() * 5),
-        viewedProperties: prev.viewedProperties + Math.floor(Math.random() * 40),
-        savedProperties: prev.savedProperties + Math.floor(Math.random() * 12),
-        wishlistCount: prev.wishlistCount + Math.floor(Math.random() * 8),
         enquiries: prev.enquiries + Math.floor(Math.random() * 6),
         siteVisits: prev.siteVisits + Math.floor(Math.random() * 3),
         purchaseRequests: prev.purchaseRequests + Math.floor(Math.random() * 3),
         monthlyGrowth: prev.monthlyGrowth + (Math.random() * 2 - 1),
         newThisWeek: prev.newThisWeek + Math.floor(Math.random() * 3),
       }));
-      setLoading(false);
-      setStatsAnimating(false);
+      loadRealStats().finally(() => {
+        setLoading(false);
+        setStatsAnimating(false);
+      });
     }, 900);
-  }, []);
+  }, [loadRealStats]);
 
   const navigateTo = useCallback((route) => {
     navigate(route);

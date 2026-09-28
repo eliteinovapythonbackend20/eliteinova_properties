@@ -37,7 +37,7 @@ const HostelPage = () => {
     filterLoading, 
     appliedFilters, 
     handleFilterChange 
-  } = usePropertyFilter();
+  } = usePropertyFilter('hostel');
 
   const [activeButton, setActiveButton] = useState("Rent");
   const [activeHouseType, setActiveHouseType] = useState("All");

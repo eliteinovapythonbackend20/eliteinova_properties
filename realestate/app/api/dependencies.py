@@ -13,6 +13,8 @@ from app.services.profile_service import ProfileService
 from app.services.filter_service import FilterService
 from app.repositories.admin_dashboard_repository import AdminDashboardRepository
 from app.services.admin_dashboard_service import AdminDashboardService
+from app.repositories.admin_customer_repository import AdminCustomerRepository
+from app.services.admin_customer_service import AdminCustomerService
 
 security = HTTPBearer(auto_error=False)
 
@@ -32,6 +34,9 @@ async def get_filter_service(db: AsyncSession = Depends(get_db)) -> FilterServic
 
 async def get_admin_dashboard_service(db: AsyncSession = Depends(get_db)) -> AdminDashboardService:
     return AdminDashboardService(AdminDashboardRepository(db))
+
+async def get_admin_customer_service(db: AsyncSession = Depends(get_db)) -> AdminCustomerService:
+    return AdminCustomerService(AdminCustomerRepository(db))
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),

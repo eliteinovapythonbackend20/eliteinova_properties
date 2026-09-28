@@ -17,6 +17,63 @@ import {
   FaTimes, FaStar as FaStarSolid, FaUserTie, FaHome as FaHomeSolid,
   FaImage, FaHeart as FaHeartSolid
 } from 'react-icons/fa';
+import adminCustomerService from '../../../../services/adminCustomerService';
+
+/* ============================================================
+   REAL BACKEND MAPPING (CustomerWishlistItem, via /wishlist)
+   ------------------------------------------------------------
+   Field names confirmed against the real backend
+   (app/services/admin_customer_service.py's _to_wishlist_card /
+   _base_activity_fields), read once the parallel backend agent's code
+   landed mid-task: id, customerId, customerName, customerEmail,
+   customerPhone, propertyId, propertyTitle, propertyCategory, city, state,
+   address, priceAtAdd, currentPrice, priceChanged (server-computed, no
+   need to derive it client-side), isNew (server-computed off the
+   property's own age, not the wishlist add date), addedAt. There is no
+   "notes" field on a wishlist row at all (only saved-property rows have
+   one) - kept decorative/local. bedrooms/bathrooms/sqft area have no field
+   on this card either - kept at 0, decorative, not invented. status is
+   really just BaseProperty's simple "Active"/"Inactive" visibility flag,
+   not the richer available/pending/sold/rented lifecycle this mock's UI
+   was built around - compressed to available/pending (no real sold/rented
+   signal exists on this endpoint). The contract only exposes listWishlist
+   + deleteWishlistItem - there is no create or update endpoint for a
+   wishlist row at all, so "Add to Wishlist" and "Edit" below stay entirely
+   local/decorative (see their handlers).
+============================================================ */
+const CATEGORY_FROM_BACKEND = {
+  INDIVIDUAL: 'Individual',
+  APARTMENT: 'Apartment',
+  COMMERCIAL: 'Commercial',
+  LAND_PLOT: 'Land & Plots',
+  HOSTEL: 'Hostel',
+};
+
+function mapWishlistRow(row) {
+  const currentPrice = row.currentPrice ?? row.price ?? 0;
+  return {
+    id: row.id,
+    propertyId: row.propertyId || '',
+    buyerName: row.customerName || '',
+    buyerEmail: row.customerEmail || '',
+    buyerPhone: row.customerPhone || '',
+    propertyName: row.propertyTitle || 'Untitled Property',
+    propertyType: CATEGORY_FROM_BACKEND[row.propertyCategory] || row.propertyCategory || '',
+    location: row.address || '',
+    city: row.city || '',
+    state: row.state || '',
+    price: currentPrice,
+    originalPrice: row.priceAtAdd ?? currentPrice,
+    status: row.propertyStatus === 'Active' ? 'available' : 'pending',
+    addedDate: row.addedAt || new Date().toISOString(),
+    notes: '',
+    bedrooms: 0,
+    bathrooms: 0,
+    area: 0,
+    imageUrl: row.coverImage || '',
+    isNew: !!row.isNew,
+  };
+}
 
 // ============================================================
 // TOAST COMPONENT
@@ -629,8 +686,28 @@ const Wishlist = () => {
     uniqueBuyers: 0
   });
 
-  // ============ GENERATE MOCK DATA ============
-  const generateMockData = useCallback(() => {
+  // ============ FETCH ALL WISHLIST ITEMS (every page) ============
+  const fetchAllWishlist = useCallback(async () => {
+    let all = [];
+    let page = 1;
+    let total = Infinity;
+    while (all.length < total) {
+      const response = await adminCustomerService.listWishlist({ page, limit: 100 });
+      const mapped = (response?.data || []).map(mapWishlistRow);
+      if (mapped.length === 0) break;
+      all = all.concat(mapped);
+      total = response?.pagination?.total ?? all.length;
+      page += 1;
+    }
+    return all;
+  }, []);
+
+  // ============ DECORATIVE "AVAILABLE PROPERTIES" POOL ============
+  // The contract exposes no POST /wishlist (create) endpoint at all, so
+  // "Add to Wishlist" (handleAddToWishlist below) has nothing real to call
+  // regardless of what this pool contains - kept as a local mock list
+  // purely so that part of the UI still has something to pick from.
+  const generateMockAvailableProperties = useCallback(() => {
     const buyerNames = ['Rahul Kumar', 'Anita Sharma', 'Sanjay Singh', 'Divya Patel', 'Karthik Reddy', 'Neha Gupta', 'Manoj Verma', 'Swati Joshi', 'Rohit Malhotra', 'Pallavi Mehta'];
     const propertyNames = ['Green Valley Villa', 'Lake View Apartments', 'Sunrise Heights', 'Royal Palm Estate', 'Silver Oak Residency', 'Golden Meadows', 'Cedar Woods', 'Maple Leaf Homes', 'Orchid Garden', 'Tulip Tower'];
     const cities = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune', 'Ahmedabad', 'Jaipur'];
@@ -638,7 +715,6 @@ const Wishlist = () => {
     const propertyTypes = ['Individual', 'Apartment', 'Commercial', 'Land & Plots', 'Hostel'];
     const statuses = ['available', 'pending', 'sold', 'rented'];
     const locations = ['MG Road', 'Banjara Hills', 'Indiranagar', 'Koramangala', 'Whitefield', 'Jubilee Hills', 'Connaught Place', 'Salt Lake'];
-
     const propertyImages = [
       'https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=800',
       'https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=800',
@@ -650,7 +726,6 @@ const Wishlist = () => {
 
     const allProperties = [];
     const usedNames = new Set();
-
     for (let i = 1; i <= 30; i++) {
       let propertyName, buyerName;
       let attempts = 0;
@@ -660,9 +735,6 @@ const Wishlist = () => {
         attempts++;
       } while (usedNames.has(`${propertyName}_${buyerName}`) && attempts < 50);
       usedNames.add(`${propertyName}_${buyerName}`);
-
-      const price = Math.floor(Math.random() * 8000000 + 2000000);
-      const status = statuses[Math.floor(Math.random() * statuses.length)];
 
       allProperties.push({
         id: `prop_${i}`,
@@ -674,58 +746,15 @@ const Wishlist = () => {
         location: locations[Math.floor(Math.random() * locations.length)],
         city: cities[Math.floor(Math.random() * cities.length)],
         state: states[Math.floor(Math.random() * states.length)],
-        price: price,
-        propertyStatus: status,
+        price: Math.floor(Math.random() * 8000000 + 2000000),
+        propertyStatus: statuses[Math.floor(Math.random() * statuses.length)],
         bedrooms: Math.floor(Math.random() * 4) + 1,
         bathrooms: Math.floor(Math.random() * 3) + 1,
         area: Math.floor(Math.random() * 1500 + 500),
         imageUrl: propertyImages[Math.floor(Math.random() * propertyImages.length)]
       });
     }
-
-    // Generate wishlist items
-    const wishlist = [];
-    const usedProperties = new Set();
-
-    for (let i = 1; i <= 15; i++) {
-      let prop;
-      let attempts = 0;
-      do {
-        prop = allProperties[Math.floor(Math.random() * allProperties.length)];
-        attempts++;
-      } while (usedProperties.has(prop.id) && attempts < 50);
-      usedProperties.add(prop.id);
-
-      const originalPrice = prop.price + Math.floor(Math.random() * 1000000 - 500000);
-      const addedDate = new Date();
-      addedDate.setDate(addedDate.getDate() - Math.floor(Math.random() * 60));
-
-      wishlist.push({
-        id: `wish_${i}`,
-        propertyId: prop.id,
-        buyerName: prop.buyerName,
-        buyerEmail: prop.buyerEmail,
-        buyerPhone: prop.buyerPhone,
-        propertyName: prop.propertyName,
-        propertyType: prop.propertyType,
-        location: prop.location,
-        city: prop.city,
-        state: prop.state,
-        price: prop.price,
-        originalPrice: Math.random() > 0.4 ? originalPrice : prop.price,
-        status: prop.propertyStatus,
-        addedDate: addedDate.toISOString(),
-        notes: Math.random() > 0.7 ? 'Interested in this property' : '',
-        bedrooms: prop.bedrooms,
-        bathrooms: prop.bathrooms,
-        area: prop.area,
-        imageUrl: prop.imageUrl,
-        isNew: addedDate > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-      });
-    }
-
-    const available = allProperties.filter(p => !usedProperties.has(p.id));
-    return { wishlist, available };
+    return allProperties;
   }, []);
 
   // ============ COMPUTE STATS ============
@@ -754,18 +783,28 @@ const Wishlist = () => {
 
   // ============ INITIALIZE DATA ============
   useEffect(() => {
-    try {
-      const { wishlist, available } = generateMockData();
-      setWishlistItems(wishlist);
-      setAvailableProperties(available);
-      setFilteredItems(wishlist);
-      computeStats(wishlist);
-      setStatsAnimating(true);
-      setTimeout(() => setStatsAnimating(false), 1000);
-    } catch (error) {
-      console.error('Error generating mock data:', error);
-    }
-  }, [generateMockData, computeStats]);
+    let cancelled = false;
+    setLoading(true);
+    fetchAllWishlist()
+      .then((realWishlist) => {
+        if (cancelled) return;
+        setWishlistItems(realWishlist);
+        setAvailableProperties(generateMockAvailableProperties());
+        setFilteredItems(realWishlist);
+        computeStats(realWishlist);
+        setStatsAnimating(true);
+        setTimeout(() => setStatsAnimating(false), 1000);
+      })
+      .catch((error) => {
+        console.error('Error loading wishlist:', error);
+        setToast({ message: 'Failed to load wishlist', type: 'error' });
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ============ FILTER ITEMS ============
   const filterItems = useCallback(() => {
@@ -818,6 +857,9 @@ const Wishlist = () => {
   }, [filteredItems, currentPage, pageSize]);
 
   // ============ HANDLE ADD TO WISHLIST ============
+  // Decorative/local-only: the contract exposes no POST /wishlist endpoint
+  // at all, so there is nowhere real to send this - it only ever updates
+  // the in-memory list (and the decorative available-properties pool).
   const handleAddToWishlist = useCallback((property) => {
     if (!property) return;
 
@@ -850,13 +892,14 @@ const Wishlist = () => {
   }, [computeStats]);
 
   // ============ HANDLE REMOVE FROM WISHLIST ============
-  const handleRemoveFromWishlist = useCallback((itemId) => {
+  const handleRemoveFromWishlist = useCallback(async (itemId) => {
     const item = wishlistItems.find(w => w.id === itemId);
     if (!item) return;
     if (!window.confirm(`Remove "${item.propertyName}" from wishlist?`)) return;
 
     setActionLoading(itemId);
-    setTimeout(() => {
+    try {
+      await adminCustomerService.deleteWishlistItem(itemId);
       setWishlistItems(prev => { const updated = prev.filter(w => w.id !== itemId); computeStats(updated); return updated; });
 
       const property = {
@@ -868,10 +911,14 @@ const Wishlist = () => {
       };
       setAvailableProperties(prev => [property, ...prev]);
 
-      setActionLoading(null);
       setShowViewModal(false);
       setToast({ message: `"${item.propertyName}" removed from wishlist`, type: 'warning' });
-    }, 700);
+    } catch (error) {
+      console.error('Error removing wishlist item:', error);
+      setToast({ message: 'Failed to remove wishlist item', type: 'error' });
+    } finally {
+      setActionLoading(null);
+    }
   }, [wishlistItems, computeStats]);
 
   // ============ HANDLE EDIT WISHLIST ITEM ============
@@ -881,6 +928,9 @@ const Wishlist = () => {
   }, []);
 
   // ============ HANDLE SAVE EDITED ITEM ============
+  // Decorative/local-only: the contract only exposes list + delete for a
+  // wishlist row (no update endpoint), so there is nowhere real to send
+  // this - it only ever updates the in-memory list.
   const handleSaveItem = useCallback((updatedItem) => {
     setWishlistItems(prev => { const updated = prev.map(item => item.id === updatedItem.id ? updatedItem : item); computeStats(updated); return updated; });
     setToast({ message: `"${updatedItem.propertyName}" updated successfully`, type: 'success' });
@@ -917,25 +967,24 @@ const Wishlist = () => {
   }, []);
 
   // ============ REFRESH DATA ============
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     setLoading(true);
-    setTimeout(() => {
-      try {
-        const { wishlist, available } = generateMockData();
-        setWishlistItems(wishlist);
-        setAvailableProperties(available);
-        setFilteredItems(wishlist);
-        computeStats(wishlist);
-        setStatsAnimating(true);
-        setTimeout(() => setStatsAnimating(false), 1000);
-        setToast({ message: 'Data refreshed successfully', type: 'success' });
-      } catch (error) {
-        console.error('Error refreshing data:', error);
-        setToast({ message: 'Error refreshing data', type: 'error' });
-      }
+    try {
+      const realWishlist = await fetchAllWishlist();
+      setWishlistItems(realWishlist);
+      setAvailableProperties(generateMockAvailableProperties());
+      setFilteredItems(realWishlist);
+      computeStats(realWishlist);
+      setStatsAnimating(true);
+      setTimeout(() => setStatsAnimating(false), 1000);
+      setToast({ message: 'Data refreshed successfully', type: 'success' });
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      setToast({ message: 'Error refreshing data', type: 'error' });
+    } finally {
       setLoading(false);
-    }, 1000);
-  }, [generateMockData, computeStats]);
+    }
+  }, [fetchAllWishlist, generateMockAvailableProperties, computeStats]);
 
   // ============ EXPORT DATA ============
   const handleExport = useCallback(() => {

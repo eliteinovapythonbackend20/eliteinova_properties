@@ -18,6 +18,108 @@ import {
 } from 'react-icons/fa';
 import { MdOutlineVerified, MdOutlineFamilyRestroom } from 'react-icons/md';
 import { HiOutlineUserGroup } from 'react-icons/hi2';
+import adminCustomerService from '../../../../services/adminCustomerService';
+
+/* ============================================================
+   REAL BACKEND MAPPING
+   ------------------------------------------------------------
+   The mock treats one "requirement" row as if it WERE a customer (its own
+   name/email/phone). The real model is: many CustomerRequirement rows per
+   Customer, and GET /{customer_id}/requirements doesn't return the
+   customer's own contact fields. Chosen mapping: fetch every tenant
+   customer, then that customer's requirement rows, and flatten to one row
+   per requirement joined with its owning customer's name/email/phone/
+   city/state for display - same visual shape the mock rendered, just
+   assembled from two real calls instead of one flat mock array. Each
+   flattened row keeps its own requirementId (for update/delete) AND its
+   customerId (for the "person" fields, and for Add's lookup-or-create).
+
+   Field names below are confirmed against the real backend
+   (app/schemas/admin_customer_schemas.py AdminRequirementInput +
+   app/services/admin_customer_service.py's REQUIREMENT_FIELD_MAP /
+   _to_requirement_card), read once the parallel backend agent's code
+   landed mid-task: the requirement row has propertyCategory/listingPurpose/
+   propertyType/budgetMin/budgetMax/furnishingStatus/preferredLocation/its
+   OWN city/state/pincode (independent of the customer's home address) -
+   not the flat propertyType/minBudget/maxBudget/furnishing/location the
+   mock's form used. The mock's single "Property Type" dropdown
+   (Individual/Apartment/.../Hostel) maps to propertyCategory (matching the
+   Properties admin's own category enum); the requirement's own finer
+   propertyType and listingPurpose have no field in this form, so
+   listingPurpose defaults to 'RENT' (this is the rental-requirements page)
+   and propertyType is left unset. requirement.status values
+   (pending/active/expired) already match the backend's REQUIREMENT_STATUSES
+   exactly, no conversion needed.
+============================================================ */
+const CATEGORY_TO_BACKEND = {
+  Individual: 'INDIVIDUAL',
+  Apartment: 'APARTMENT',
+  Commercial: 'COMMERCIAL',
+  'Land & Plots': 'LAND_PLOT',
+  Hostel: 'HOSTEL',
+};
+const CATEGORY_FROM_BACKEND = {
+  INDIVIDUAL: 'Individual',
+  APARTMENT: 'Apartment',
+  COMMERCIAL: 'Commercial',
+  LAND_PLOT: 'Land & Plots',
+  HOSTEL: 'Hostel',
+};
+
+function mapRequirementRow(customer, requirement) {
+  return {
+    id: requirement.id,
+    customerId: customer.id,
+    name: customer.fullName || '',
+    email: customer.email || '',
+    phone: customer.phoneNumber || '',
+    city: requirement.city || customer.city || '',
+    state: requirement.state || customer.state || '',
+    location: requirement.preferredLocation || '',
+    minBudget: requirement.budgetMin || 0,
+    maxBudget: requirement.budgetMax || 0,
+    propertyType: CATEGORY_FROM_BACKEND[requirement.propertyCategory] || requirement.propertyCategory || 'Apartment',
+    furnishing: requirement.furnishingStatus || 'Semi Furnished',
+    bedrooms: requirement.bedrooms || 1,
+    moveInDate: requirement.moveInDate || new Date().toISOString(),
+    rentalDuration: requirement.rentalDuration || '12 months',
+    tenantType: requirement.tenantType || 'Family',
+    familySize: requirement.familySize || 1,
+    parkingRequired: !!requirement.parkingRequired,
+    petsAllowed: !!requirement.petsAllowed,
+    status: requirement.status || 'pending',
+    notes: requirement.notes || '',
+    createdAt: requirement.createdAt || new Date().toISOString(),
+  };
+}
+
+// Requirement-level fields only - name/email/phone live on the Customer and
+// are saved separately (see saveForm below). city/state are sent at both
+// levels: the mock form only collects one city/state, reused here for the
+// requirement's own (independent) target-location fields too.
+function buildRequirementPayload(formData) {
+  return {
+    propertyCategory: CATEGORY_TO_BACKEND[formData.propertyType] || undefined,
+    listingPurpose: 'RENT',
+    budgetMin: formData.minBudget,
+    budgetMax: formData.maxBudget,
+    preferredLocation: formData.location,
+    city: formData.city,
+    state: formData.state,
+    bedrooms: formData.bedrooms,
+    furnishingStatus: formData.furnishing,
+    tenantType: formData.tenantType,
+    familySize: formData.familySize,
+    parkingRequired: formData.parkingRequired,
+    petsAllowed: formData.petsAllowed,
+    moveInDate: formData.moveInDate,
+    rentalDuration: formData.rentalDuration,
+    notes: formData.notes,
+    status: formData.status,
+  };
+}
+
+const generateTempPassword = () => `Temp${Math.random().toString(36).slice(2, 10)}!${Math.floor(Math.random() * 100)}`;
 
 /* ============================================================
    STANDALONE COMPONENTS
@@ -806,77 +908,60 @@ const TenantRequirements = () => {
     });
   }, []);
 
-  // ============ GENERATE MOCK DATA ============
-  const generateMockRequirements = useCallback(() => {
-    const firstNames = ['Rahul', 'Anita', 'Sanjay', 'Divya', 'Karthik', 'Neha', 'Manoj', 'Swati', 'Rohit', 'Pallavi', 'Vivek', 'Shalini', 'Ajay', 'Bhavana', 'Naveen', 'Radhika', 'Sameer', 'Anjali', 'Harish', 'Preeti'];
-    const lastNames = ['Kumar', 'Sharma', 'Singh', 'Patel', 'Reddy', 'Gupta', 'Verma', 'Joshi', 'Malhotra', 'Mehta', 'Nair', 'Pillai', 'Rao', 'Shetty', 'Agarwal', 'Khanna', 'Chopra', 'Saxena', 'Tiwari', 'Desai'];
-    const cities = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune', 'Ahmedabad', 'Jaipur', 'Lucknow', 'Nagpur', 'Kolkata', 'Surat', 'Indore'];
-    const states = ['Maharashtra', 'Delhi', 'Karnataka', 'Tamil Nadu', 'Telangana', 'Uttar Pradesh', 'Gujarat', 'Rajasthan'];
-    const propertyTypes = ['Individual', 'Apartment', 'Commercial', 'Land & Plots', 'Hostel'];
-    const furnishingOptions = ['Fully Furnished', 'Semi Furnished', 'Unfurnished'];
-    const statuses = ['pending', 'active', 'expired'];
-    const rentalDurations = ['6 months', '12 months', '18 months', '24 months', '36 months'];
-    const tenantTypes = ['Family', 'Bachelor', 'Couple', 'Students', 'Working Professionals'];
-    const locations = ['MG Road', 'Banjara Hills', 'Indiranagar', 'Koramangala', 'Whitefield', 'Jubilee Hills', 'Connaught Place', 'Salt Lake', 'Marine Drive', 'Andheri', 'Bandra', 'Powai'];
-
-    const requirements = [];
-    const usedNames = new Set();
-
-    for (let i = 1; i <= 80; i++) {
-      let firstName, lastName, fullName;
-      let attempts = 0;
-      do {
-        firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-        lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-        fullName = `${firstName} ${lastName}`;
-        attempts++;
-      } while (usedNames.has(fullName) && attempts < 50);
-      usedNames.add(fullName);
-
-      const minBudget = Math.floor(Math.random() * 15000 + 8000);
-      const maxBudget = minBudget + Math.floor(Math.random() * 20000 + 5000);
-      const city = cities[Math.floor(Math.random() * cities.length)];
-
-      const moveIn = new Date();
-      moveIn.setDate(moveIn.getDate() + Math.floor(Math.random() * 60));
-
-      requirements.push({
-        id: `req_${i}`,
-        name: fullName,
-        email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}${Math.floor(Math.random() * 100)}@email.com`,
-        phone: `+91 ${Math.floor(Math.random() * 9000000000 + 1000000000)}`,
-        city: city,
-        state: states[Math.floor(Math.random() * states.length)],
-        location: locations[Math.floor(Math.random() * locations.length)],
-        minBudget: minBudget,
-        maxBudget: maxBudget,
-        propertyType: propertyTypes[Math.floor(Math.random() * propertyTypes.length)],
-        furnishing: furnishingOptions[Math.floor(Math.random() * furnishingOptions.length)],
-        bedrooms: Math.floor(Math.random() * 4) + 1,
-        moveInDate: moveIn.toISOString(),
-        rentalDuration: rentalDurations[Math.floor(Math.random() * rentalDurations.length)],
-        tenantType: tenantTypes[Math.floor(Math.random() * tenantTypes.length)],
-        familySize: Math.floor(Math.random() * 4) + 1,
-        parkingRequired: Math.random() > 0.5,
-        petsAllowed: Math.random() > 0.6,
-        status: statuses[Math.floor(Math.random() * statuses.length)],
-        notes: Math.random() > 0.7 ? 'Additional requirements or preferences' : '',
-        createdAt: new Date(Date.now() - Math.floor(Math.random() * 30 * 24 * 60 * 60 * 1000)).toISOString()
-      });
+  // ============ FETCH ALL REQUIREMENTS (every tenant customer, every requirement row) ============
+  // Search/filter/sort/pagination below all stay client-side over this
+  // in-memory array exactly as the mock did - only its source changes.
+  const fetchAllRequirements = useCallback(async () => {
+    let customers = [];
+    let page = 1;
+    let total = Infinity;
+    while (customers.length < total) {
+      const response = await adminCustomerService.listCustomers({ customerType: 'tenant', page, limit: 100 });
+      const rows = response?.data || [];
+      if (rows.length === 0) break;
+      customers = customers.concat(rows);
+      total = response?.pagination?.total ?? customers.length;
+      page += 1;
     }
 
-    computeStats(requirements);
-    return requirements;
-  }, [computeStats]);
+    const perCustomer = await Promise.all(
+      customers.map(async (customer) => {
+        try {
+          const res = await adminCustomerService.listRequirements(customer.id);
+          return (res?.data || []).map(req => mapRequirementRow(customer, req));
+        } catch (error) {
+          console.error(`Failed to fetch requirements for customer ${customer.id}:`, error);
+          return [];
+        }
+      })
+    );
+    return perCustomer.flat();
+  }, []);
 
   // ============ INITIALIZE DATA ============
   useEffect(() => {
-    const mockRequirements = generateMockRequirements();
-    setRequirements(mockRequirements);
-    setFilteredRequirements(mockRequirements);
-    setStatsAnimating(true);
-    setTimeout(() => setStatsAnimating(false), 1000);
-  }, [generateMockRequirements]);
+    let cancelled = false;
+    setLoading(true);
+    fetchAllRequirements()
+      .then((realRequirements) => {
+        if (cancelled) return;
+        setRequirements(realRequirements);
+        setFilteredRequirements(realRequirements);
+        computeStats(realRequirements);
+      })
+      .catch((error) => {
+        console.error('Failed to load requirements:', error);
+        showToast('Failed to load requirements', 'error');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+        setStatsAnimating(true);
+        setTimeout(() => setStatsAnimating(false), 1000);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ============ FILTER REQUIREMENTS ============
   const filterRequirements = useCallback(() => {
@@ -996,46 +1081,93 @@ const TenantRequirements = () => {
   }, []);
 
   // ============ SAVE FORM ============
-  const saveForm = useCallback((data) => {
-    setRequirements(prev => {
-      let updated;
+  // Add: the form only collects name/email/phone/city/state (as if the
+  // requirement WERE the customer) - resolved by looking up an existing
+  // tenant customer with that email, or creating one, then attaching the
+  // new requirement row to it. Edit: only the requirement fields + the
+  // owning customer's contact fields are re-saved (see mapRequirementRow).
+  const saveForm = useCallback(async (data) => {
+    try {
       if (formMode === 'add') {
+        let customerId = null;
+        const existing = await adminCustomerService.listCustomers({ customerType: 'tenant', search: data.email, limit: 5 });
+        const match = (existing?.data || []).find(c => (c.email || '').toLowerCase() === data.email.toLowerCase());
+        if (match) {
+          customerId = match.id;
+        } else {
+          const created = await adminCustomerService.createCustomer({
+            fullName: data.name,
+            email: data.email,
+            phoneNumber: data.phone,
+            city: data.city,
+            state: data.state,
+            customerType: 'tenant',
+            password: generateTempPassword(),
+          });
+          customerId = (created?.data || created)?.id;
+        }
+
+        const createdReq = await adminCustomerService.createRequirement(customerId, buildRequirementPayload(data));
+        const reqData = createdReq?.data || createdReq;
         const newRequirement = {
           ...data,
-          id: `req_${Date.now()}`,
-          createdAt: new Date().toISOString()
+          id: reqData?.id ?? `req_${Date.now()}`,
+          customerId,
+          createdAt: reqData?.createdAt || new Date().toISOString(),
         };
-        updated = [newRequirement, ...prev];
+        setRequirements(prev => {
+          const updated = [newRequirement, ...prev];
+          computeStats(updated);
+          return updated;
+        });
       } else {
-        updated = prev.map(r => r.id === formRequirement.id ? { ...r, ...data } : r);
+        await adminCustomerService.updateRequirement(formRequirement.id, buildRequirementPayload(data));
+        await adminCustomerService.updateCustomer(formRequirement.customerId, {
+          fullName: data.name,
+          email: data.email,
+          phoneNumber: data.phone,
+          city: data.city,
+          state: data.state,
+        });
+        setRequirements(prev => {
+          const updated = prev.map(r => r.id === formRequirement.id ? { ...r, ...data } : r);
+          computeStats(updated);
+          return updated;
+        });
       }
-      computeStats(updated);
-      return updated;
-    });
 
-    setShowFormModal(false);
-    setFormRequirement(null);
-    showToast(formMode === 'add' ? 'Requirements added successfully' : 'Requirements updated successfully', 'success');
+      setShowFormModal(false);
+      setFormRequirement(null);
+      showToast(formMode === 'add' ? 'Requirements added successfully' : 'Requirements updated successfully', 'success');
+    } catch (error) {
+      console.error('Failed to save requirement:', error);
+      showToast('Failed to save requirement', 'error');
+    }
   }, [formMode, formRequirement, computeStats, showToast]);
 
   // ============ DELETE REQUIREMENT ============
-  const handleDeleteRequirement = useCallback((reqId) => {
+  const handleDeleteRequirement = useCallback(async (reqId) => {
     const req = requirements.find(r => r.id === reqId);
     if (!req) return;
 
     if (!window.confirm(`Are you sure you want to delete ${req.name}'s requirements?`)) return;
 
     setActionLoading(reqId);
-    setTimeout(() => {
+    try {
+      await adminCustomerService.deleteRequirement(reqId);
       setRequirements(prev => {
         const updated = prev.filter(r => r.id !== reqId);
         computeStats(updated);
         return updated;
       });
-      setActionLoading(null);
       setShowViewModal(false);
       showToast(`${req.name}'s requirements deleted`, 'error');
-    }, 700);
+    } catch (error) {
+      console.error('Failed to delete requirement:', error);
+      showToast('Failed to delete requirement', 'error');
+    } finally {
+      setActionLoading(null);
+    }
   }, [requirements, computeStats, showToast]);
 
   // ============ STAT CLICK HANDLER ============
@@ -1069,18 +1201,23 @@ const TenantRequirements = () => {
   }, [showToast]);
 
   // ============ REFRESH DATA ============
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     setLoading(true);
-    setTimeout(() => {
-      const mockRequirements = generateMockRequirements();
-      setRequirements(mockRequirements);
-      setFilteredRequirements(mockRequirements);
+    try {
+      const realRequirements = await fetchAllRequirements();
+      setRequirements(realRequirements);
+      setFilteredRequirements(realRequirements);
+      computeStats(realRequirements);
+      showToast('Data refreshed successfully', 'success');
+    } catch (error) {
+      console.error('Failed to refresh requirements:', error);
+      showToast('Failed to refresh data', 'error');
+    } finally {
       setLoading(false);
       setStatsAnimating(true);
       setTimeout(() => setStatsAnimating(false), 1000);
-      showToast('Data refreshed successfully', 'success');
-    }, 1000);
-  }, [generateMockRequirements, showToast]);
+    }
+  }, [fetchAllRequirements, computeStats, showToast]);
 
   // ============ EXPORT DATA ============
   const handleExport = useCallback(() => {

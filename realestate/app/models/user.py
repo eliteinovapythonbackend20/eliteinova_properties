@@ -60,6 +60,21 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     properties = relationship("BaseProperty", back_populates="user", cascade="all, delete-orphan")
+    # passive_deletes=True on all of the below: their FK columns already
+    # carry ON DELETE CASCADE at the DB level (see app.models.customer /
+    # customer_requirement / customer_activity) - without it, SQLAlchemy's
+    # unit-of-work tries to UPDATE <child> SET user_id = NULL before deleting
+    # the User row (the default behavior for a relationship with no
+    # cascade), which fails outright since those FK columns are NOT NULL.
+    customer = relationship("Customer", back_populates="user", uselist=False, passive_deletes=True)
+    # A user IS the customer (role=USER) - these hang directly off users.id,
+    # not off Customer.id, so the same person needs no separate id to act as
+    # buyer or tenant. See app.models.customer's docstring for the full
+    # rationale.
+    requirements = relationship("CustomerRequirement", back_populates="user", passive_deletes=True)
+    saved_properties = relationship("CustomerSavedProperty", back_populates="user", passive_deletes=True)
+    wishlist_items = relationship("CustomerWishlistItem", back_populates="user", passive_deletes=True)
+    property_views = relationship("CustomerPropertyView", back_populates="user", passive_deletes=True)
     
     __table_args__ = (
         CheckConstraint(

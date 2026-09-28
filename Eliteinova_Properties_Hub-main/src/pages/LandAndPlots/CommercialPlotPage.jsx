@@ -27,7 +27,7 @@ const CommercialPlotPage = () => {
     filterLoading, 
     appliedFilters, 
     handleFilterChange 
-  } = usePropertyFilter();
+  } = usePropertyFilter('land');
 
   // ─── Combine Data from Both Hooks ────────────────────────────────────
   const properties = useMemo(() => {

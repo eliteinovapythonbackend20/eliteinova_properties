@@ -21,6 +21,7 @@ import {
 } from 'react-icons/fa';
 import { MdOutlinePeople, MdOutlineDashboard } from 'react-icons/md';
 import { BsPeople, BsBuilding } from 'react-icons/bs';
+import adminCustomerService from '../../../services/adminCustomerService';
 
 // Export utility functions
 const exportToCSV = (data, filename = 'export.csv') => {
@@ -85,6 +86,16 @@ const BuyerTenantsOverview = () => {
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   
   const [toast, setToast] = useState({ show: false, message: '', type: '' });
+
+  // ============ REAL BACKEND STATS ============
+  // Only Total Buyers / Total Tenants / Wishlist Properties have a real
+  // backing (customerType=buyer|tenant counts, and listWishlist's
+  // pagination.total) - Total Leads/New Registrations/Site Visits/
+  // Purchase Requests/Rental Requests all belong to families that are out
+  // of scope for this pass (Lead/SiteVisit/PurchaseRequest/RentalRequest)
+  // and have no endpoint here, so they stay exactly as decorative as they
+  // always were.
+  const [realOverview, setRealOverview] = useState({ totalBuyers: null, totalTenants: null, wishlistProperties: null });
 
   // Theme colors
   const themeColors = {
@@ -182,7 +193,7 @@ const BuyerTenantsOverview = () => {
     {
       id: 1,
       title: 'Total Buyers',
-      value: '1,284',
+      value: realOverview.totalBuyers != null ? realOverview.totalBuyers.toLocaleString() : '1,284',
       change: '+12.5%',
       trend: 'up',
       icon: <FaUserCircle className="text-[#00695C]" />,
@@ -195,7 +206,7 @@ const BuyerTenantsOverview = () => {
     {
       id: 2,
       title: 'Total Tenants',
-      value: '856',
+      value: realOverview.totalTenants != null ? realOverview.totalTenants.toLocaleString() : '856',
       change: '+8.2%',
       trend: 'up',
       icon: <BsPeople className="text-[#26A69A]" />,
@@ -234,7 +245,7 @@ const BuyerTenantsOverview = () => {
     {
       id: 5,
       title: 'Wishlist Properties',
-      value: '3,429',
+      value: realOverview.wishlistProperties != null ? realOverview.wishlistProperties.toLocaleString() : '3,429',
       change: '+24.7%',
       trend: 'up',
       icon: <FiHeart className="text-[#E91E63]" />,
@@ -487,14 +498,36 @@ const BuyerTenantsOverview = () => {
     }, 500);
   };
 
+  // ============ LOAD REAL OVERVIEW STATS ============
+  const loadRealOverviewStats = async () => {
+    try {
+      const [buyersRes, tenantsRes, wishlistRes] = await Promise.all([
+        adminCustomerService.listCustomers({ customerType: 'buyer', limit: 1 }),
+        adminCustomerService.listCustomers({ customerType: 'tenant', limit: 1 }),
+        adminCustomerService.listWishlist({ limit: 1 }),
+      ]);
+      setRealOverview({
+        totalBuyers: buyersRes?.pagination?.total ?? null,
+        totalTenants: tenantsRes?.pagination?.total ?? null,
+        wishlistProperties: wishlistRes?.pagination?.total ?? null,
+      });
+    } catch (error) {
+      console.error('Failed to load buyer/tenant overview stats:', error);
+    }
+  };
+
+  useEffect(() => {
+    loadRealOverviewStats();
+  }, []);
+
   // ============ REFRESH HANDLER ============
   const handleRefresh = () => {
     setLoading(true);
     showToast('🔄 Refreshing dashboard data...', 'info');
-    setTimeout(() => {
+    loadRealOverviewStats().finally(() => {
       setLoading(false);
       showToast('✅ Dashboard data refreshed successfully!', 'success');
-    }, 1000);
+    });
   };
 
   // ============ STAT CARD CLICK ============

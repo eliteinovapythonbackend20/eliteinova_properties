@@ -2,13 +2,18 @@ from sqlalchemy import Boolean, Column, Date, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
-# Imported so their tables/mappers register with Base.metadata whenever
-# Customer does - see the relationships below.
-from app.models.customer_activity import CustomerPropertyView, CustomerSavedProperty, CustomerWishlistItem
-from app.models.customer_requirement import CustomerRequirement
 
 
 class Customer(Base):
+    """Profile fields only (name/contact/KYC/preferences) for a user with
+    role=USER. This is NOT the identity other tables hang off of - requirements,
+    saved properties, wishlist, and property views all FK to `users.id`
+    directly (a user IS the customer; the same person can act as buyer or
+    tenant without a separate id per role). `id` below is this table's own
+    internal PK - it must never be used as an FK target for other tables and
+    must never be exposed in the API; every external identifier for "which
+    customer" is `user_id` (the EP... string)."""
+
     __tablename__ = "customer"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -51,24 +56,23 @@ class Customer(Base):
     kyc_gst_verified = Column(Boolean, default=False, nullable=False)
     kyc_rera_verified = Column(Boolean, default=False, nullable=False)
 
+    # URL of the doc a customer has already uploaded (upload flow itself is
+    # customer-side, a later phase) - admin KYC review just reads these.
+    aadhaar_doc_url = Column(String(500), nullable=True)
+    pan_doc_url = Column(String(500), nullable=True)
+    gst_doc_url = Column(String(500), nullable=True)
+    rera_doc_url = Column(String(500), nullable=True)
+
     preferred_contact_channel = Column(String(20), nullable=True)
     preferred_contact_time = Column(String(20), nullable=True)
     preferred_language = Column(String(50), nullable=True)
     newsletter_opt_in = Column(Boolean, default=False, nullable=False)
 
-    # What the customer is looking for - can have several active at once.
-    requirements = relationship(
-        "CustomerRequirement", back_populates="customer", cascade="all, delete-orphan"
-    )
-    # Bookmarked-for-later shortlist.
-    saved_properties = relationship(
-        "CustomerSavedProperty", back_populates="customer", cascade="all, delete-orphan"
-    )
-    # Properties they want alerts on (price drop, status change, ...).
-    wishlist_items = relationship(
-        "CustomerWishlistItem", back_populates="customer", cascade="all, delete-orphan"
-    )
-    # Browsing history, one row per property viewed.
-    property_views = relationship(
-        "CustomerPropertyView", back_populates="customer", cascade="all, delete-orphan"
-    )
+    # Joined for status/email/createdAt/updatedAt - those live on User, not
+    # here (see app.services.admin_customer_service._to_card).
+    user = relationship("User", back_populates="customer")
+
+    # requirements/saved_properties/wishlist_items/property_views are NOT
+    # relationships on Customer - they FK to users.id, not customer.id (see
+    # this class's docstring). Look them up via User.requirements etc., or
+    # query those tables directly filtered by user_id.

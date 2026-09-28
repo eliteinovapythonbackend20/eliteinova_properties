@@ -22,7 +22,7 @@ const LakeViewPlotPage = () => {
     filterLoading, 
     appliedFilters, 
     handleFilterChange 
-  } = usePropertyFilter();
+  } = usePropertyFilter('land');
 
   const properties = useMemo(() => {
     if (appliedFilters && filteredData.length > 0) {

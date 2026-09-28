@@ -18,6 +18,7 @@ import {
   FaBed, FaCalendarAlt, FaParking, FaPaw, FaUserFriends
 } from 'react-icons/fa';
 import { MdVerified, MdOutlinePersonSearch, MdOutlineFavorite } from 'react-icons/md';
+import adminCustomerService from '../../../../services/adminCustomerService';
 
 // ============================================================
 // STAT CARD - Enhanced with Glassmorphism & Elegant Design (compact)
@@ -313,15 +314,78 @@ const TenantManagementOverview = () => {
     { icon: <FiTrendingUp className="text-amber-500" />, label: 'Growth', value: `${stats.monthlyGrowth}%` },
   ], [stats]);
 
+  // ============ REAL BACKEND STATS ============
+  // totalTenants/pendingKyc/verifiedTenants/activeTenants/blockedTenants/
+  // mobileVerified/emailVerified/verificationRate come from the real
+  // customerType=tenant list; wishlistCount/savedProperties/
+  // viewedProperties are real admin-wide totals (listWishlist/
+  // listSavedProperties/listPropertyViews' pagination.total). Every
+  // Requirements-card field (rentalBudget, preferredLocation, propertyType,
+  // furnishingPreference, bedrooms, moveInDate, rentalDuration,
+  // familyBachelor, parking/petRequirement) is a per-CustomerRequirement
+  // value with no single "overview" aggregate in the contract, and
+  // newThisWeek/rentalEnquiries/siteVisits/applications/leaseRequests/
+  // leadHistoryCount/growthRate/monthlyGrowth belong to families that are
+  // out of scope here - all of those stay exactly as decorative as they
+  // always were, including handleRefresh's jiggle.
+  const loadRealStats = useCallback(async () => {
+    try {
+      let tenants = [];
+      let page = 1;
+      let total = Infinity;
+      while (tenants.length < total) {
+        const response = await adminCustomerService.listCustomers({ customerType: 'tenant', page, limit: 100 });
+        const rows = response?.data || [];
+        if (rows.length === 0) break;
+        tenants = tenants.concat(rows);
+        total = response?.pagination?.total ?? tenants.length;
+        page += 1;
+      }
+
+      const totalTenants = tenants.length;
+      const activeTenants = tenants.filter(t => (t.status || '').toLowerCase() === 'active').length;
+      const blockedTenants = tenants.filter(t => (t.status || '').toLowerCase() === 'blocked').length;
+      const verifiedTenants = tenants.filter(t => (t.kycStatus || '').toLowerCase() === 'verified').length;
+      const pendingKyc = tenants.filter(t => (t.kycStatus || '').toLowerCase() === 'pending').length;
+      const mobileVerified = tenants.filter(t => t.phoneVerified).length;
+      const emailVerified = tenants.filter(t => t.emailVerified).length;
+      const verificationRate = totalTenants > 0 ? Math.round((mobileVerified / totalTenants) * 100) : 0;
+
+      const [savedRes, wishlistRes, viewsRes] = await Promise.all([
+        adminCustomerService.listSavedProperties({ limit: 1 }),
+        adminCustomerService.listWishlist({ limit: 1 }),
+        adminCustomerService.listPropertyViews({ limit: 1 }),
+      ]);
+
+      setStats(prev => ({
+        ...prev,
+        totalTenants,
+        activeTenants,
+        blockedTenants,
+        verifiedTenants,
+        pendingKyc,
+        mobileVerified,
+        emailVerified,
+        verificationRate,
+        savedProperties: savedRes?.pagination?.total ?? prev.savedProperties,
+        wishlistCount: wishlistRes?.pagination?.total ?? prev.wishlistCount,
+        viewedProperties: viewsRes?.pagination?.total ?? prev.viewedProperties,
+      }));
+    } catch (error) {
+      console.error('Failed to load tenant management stats:', error);
+    }
+  }, []);
+
   useEffect(() => {
     setStatsAnimating(true);
     const t = setTimeout(() => setStatsAnimating(false), 1000);
     const timer = setInterval(() => setTime(new Date()), 60000);
+    loadRealStats();
     return () => {
       clearTimeout(t);
       clearInterval(timer);
     };
-  }, []);
+  }, [loadRealStats]);
 
   const handleRefresh = useCallback(() => {
     setLoading(true);
@@ -329,35 +393,23 @@ const TenantManagementOverview = () => {
     setTimeout(() => {
       setStats(prev => ({
         ...prev,
-        // Registration Stats
-        totalTenants: prev.totalTenants + Math.floor(Math.random() * 5),
-        pendingKyc: Math.max(0, prev.pendingKyc + Math.floor(Math.random() * 6) - 3),
-        verifiedTenants: prev.verifiedTenants + Math.floor(Math.random() * 3),
-        activeTenants: prev.activeTenants + Math.floor(Math.random() * 4),
         newThisWeek: prev.newThisWeek + Math.floor(Math.random() * 3),
-        
-        // Requirements Stats
         rentalBudget: prev.rentalBudget + Math.floor(Math.random() * 1000) - 500,
         bedrooms: prev.bedrooms + (Math.random() > 0.7 ? 1 : 0),
         parkingRequirement: Math.random() > 0.3 ? 'Yes' : 'No',
         petRequirement: Math.random() > 0.5 ? 'Yes' : 'No',
-        
-        // Property Activity Stats
-        viewedProperties: prev.viewedProperties + Math.floor(Math.random() * 35),
-        savedProperties: prev.savedProperties + Math.floor(Math.random() * 10),
-        wishlistCount: prev.wishlistCount + Math.floor(Math.random() * 7),
         rentalEnquiries: prev.rentalEnquiries + Math.floor(Math.random() * 5),
         siteVisits: prev.siteVisits + Math.floor(Math.random() * 3),
         applications: prev.applications + Math.floor(Math.random() * 3),
         leaseRequests: prev.leaseRequests + Math.floor(Math.random() * 2),
-        
-        // Growth
         monthlyGrowth: prev.monthlyGrowth + (Math.random() * 2 - 1),
       }));
-      setLoading(false);
-      setStatsAnimating(false);
+      loadRealStats().finally(() => {
+        setLoading(false);
+        setStatsAnimating(false);
+      });
     }, 900);
-  }, []);
+  }, [loadRealStats]);
 
   const navigateTo = useCallback((route) => {
     navigate(route);

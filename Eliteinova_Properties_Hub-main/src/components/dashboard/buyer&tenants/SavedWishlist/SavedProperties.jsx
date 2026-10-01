@@ -24,7 +24,7 @@ import adminCustomerService from '../../../../services/adminCustomerService';
    Field names confirmed against the real backend
    (app/services/admin_customer_service.py's _to_saved_property_card /
    _base_activity_fields), read once the parallel backend agent's code
-   landed mid-task: id, customerId, customerName, customerEmail,
+   landed mid-task: id, userId, customerName, customerEmail,
    customerPhone, propertyId, propertyTitle, propertyType, propertyCategory,
    listingPurpose, city, state, address, price, propertyStatus, coverImage,
    notes, savedAt. propertyType maps mock's category dropdown to the

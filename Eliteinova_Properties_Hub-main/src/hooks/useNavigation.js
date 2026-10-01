@@ -411,7 +411,8 @@ function useNavigation() {
     activeCommercialType,
     activeLandType,
     activeLandSubMenuType,
-    
+    activeHostelType,
+
     // Navigation
     handleNavigation,
     

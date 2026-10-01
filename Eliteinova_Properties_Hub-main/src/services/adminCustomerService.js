@@ -279,9 +279,7 @@ class AdminCustomerService {
 
   async createRequirement(customerId, {
     propertyCategory, listingPurpose, propertyType, bedrooms, preferredLocation,
-    city, state, pincode, budgetMin, budgetMax, furnishingStatus, tenantType,
-    familySize, moveInDate, rentalDuration, parkingRequired, petsAllowed,
-    notes, status,
+    city, state, budgetMin, budgetMax, furnishingStatus, notes, isActive,
   } = {}) {
     this._assertAdmin();
     const body = {};
@@ -292,18 +290,11 @@ class AdminCustomerService {
     if (preferredLocation !== undefined) body.preferredLocation = preferredLocation;
     if (city !== undefined) body.city = city;
     if (state !== undefined) body.state = state;
-    if (pincode !== undefined) body.pincode = pincode;
     if (budgetMin !== undefined) body.budgetMin = budgetMin;
     if (budgetMax !== undefined) body.budgetMax = budgetMax;
     if (furnishingStatus !== undefined) body.furnishingStatus = furnishingStatus;
-    if (tenantType !== undefined) body.tenantType = tenantType;
-    if (familySize !== undefined) body.familySize = familySize;
-    if (moveInDate !== undefined) body.moveInDate = moveInDate;
-    if (rentalDuration !== undefined) body.rentalDuration = rentalDuration;
-    if (parkingRequired !== undefined) body.parkingRequired = parkingRequired;
-    if (petsAllowed !== undefined) body.petsAllowed = petsAllowed;
     if (notes !== undefined) body.notes = notes;
-    if (status !== undefined) body.status = status;
+    if (isActive !== undefined) body.isActive = isActive;
 
     try {
       const response = await axiosInstance.post(`/admin/dashboard/customers/${customerId}/requirements`, body);
@@ -316,9 +307,7 @@ class AdminCustomerService {
 
   async updateRequirement(requirementId, {
     propertyCategory, listingPurpose, propertyType, bedrooms, preferredLocation,
-    city, state, pincode, budgetMin, budgetMax, furnishingStatus, tenantType,
-    familySize, moveInDate, rentalDuration, parkingRequired, petsAllowed,
-    notes, status,
+    city, state, budgetMin, budgetMax, furnishingStatus, notes, isActive,
   } = {}) {
     this._assertAdmin();
     const body = {};
@@ -329,18 +318,11 @@ class AdminCustomerService {
     if (preferredLocation !== undefined) body.preferredLocation = preferredLocation;
     if (city !== undefined) body.city = city;
     if (state !== undefined) body.state = state;
-    if (pincode !== undefined) body.pincode = pincode;
     if (budgetMin !== undefined) body.budgetMin = budgetMin;
     if (budgetMax !== undefined) body.budgetMax = budgetMax;
     if (furnishingStatus !== undefined) body.furnishingStatus = furnishingStatus;
-    if (tenantType !== undefined) body.tenantType = tenantType;
-    if (familySize !== undefined) body.familySize = familySize;
-    if (moveInDate !== undefined) body.moveInDate = moveInDate;
-    if (rentalDuration !== undefined) body.rentalDuration = rentalDuration;
-    if (parkingRequired !== undefined) body.parkingRequired = parkingRequired;
-    if (petsAllowed !== undefined) body.petsAllowed = petsAllowed;
     if (notes !== undefined) body.notes = notes;
-    if (status !== undefined) body.status = status;
+    if (isActive !== undefined) body.isActive = isActive;
 
     try {
       const response = await axiosInstance.patch(`/admin/dashboard/customers/requirements/${requirementId}`, body);
@@ -368,7 +350,7 @@ class AdminCustomerService {
     this._assertAdmin();
     const params = { page, limit };
     if (search) params.search = search;
-    if (customerId) params.customerId = customerId;
+    if (customerId) params.userId = customerId;
 
     try {
       const response = await axiosInstance.get('/admin/dashboard/customers/saved-properties', { params });
@@ -396,7 +378,7 @@ class AdminCustomerService {
     this._assertAdmin();
     const params = { page, limit };
     if (search) params.search = search;
-    if (customerId) params.customerId = customerId;
+    if (customerId) params.userId = customerId;
 
     try {
       const response = await axiosInstance.get('/admin/dashboard/customers/wishlist', { params });
@@ -423,7 +405,7 @@ class AdminCustomerService {
   async listPropertyViews({ page = 1, limit = 20, customerId } = {}) {
     this._assertAdmin();
     const params = { page, limit };
-    if (customerId) params.customerId = customerId;
+    if (customerId) params.userId = customerId;
 
     try {
       const response = await axiosInstance.get('/admin/dashboard/customers/property-views', { params });

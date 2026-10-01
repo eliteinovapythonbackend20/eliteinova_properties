@@ -49,7 +49,7 @@ const kycStatusToBackend = (value) => (value === 'not_submitted' ? 'pending' : v
 
 function mapCustomerToTenant(customer) {
   return {
-    id: customer.id,
+    id: customer.userId,
     name: customer.fullName || '',
     email: customer.email || '',
     phone: customer.phoneNumber || '',
@@ -1212,8 +1212,8 @@ const TenantRegistration = () => {
         });
         const newCustomer = created?.data || created;
         const kycTouched = data.verification.kyc !== 'not_submitted';
-        if (newCustomer?.id && kycTouched) {
-          await adminCustomerService.updateCustomerKyc(newCustomer.id, {
+        if (newCustomer?.userId && kycTouched) {
+          await adminCustomerService.updateCustomerKyc(newCustomer.userId, {
             kycStatus: kycStatusToBackend(data.verification.kyc),
           });
         }

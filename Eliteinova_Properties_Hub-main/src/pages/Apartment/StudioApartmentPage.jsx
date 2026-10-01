@@ -1,7 +1,13 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { ChevronDown, Search, Home, MapPin, Star, Filter, X, Building, Landmark, Warehouse, Building2, Grid3X3, LayoutGrid, Hotel, HomeIcon, Building as BuildingIcon, Castle, Crown, Instagram, Globe, Phone } from "lucide-react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import StudioApartmentFilter from "../../components/filters/Apartment/StudioApartmentFilter";
+import useNavigation from "../../hooks/useNavigation";
+import { usePropertyFilter } from "../../hooks/usePropertyFilter";
+import { searchPropertiesSimple } from "../../services/filterService";
+import PropertyList from "../../components/propertycard/PropertyList";
+import Pagination from "../../components/common/Pagination";
+import { usePagination } from "../../hooks/usePagination";
 
 // Import images from assets
 import individualImg from "../../assets/individualcat.jpg";
@@ -24,14 +30,84 @@ import penthouseApartmentImg from "../../assets/penthouseapar.jpg";
 
 const StudioApartmentPage = () => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const [activeButton, setActiveButton] = useState("Rent");
-  const [activeApartmentType, setActiveApartmentType] = useState("Studio Apartment");
+
+  // ✅ USE CENTRALIZED NAVIGATION HOOK
+  const {
+    data,
+    loading,
+    activeApartmentType,
+    handleNavigation
+  } = useNavigation();
+
+  // ✅ USE CENTRALIZED FILTER HOOK
+  const {
+    filteredData,
+    filterLoading,
+    appliedFilters,
+    handleFilterChange
+  } = usePropertyFilter('apartment');
+
+  // ─── Listing-purpose filter (Buy/Rent/Lease pill, combined with this
+  // page's own property_type — stays on this page instead of navigating
+  // away to a separate /buy, /rent, /lease route) ───────────────────────
+  const [listingPurpose, setListingPurpose] = useState(null); // null = "All"
+  const [purposeFilteredProperties, setPurposeFilteredProperties] = useState([]);
+  const [purposeLoading, setPurposeLoading] = useState(false);
+
+  useEffect(() => {
+    if (!listingPurpose || !activeApartmentType || activeApartmentType === "All") {
+      setPurposeFilteredProperties([]);
+      return;
+    }
+    let cancelled = false;
+    setPurposeLoading(true);
+    searchPropertiesSimple({
+      property_type: activeApartmentType,
+      listing_purpose: listingPurpose,
+      page: 1,
+      limit: 20,
+    })
+      .then((response) => {
+        if (cancelled) return;
+        setPurposeFilteredProperties(response?.data?.data || response?.data || []);
+      })
+      .catch((error) => {
+        console.error("Error fetching purpose-filtered data:", error);
+        if (!cancelled) setPurposeFilteredProperties([]);
+      })
+      .finally(() => {
+        if (!cancelled) setPurposeLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [listingPurpose, activeApartmentType]);
+
+  // ─── Combine Data from All Sources ────────────────────────────────────
+  const properties = useMemo(() => {
+    if (appliedFilters && filteredData.length > 0) {
+      return filteredData;
+    }
+    if (listingPurpose) {
+      return purposeFilteredProperties;
+    }
+    return data;
+  }, [data, filteredData, appliedFilters, listingPurpose, purposeFilteredProperties]);
+
+  const isLoading = loading || filterLoading || purposeLoading;
+
+  // ─── Pagination — client-side over the current properties list ────────
+  const resultsRef = useRef(null);
+  const {
+    currentPage,
+    totalPages,
+    paginatedItems: paginatedProperties,
+    goToPage
+  } = usePagination({ items: properties, pageSize: 10, scrollRef: resultsRef });
+
+  const [activeButton, setActiveButton] = useState("All");
   const [openDropdown, setOpenDropdown] = useState(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [hoveredFilter, setHoveredFilter] = useState(null);
   const [showFilterModal, setShowFilterModal] = useState(false);
-  const [appliedFilters, setAppliedFilters] = useState(null);
 
   const propertyCategories = [
     { name: "Individual", path: "/individual", icon: <Building className="w-4 h-4" /> },
@@ -175,25 +251,28 @@ const StudioApartmentPage = () => {
     }
   ];
 
-  useEffect(() => {
-    const currentPath = location.pathname;
-    const activeType = apartmentTypes.find(type => type.path === currentPath);
-    if (activeType) {
-      setActiveApartmentType(activeType.name);
-    }
-  }, [location.pathname]);
+  // ❌ REMOVED: Local useEffect - Hook handles this automatically
+  // useEffect(() => {
+  //   const currentPath = location.pathname;
+  //   const activeType = apartmentTypes.find(type => type.path === currentPath);
+  //   if (activeType) {
+  //     setActiveApartmentType(activeType.name);
+  //   }
+  // }, [location.pathname]);
 
-  const handleNavigation = (path, typeName = null) => {
-    if (typeName) setActiveApartmentType(typeName);
-    navigate(path);
-  };
+  // ❌ REMOVED: Local handleNavigation - Using hook's handleNavigation
+  // const handleNavigation = (path, typeName = null) => {
+  //   if (typeName) setActiveApartmentType(typeName);
+  //   navigate(path);
+  // };
 
   const handlePropertyCategoryNavigation = (path) => navigate(path);
 
-  const handleFilterChange = (filters) => {
-    setAppliedFilters(filters);
-    console.log("Applied Filters:", filters);
-  };
+  // ❌ REMOVED: Local handleFilterChange - Using hook's handleFilterChange
+  // const handleFilterChange = (filters) => {
+  //   setAppliedFilters(filters);
+  //   console.log("Applied Filters:", filters);
+  // };
 
   // Diamond click handler
   const handleDiamondClick = (path) => {
@@ -203,39 +282,40 @@ const StudioApartmentPage = () => {
   return (
     <div className="w-full min-h-screen relative bg-gradient-to-b from-teal-50 via-white to-teal-50">
       <div className="relative z-10">
-        {/* ===================== BANNER - MODERATE SIZE ===================== */}
+        {/* ===================== BANNER - RESPONSIVE (same layout desktop & mobile, scaled down) ===================== */}
         <section className="relative overflow-hidden bg-[#E7EFEA]">
-          {/* Decorative top shape */}
-          <div className="absolute top-0 left-0 w-[250px] h-[85px] bg-[#D6E4DE] rounded-br-[70px]" />
+          {/* Decorative top shape - scales down on smaller screens, unchanged at lg (system view) */}
+          <div className="absolute top-0 left-0 w-[130px] h-[45px] rounded-br-[35px] sm:w-[170px] sm:h-[58px] sm:rounded-br-[50px] md:w-[210px] md:h-[72px] md:rounded-br-[60px] lg:w-[250px] lg:h-[85px] lg:rounded-br-[70px] bg-[#D6E4DE]" />
 
           <div className="max-w-[1600px] mx-auto">
-            <div className="grid lg:grid-cols-[35%_65%] min-h-[330px]">
+            {/* Always side-by-side (flex-row) at every breakpoint, same as desktop, just smaller */}
+            <div className="flex flex-row min-h-[170px] sm:min-h-[220px] md:min-h-[280px] lg:min-h-[330px]">
 
-              {/* LEFT CONTENT - MODERATE */}
-              <div className="flex flex-col justify-center px-7 lg:px-10 py-7 z-20">
+              {/* LEFT CONTENT - scaled down on mobile, identical at lg */}
+              <div className="flex flex-col justify-center w-[38%] sm:w-[37%] md:w-[36%] lg:w-[35%] shrink-0 px-2.5 sm:px-5 md:px-6 lg:px-10 py-2.5 sm:py-4 md:py-6 lg:py-7 z-20">
 
                 <h1 className="leading-none">
-                  <span className="block text-[28px] font-light text-[#042F2A]">
+                  <span className="block text-[11px] sm:text-[15px] md:text-[20px] lg:text-[28px] font-light text-[#042F2A]">
                     STUDIO
                   </span>
 
-                  <span className="block text-[50px] font-black text-[#012D29] leading-tight">
+                  <span className="block text-[16px] sm:text-[24px] md:text-[36px] lg:text-[50px] font-black text-[#012D29] leading-tight">
                     APARTMENTS
                   </span>
 
-                  <span className="block text-[30px] font-bold text-[#012D29] leading-tight">
+                  <span className="block text-[12px] sm:text-[17px] md:text-[23px] lg:text-[30px] font-bold text-[#012D29] leading-tight">
                     FOR RENT
                   </span>
                 </h1>
 
-                <p className="mt-3 max-w-[340px] text-[#31544E] text-sm leading-relaxed">
+                <p className="mt-1 sm:mt-2 md:mt-2.5 lg:mt-3 max-w-[120px] sm:max-w-[200px] md:max-w-[280px] lg:max-w-[340px] text-[#31544E] text-[8px] sm:text-[10px] md:text-xs lg:text-sm leading-snug lg:leading-relaxed">
                   Discover premium studio apartments,
                   cozy spaces and modern living in prime
                   locations.
                 </p>
 
                 <button
-                  className="mt-4 w-fit px-6 py-2 rounded-lg text-white font-bold shadow-xl text-sm"
+                  className="mt-1.5 sm:mt-2.5 md:mt-3 lg:mt-4 w-fit px-2.5 py-1 sm:px-4 sm:py-1.5 md:px-5 md:py-1.5 lg:px-6 lg:py-2 rounded-md lg:rounded-lg text-white font-bold shadow-md lg:shadow-xl text-[7px] sm:text-[9px] md:text-[11px] lg:text-sm"
                   style={{
                     background: "linear-gradient(135deg,#00695C,#26A69A)"
                   }}
@@ -244,21 +324,21 @@ const StudioApartmentPage = () => {
                 </button>
               </div>
 
-              {/* RIGHT COLLAGE - MODERATE */}
-              <div className="relative overflow-hidden">
+              {/* RIGHT COLLAGE - same composition at every size, scaled down below lg */}
+              <div className="relative overflow-hidden flex-1" style={{ aspectRatio: '16/8' }}>
                 {/* Main Building Background */}
                 <img
                   src={bannerImg}
                   alt="Building"
-                  className="absolute inset-0 w-full h-full object-cover brightness-75"
+                  className="absolute inset-0 w-full h-full object-cover object-top brightness-75"
                 />
 
                 {/* Soft overlay */}
                 <div className="absolute inset-0 bg-gradient-to-r from-[#E7EFEA] via-transparent to-transparent" />
 
-                {/* DIAMOND COLLAGE - MODERATE */}
-                <div className="absolute inset-0 flex items-center justify-start pl-7 z-20">
-                  <div className="relative w-[260px] h-[260px]">
+                {/* DIAMOND COLLAGE - scaled via transform, identical layout at every breakpoint */}
+                <div className="absolute inset-0 flex items-center justify-start pl-2 sm:pl-4 md:pl-6 lg:pl-7 z-20">
+                  <div className="relative w-[260px] h-[260px] scale-[0.42] sm:scale-[0.6] md:scale-[0.8] lg:scale-100 origin-left transition-transform duration-300">
 
                     {/* TOP DIAMOND - Individual */}
                     <div
@@ -464,62 +544,21 @@ const StudioApartmentPage = () => {
 
                   {openDropdown === "toggle" && (
                     <div className="absolute top-full left-0 mt-2 bg-teal-50/95 backdrop-blur-xl rounded-2xl shadow-2xl overflow-hidden z-50 min-w-[170px] border border-teal-200/30 animate-slide-down-fast">
-                      <button
-                        onClick={() => {
-                          handleNavigation("/buy");
-                          setActiveButton("Buy");
-                          setOpenDropdown(null);
-                        }}
-                        className="w-full px-5 py-3 text-left text-sm hover:bg-teal-100/50 transition-all duration-300 text-teal-900 font-medium group"
-                      >
-                        <div className="flex items-center gap-3 group-hover:gap-4 transition-all">
-                          <div className="w-2 h-2 rounded-full bg-gradient-to-r from-teal-500 to-emerald-500"></div>
-                          Buy
-                        </div>
-                      </button>
-                      <div className="h-px bg-gradient-to-r from-transparent via-teal-200/50 to-transparent"></div>
-                      <button
-                        onClick={() => {
-                          handleNavigation("/rent");
-                          setActiveButton("Rent");
-                          setOpenDropdown(null);
-                        }}
-                        className="w-full px-5 py-3 text-left text-sm font-semibold transition-all duration-300 group"
-                        style={{ color: "#00695C", backgroundColor: "#e0f2f1" }}
-                      >
-                        <div className="flex items-center gap-3 group-hover:gap-4 transition-all">
-                          <div className="w-2 h-2 rounded-full bg-gradient-to-r from-teal-500 to-emerald-500"></div>
-                          Rent
-                        </div>
-                      </button>
-                      <div className="h-px bg-gradient-to-r from-transparent via-teal-200/50 to-transparent"></div>
-                      <button
-                        onClick={() => {
-                          handleNavigation("/lease");
-                          setActiveButton("Lease");
-                          setOpenDropdown(null);
-                        }}
-                        className="w-full px-5 py-3 text-left text-sm hover:bg-teal-100/50 transition-all duration-300 text-teal-900 font-medium group"
-                      >
-                        <div className="flex items-center gap-3 group-hover:gap-4 transition-all">
-                          <div className="w-2 h-2 rounded-full bg-gradient-to-r from-teal-500 to-emerald-500"></div>
-                          Lease
-                        </div>
-                      </button>
-                      <div className="h-px bg-gradient-to-r from-transparent via-teal-200/50 to-transparent"></div>
-                      <button
-                        onClick={() => {
-                          handleNavigation("/sell");
-                          setActiveButton("Sell");
-                          setOpenDropdown(null);
-                        }}
-                        className="w-full px-5 py-3 text-left text-sm hover:bg-teal-100/50 transition-all duration-300 text-teal-900 font-medium group"
-                      >
-                        <div className="flex items-center gap-3 group-hover:gap-4 transition-all">
-                          <div className="w-2 h-2 rounded-full bg-gradient-to-r from-teal-500 to-emerald-500"></div>
-                          Sell
-                        </div>
-                      </button>
+                      {["All", "Buy", "Rent", "Lease"].map((item, idx, arr) => (
+                        <React.Fragment key={item}>
+                          <button
+                            onClick={() => { setListingPurpose(item === "All" ? null : item); setActiveButton(item); setOpenDropdown(null); }}
+                            className="w-full px-5 py-3 text-left text-sm hover:bg-teal-100/50 transition-all duration-300 text-teal-900 font-medium group"
+                            style={activeButton === item ? { color: "#00695C", backgroundColor: "#e0f2f1", fontWeight: 600 } : {}}
+                          >
+                            <div className="flex items-center gap-3 group-hover:gap-4 transition-all">
+                              <div className="w-2 h-2 rounded-full bg-gradient-to-r from-teal-500 to-emerald-500"></div>
+                              {item}
+                            </div>
+                          </button>
+                          {idx < arr.length - 1 && <div className="h-px bg-gradient-to-r from-transparent via-teal-200/50 to-transparent"></div>}
+                        </React.Fragment>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -549,23 +588,22 @@ const StudioApartmentPage = () => {
                 </button>
               </div>
 
-              {/* ====== PROPERTY TYPE CATEGORIES - MODERATE SIZE (DESKTOP - UNCHANGED) ====== */}
+              {/* ====== PROPERTY TYPE CATEGORIES - DESKTOP ====== */}
               <div className="flex flex-wrap items-center justify-center gap-3.5 md:gap-5 pt-1.5">
                 {propertyTypeCategories.map((category) => {
-                  const isActive = activeApartmentType === category.name || 
+                  const isActive = activeApartmentType === category.name ||
                     (category.name === "All" && activeApartmentType === "All");
-                  
+
                   return (
                     <div
                       key={category.name}
                       className="group cursor-pointer flex flex-col items-center transition-all duration-300 hover:scale-105"
                       onClick={() => handlePropertyCategoryNavigation(category.path)}
                     >
-                      {/* Round Image - Moderate Size */}
-                      <div 
+                      <div
                         className={`relative w-12 h-12 sm:w-14 sm:h-14 md:w-17 md:h-17 rounded-full overflow-hidden border-[3px] transition-all duration-300 shadow-md hover:shadow-lg ${
-                          isActive 
-                            ? 'border-[#00695C] shadow-[0_0_18px_rgba(0,105,92,0.3)]' 
+                          isActive
+                            ? 'border-[#00695C] shadow-[0_0_18px_rgba(0,105,92,0.3)]'
                             : 'border-gray-300 hover:border-[#00695C]'
                         }`}
                       >
@@ -588,8 +626,7 @@ const StudioApartmentPage = () => {
                           </>
                         )}
                       </div>
-                      
-                      {/* Label - Two lines: first line displayName, second line subText */}
+
                       <div className="flex flex-col items-center mt-0.5">
                         <span className={`text-[8px] sm:text-[9px] md:text-[11px] font-semibold text-center leading-tight transition-colors duration-300 ${
                           isActive ? 'text-[#00695C]' : 'text-[#143B35] group-hover:text-[#00695C]'
@@ -628,10 +665,10 @@ const StudioApartmentPage = () => {
 
                   {openDropdown === "toggle" && (
                     <div className="absolute top-full left-0 mt-2 bg-teal-50/95 backdrop-blur-xl rounded-2xl shadow-2xl overflow-hidden z-50 min-w-[150px] border border-teal-200/30 animate-slide-down-fast">
-                      {["Buy", "Rent", "Lease", "Sell"].map((item, idx, arr) => (
+                      {["All", "Buy", "Rent", "Lease"].map((item, idx, arr) => (
                         <React.Fragment key={item}>
                           <button
-                            onClick={() => { handleNavigation(`/${item.toLowerCase()}`); setActiveButton(item); setOpenDropdown(null); }}
+                            onClick={() => { setListingPurpose(item === "All" ? null : item); setActiveButton(item); setOpenDropdown(null); }}
                             className="w-full px-4 py-2.5 text-left text-xs hover:bg-teal-100/50 transition-all duration-300 text-teal-900 font-medium group"
                             style={activeButton === item ? { color: "#00695C", backgroundColor: "#e0f2f1", fontWeight: 600 } : {}}
                           >
@@ -669,7 +706,7 @@ const StudioApartmentPage = () => {
                 </button>
               </div>
 
-              {/* ====== PROPERTY TYPE CATEGORIES - LARGER ON MOBILE (MATCHES RENTALAPARTMENT) ====== */}
+              {/* ====== PROPERTY TYPE CATEGORIES - MOBILE ====== */}
               <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide pb-1 -mx-1 px-1">
                 {propertyTypeCategories.map((category) => {
                   const isActive = activeApartmentType === category.name ||
@@ -681,9 +718,8 @@ const StudioApartmentPage = () => {
                       className="flex flex-col items-center flex-shrink-0 transition-transform duration-200 active:scale-95"
                       onClick={() => handlePropertyCategoryNavigation(category.path)}
                     >
-                      {/* Round Image - Increased size for mobile */}
                       <div
-                        className={`relative w-12 h-12 rounded-full overflow-hidden border-2 transition-all duration-300 shadow-sm ${
+                        className={`relative w-9 h-9 xs:w-10 xs:h-10 rounded-full overflow-hidden border-2 transition-all duration-300 shadow-sm ${
                           isActive
                             ? 'border-[#00695C] shadow-[0_0_10px_rgba(0,105,92,0.3)]'
                             : 'border-gray-300'
@@ -693,7 +729,7 @@ const StudioApartmentPage = () => {
                           <div className={`w-full h-full flex items-center justify-center transition-colors duration-300 ${
                             isActive ? 'bg-[#00695C]' : 'bg-gray-100'
                           }`}>
-                            <Home className={`w-5 h-5 transition-colors duration-300 ${
+                            <Home className={`w-3.5 h-3.5 transition-colors duration-300 ${
                               isActive ? 'text-white' : 'text-[#00695C]'
                             }`} />
                           </div>
@@ -709,15 +745,14 @@ const StudioApartmentPage = () => {
                         )}
                       </div>
 
-                      {/* Label - two short lines, same pattern as desktop */}
                       <div className="flex flex-col items-center mt-0.5">
-                        <span className={`text-[8px] font-semibold text-center leading-tight whitespace-nowrap transition-colors duration-300 ${
+                        <span className={`text-[7px] font-semibold text-center leading-tight whitespace-nowrap transition-colors duration-300 ${
                           isActive ? 'text-[#00695C]' : 'text-[#143B35]'
                         }`}>
                           {category.displayName || category.name}
                         </span>
                         {category.subText && (
-                          <span className={`text-[8px] font-semibold text-center leading-tight whitespace-nowrap transition-colors duration-300 ${
+                          <span className={`text-[7px] font-semibold text-center leading-tight whitespace-nowrap transition-colors duration-300 ${
                             isActive ? 'text-[#00695C]' : 'text-[#143B35]'
                           }`}>
                             {category.subText}
@@ -737,7 +772,7 @@ const StudioApartmentPage = () => {
           <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[120px] px-4 pb-4 bg-black/50 backdrop-blur-sm animate-fade-in">
             <div className="relative w-full max-w-2xl max-h-[80vh] overflow-y-auto">
               <StudioApartmentFilter
-                activeTab={activeButton}
+                activeTab={activeButton === "All" ? "Rent" : activeButton}
                 onFilterChange={handleFilterChange}
                 onClose={() => setShowFilterModal(false)}
               />
@@ -749,15 +784,29 @@ const StudioApartmentPage = () => {
         <div className="max-w-none mx-auto px-6 py-7 lg:py-11">
           <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
             <div className="lg:w-2/3">
-              <section>
-                <StudioApartment />
+              <section ref={resultsRef} className="scroll-mt-40 lg:scroll-mt-48">
+                {isLoading ? (
+                  <div className="flex justify-center items-center py-20">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-teal-500"></div>
+                  </div>
+                ) : (
+                  <>
+                    <PropertyList
+                      properties={paginatedProperties}
+                      emptyMessage="No studio apartments available at the moment."
+                      emptyIcon="🏢"
+                      emptyTitle="No Studio Apartments Found"
+                    />
+                    <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
+                  </>
+                )}
               </section>
             </div>
 
-            <div className="lg:w-1/3 lg:relative">
+            <div className="hidden lg:block lg:w-1/3 lg:relative">
               <div className="lg:sticky lg:top-[110px] lg:max-h-[calc(100vh-130px)] lg:overflow-y-auto lg:scrollbar-hide animate-slide-in-right">
                 <StudioApartmentFilter
-                  activeTab={activeButton}
+                  activeTab={activeButton === "All" ? "Rent" : activeButton}
                   onFilterChange={handleFilterChange}
                 />
               </div>
@@ -828,12 +877,6 @@ const StudioApartmentPage = () => {
         .lg\\:custom-scrollbar::-webkit-scrollbar-thumb:hover {
           background: linear-gradient(to bottom, #004D40, #00796B);
           box-shadow: 0 0 10px rgba(0, 105, 92, 0.5);
-        }
-
-        @media (max-width: 1024px) {
-          section .relative[style*="260px"] {
-            transform: scale(0.85);
-          }
         }
       `}</style>
     </div>

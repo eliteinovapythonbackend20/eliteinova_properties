@@ -33,7 +33,7 @@ const generateTempPassword = () => `Temp${Math.random().toString(36).slice(2, 10
 
 function mapCustomerToBuyerProfile(customer) {
   return {
-    id: customer.id,
+    id: customer.userId,
     avatar: (customer.fullName || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'NA',
     status: (customer.status || 'pending').toLowerCase(),
     kycStatus: (customer.kycStatus || 'pending').toLowerCase(),
@@ -1401,8 +1401,8 @@ const BuyerProfile = () => {
       });
       const newCustomer = created?.data || created;
       const kycTouched = formData.kycStatus !== 'pending' || Object.values(formData.kyc || {}).some(Boolean);
-      if (newCustomer?.id && kycTouched) {
-        await adminCustomerService.updateCustomerKyc(newCustomer.id, {
+      if (newCustomer?.userId && kycTouched) {
+        await adminCustomerService.updateCustomerKyc(newCustomer.userId, {
           kycStatus: formData.kycStatus,
           aadhaarVerified: formData.kyc.aadhaar,
           panVerified: formData.kyc.pan,

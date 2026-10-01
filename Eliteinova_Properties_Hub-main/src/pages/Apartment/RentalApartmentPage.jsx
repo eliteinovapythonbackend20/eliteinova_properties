@@ -1,10 +1,13 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ChevronDown, Search, Home, MapPin, Star, Filter, X, Building, Landmark, Warehouse, Building2, Grid3X3, LayoutGrid, Hotel, HomeIcon, Building as BuildingIcon, Castle, Crown, Instagram, Globe, Phone } from "lucide-react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import RentalApartmentFilter from "../../components/filters/Apartment/RentalApartmentFilter";
 import PropertyList from "../../components/propertycard/PropertyList";
+import Pagination from "../../components/common/Pagination";
+import { usePagination } from "../../hooks/usePagination";
 import useNavigation from "../../hooks/useNavigation";
 import { usePropertyFilter } from "../../hooks/usePropertyFilter";
+import { searchPropertiesSimple } from "../../services/filterService";
 
 // Import images from assets
 import individualImg from "../../assets/individualcat.jpg";
@@ -27,22 +30,70 @@ import penthouseApartmentImg from "../../assets/penthouseapar.jpg";
 
 const RentalApartmentPage = () => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const [activeButton, setActiveButton] = useState("Rent");
-  const [activeApartmentType, setActiveApartmentType] = useState("Rental Apartment");
+  const [activeButton, setActiveButton] = useState("All");
   const [openDropdown, setOpenDropdown] = useState(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [hoveredFilter, setHoveredFilter] = useState(null);
   const [showFilterModal, setShowFilterModal] = useState(false);
 
-  const { data: navData, loading: navLoading } = useNavigation();
+  // ✅ USE CENTRALIZED NAVIGATION HOOK
+  const { data, loading, activeApartmentType, handleNavigation } = useNavigation();
   const { filteredData, filterLoading, appliedFilters, handleFilterChange: applyCanonicalFilter } =
     usePropertyFilter('apartment');
-  const properties = useMemo(
-    () => (appliedFilters && filteredData.length > 0 ? filteredData : navData),
-    [appliedFilters, filteredData, navData]
-  );
-  const isLoadingProperties = navLoading || filterLoading;
+
+  // ─── Listing-purpose filter (Buy/Rent/Lease pill, combined with this
+  // page's own property_type — stays on this page instead of navigating
+  // away to a separate /buy, /rent, /lease route) ───────────────────────
+  const [listingPurpose, setListingPurpose] = useState(null); // null = "All"
+  const [purposeFilteredProperties, setPurposeFilteredProperties] = useState([]);
+  const [purposeLoading, setPurposeLoading] = useState(false);
+
+  useEffect(() => {
+    if (!listingPurpose || !activeApartmentType || activeApartmentType === "All") {
+      setPurposeFilteredProperties([]);
+      return;
+    }
+    let cancelled = false;
+    setPurposeLoading(true);
+    searchPropertiesSimple({
+      property_type: activeApartmentType,
+      listing_purpose: listingPurpose,
+      page: 1,
+      limit: 20,
+    })
+      .then((response) => {
+        if (cancelled) return;
+        setPurposeFilteredProperties(response?.data?.data || response?.data || []);
+      })
+      .catch((error) => {
+        console.error("Error fetching purpose-filtered data:", error);
+        if (!cancelled) setPurposeFilteredProperties([]);
+      })
+      .finally(() => {
+        if (!cancelled) setPurposeLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [listingPurpose, activeApartmentType]);
+
+  const properties = useMemo(() => {
+    if (appliedFilters && filteredData.length > 0) {
+      return filteredData;
+    }
+    if (listingPurpose) {
+      return purposeFilteredProperties;
+    }
+    return data;
+  }, [appliedFilters, filteredData, data, listingPurpose, purposeFilteredProperties]);
+  const isLoadingProperties = loading || filterLoading || purposeLoading;
+
+  // ─── Pagination — client-side over the current properties list ────────
+  const resultsRef = useRef(null);
+  const {
+    currentPage,
+    totalPages,
+    paginatedItems: paginatedProperties,
+    goToPage
+  } = usePagination({ items: properties, pageSize: 10, scrollRef: resultsRef });
 
   const propertyCategories = [
     { name: "Individual", path: "/individual", icon: <Building className="w-4 h-4" /> },
@@ -186,23 +237,6 @@ const RentalApartmentPage = () => {
       position: "bottom"
     }
   ];
-
-  useEffect(() => {
-    const currentPath = location.pathname;
-    const activeType = apartmentTypes.find(type => type.path === currentPath);
-    if (activeType) {
-      setActiveApartmentType(activeType.name);
-    } else if (currentPath === "/apartment" || currentPath === "/apartment/") {
-      setActiveApartmentType("All");
-    }
-  }, [location.pathname]);
-
-  const handleNavigation = (path, typeName = null) => {
-    if (typeName) {
-      setActiveApartmentType(typeName);
-    }
-    navigate(path);
-  };
 
   const handlePropertyCategoryNavigation = (path) => {
     navigate(path);
@@ -481,62 +515,25 @@ const RentalApartmentPage = () => {
 
                   {openDropdown === "toggle" && (
                     <div className="absolute top-full left-0 mt-2 bg-teal-50/95 backdrop-blur-xl rounded-2xl shadow-2xl overflow-hidden z-50 min-w-[170px] border border-teal-200/30 animate-slide-down-fast">
-                      <button
-                        onClick={() => {
-                          handleNavigation("/buy");
-                          setActiveButton("Buy");
-                          setOpenDropdown(null);
-                        }}
-                        className="w-full px-5 py-3 text-left text-sm hover:bg-teal-100/50 transition-all duration-300 text-teal-900 font-medium group"
-                      >
-                        <div className="flex items-center gap-3 group-hover:gap-4 transition-all">
-                          <div className="w-2 h-2 rounded-full bg-gradient-to-r from-teal-500 to-emerald-500"></div>
-                          Buy
-                        </div>
-                      </button>
-                      <div className="h-px bg-gradient-to-r from-transparent via-teal-200/50 to-transparent"></div>
-                      <button
-                        onClick={() => {
-                          handleNavigation("/rent");
-                          setActiveButton("Rent");
-                          setOpenDropdown(null);
-                        }}
-                        className="w-full px-5 py-3 text-left text-sm font-semibold transition-all duration-300 group"
-                        style={{ color: "#00695C", backgroundColor: "#e0f2f1" }}
-                      >
-                        <div className="flex items-center gap-3 group-hover:gap-4 transition-all">
-                          <div className="w-2 h-2 rounded-full bg-gradient-to-r from-teal-500 to-emerald-500"></div>
-                          Rent
-                        </div>
-                      </button>
-                      <div className="h-px bg-gradient-to-r from-transparent via-teal-200/50 to-transparent"></div>
-                      <button
-                        onClick={() => {
-                          handleNavigation("/lease");
-                          setActiveButton("Lease");
-                          setOpenDropdown(null);
-                        }}
-                        className="w-full px-5 py-3 text-left text-sm hover:bg-teal-100/50 transition-all duration-300 text-teal-900 font-medium group"
-                      >
-                        <div className="flex items-center gap-3 group-hover:gap-4 transition-all">
-                          <div className="w-2 h-2 rounded-full bg-gradient-to-r from-teal-500 to-emerald-500"></div>
-                          Lease
-                        </div>
-                      </button>
-                      <div className="h-px bg-gradient-to-r from-transparent via-teal-200/50 to-transparent"></div>
-                      <button
-                        onClick={() => {
-                          handleNavigation("/sell");
-                          setActiveButton("Sell");
-                          setOpenDropdown(null);
-                        }}
-                        className="w-full px-5 py-3 text-left text-sm hover:bg-teal-100/50 transition-all duration-300 text-teal-900 font-medium group"
-                      >
-                        <div className="flex items-center gap-3 group-hover:gap-4 transition-all">
-                          <div className="w-2 h-2 rounded-full bg-gradient-to-r from-teal-500 to-emerald-500"></div>
-                          Sell
-                        </div>
-                      </button>
+                      {["All", "Buy", "Rent", "Lease"].map((item, idx, arr) => (
+                        <React.Fragment key={item}>
+                          <button
+                            onClick={() => {
+                              setListingPurpose(item === "All" ? null : item);
+                              setActiveButton(item);
+                              setOpenDropdown(null);
+                            }}
+                            className="w-full px-5 py-3 text-left text-sm hover:bg-teal-100/50 transition-all duration-300 text-teal-900 font-medium group"
+                            style={activeButton === item ? { color: "#00695C", backgroundColor: "#e0f2f1", fontWeight: 600 } : {}}
+                          >
+                            <div className="flex items-center gap-3 group-hover:gap-4 transition-all">
+                              <div className="w-2 h-2 rounded-full bg-gradient-to-r from-teal-500 to-emerald-500"></div>
+                              {item}
+                            </div>
+                          </button>
+                          {idx < arr.length - 1 && <div className="h-px bg-gradient-to-r from-transparent via-teal-200/50 to-transparent"></div>}
+                        </React.Fragment>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -566,23 +563,22 @@ const RentalApartmentPage = () => {
                 </button>
               </div>
 
-              {/* ====== PROPERTY TYPE CATEGORIES - MODERATE SIZE (DESKTOP - UNCHANGED) ====== */}
+              {/* ====== PROPERTY TYPE CATEGORIES - DESKTOP ====== */}
               <div className="flex flex-wrap items-center justify-center gap-3.5 md:gap-5 pt-1.5">
                 {propertyTypeCategories.map((category) => {
-                  const isActive = activeApartmentType === category.name || 
+                  const isActive = activeApartmentType === category.name ||
                     (category.name === "All" && activeApartmentType === "All");
-                  
+
                   return (
                     <div
                       key={category.name}
                       className="group cursor-pointer flex flex-col items-center transition-all duration-300 hover:scale-105"
                       onClick={() => handlePropertyCategoryNavigation(category.path)}
                     >
-                      {/* Round Image - Moderate Size */}
-                      <div 
+                      <div
                         className={`relative w-12 h-12 sm:w-14 sm:h-14 md:w-17 md:h-17 rounded-full overflow-hidden border-[3px] transition-all duration-300 shadow-md hover:shadow-lg ${
-                          isActive 
-                            ? 'border-[#00695C] shadow-[0_0_18px_rgba(0,105,92,0.3)]' 
+                          isActive
+                            ? 'border-[#00695C] shadow-[0_0_18px_rgba(0,105,92,0.3)]'
                             : 'border-gray-300 hover:border-[#00695C]'
                         }`}
                       >
@@ -605,8 +601,7 @@ const RentalApartmentPage = () => {
                           </>
                         )}
                       </div>
-                      
-                      {/* Label - Two lines: first line displayName, second line subText */}
+
                       <div className="flex flex-col items-center mt-0.5">
                         <span className={`text-[8px] sm:text-[9px] md:text-[11px] font-semibold text-center leading-tight transition-colors duration-300 ${
                           isActive ? 'text-[#00695C]' : 'text-[#143B35] group-hover:text-[#00695C]'
@@ -645,10 +640,10 @@ const RentalApartmentPage = () => {
 
                   {openDropdown === "toggle" && (
                     <div className="absolute top-full left-0 mt-2 bg-teal-50/95 backdrop-blur-xl rounded-2xl shadow-2xl overflow-hidden z-50 min-w-[150px] border border-teal-200/30 animate-slide-down-fast">
-                      {["Buy", "Rent", "Lease", "Sell"].map((item, idx, arr) => (
+                      {["All", "Buy", "Rent", "Lease"].map((item, idx, arr) => (
                         <React.Fragment key={item}>
                           <button
-                            onClick={() => { handleNavigation(`/${item.toLowerCase()}`); setActiveButton(item); setOpenDropdown(null); }}
+                            onClick={() => { setListingPurpose(item === "All" ? null : item); setActiveButton(item); setOpenDropdown(null); }}
                             className="w-full px-4 py-2.5 text-left text-xs hover:bg-teal-100/50 transition-all duration-300 text-teal-900 font-medium group"
                             style={activeButton === item ? { color: "#00695C", backgroundColor: "#e0f2f1", fontWeight: 600 } : {}}
                           >
@@ -686,7 +681,7 @@ const RentalApartmentPage = () => {
                 </button>
               </div>
 
-              {/* ====== PROPERTY TYPE CATEGORIES - LARGER ON MOBILE ====== */}
+              {/* ====== PROPERTY TYPE CATEGORIES - MOBILE ====== */}
               <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide pb-1 -mx-1 px-1">
                 {propertyTypeCategories.map((category) => {
                   const isActive = activeApartmentType === category.name ||
@@ -698,9 +693,8 @@ const RentalApartmentPage = () => {
                       className="flex flex-col items-center flex-shrink-0 transition-transform duration-200 active:scale-95"
                       onClick={() => handlePropertyCategoryNavigation(category.path)}
                     >
-                      {/* Round Image - Increased size for mobile */}
                       <div
-                        className={`relative w-12 h-12 rounded-full overflow-hidden border-2 transition-all duration-300 shadow-sm ${
+                        className={`relative w-9 h-9 xs:w-10 xs:h-10 rounded-full overflow-hidden border-2 transition-all duration-300 shadow-sm ${
                           isActive
                             ? 'border-[#00695C] shadow-[0_0_10px_rgba(0,105,92,0.3)]'
                             : 'border-gray-300'
@@ -710,7 +704,7 @@ const RentalApartmentPage = () => {
                           <div className={`w-full h-full flex items-center justify-center transition-colors duration-300 ${
                             isActive ? 'bg-[#00695C]' : 'bg-gray-100'
                           }`}>
-                            <Home className={`w-5 h-5 transition-colors duration-300 ${
+                            <Home className={`w-3.5 h-3.5 transition-colors duration-300 ${
                               isActive ? 'text-white' : 'text-[#00695C]'
                             }`} />
                           </div>
@@ -726,15 +720,14 @@ const RentalApartmentPage = () => {
                         )}
                       </div>
 
-                      {/* Label - two short lines, same pattern as desktop */}
                       <div className="flex flex-col items-center mt-0.5">
-                        <span className={`text-[8px] font-semibold text-center leading-tight whitespace-nowrap transition-colors duration-300 ${
+                        <span className={`text-[7px] font-semibold text-center leading-tight whitespace-nowrap transition-colors duration-300 ${
                           isActive ? 'text-[#00695C]' : 'text-[#143B35]'
                         }`}>
                           {category.displayName || category.name}
                         </span>
                         {category.subText && (
-                          <span className={`text-[8px] font-semibold text-center leading-tight whitespace-nowrap transition-colors duration-300 ${
+                          <span className={`text-[7px] font-semibold text-center leading-tight whitespace-nowrap transition-colors duration-300 ${
                             isActive ? 'text-[#00695C]' : 'text-[#143B35]'
                           }`}>
                             {category.subText}
@@ -754,7 +747,7 @@ const RentalApartmentPage = () => {
           <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[120px] px-4 pb-4 bg-black/50 backdrop-blur-sm animate-fade-in">
             <div className="relative w-full max-w-2xl max-h-[80vh] overflow-y-auto">
               <RentalApartmentFilter
-                activeTab={activeButton}
+                activeTab={activeButton === "All" ? "Rent" : activeButton}
                 onFilterChange={handleFilterChange}
                 onClose={() => setShowFilterModal(false)}
               />
@@ -766,24 +759,27 @@ const RentalApartmentPage = () => {
         <div className="max-w-none mx-auto px-6 py-7 lg:py-11">
           <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
             <div className="lg:w-2/3">
-              <section>
+              <section ref={resultsRef} className="scroll-mt-40 lg:scroll-mt-48">
                 {isLoadingProperties ? (
                   <div className="text-center py-10 text-teal-700 font-semibold">Loading properties...</div>
                 ) : (
-                  <PropertyList
-                    properties={properties}
-                    emptyIcon="🏢"
-                    emptyTitle="No Rental Apartments Found"
-                    emptyMessage="Try adjusting your filters or check back later."
-                  />
+                  <>
+                    <PropertyList
+                      properties={paginatedProperties}
+                      emptyIcon="🏢"
+                      emptyTitle="No Rental Apartments Found"
+                      emptyMessage="Try adjusting your filters or check back later."
+                    />
+                    <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
+                  </>
                 )}
               </section>
             </div>
 
-            <div className="lg:w-1/3 lg:relative">
+            <div className="hidden lg:block lg:w-1/3 lg:relative">
               <div className="lg:sticky lg:top-[110px] lg:max-h-[calc(100vh-130px)] lg:overflow-y-auto lg:scrollbar-hide animate-slide-in-right">
                 <RentalApartmentFilter
-                  activeTab={activeButton}
+                  activeTab={activeButton === "All" ? "Rent" : activeButton}
                   onFilterChange={handleFilterChange}
                 />
               </div>

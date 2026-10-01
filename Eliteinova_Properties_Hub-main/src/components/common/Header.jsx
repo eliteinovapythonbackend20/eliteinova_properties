@@ -306,6 +306,10 @@ const Header = ({ onPostPropertyClick }) => {
     { label: "Property Management", icon: "🏢", path: "/profile/property-management" }
   ];
 
+  const customerProfileMenu = [
+    { label: "My Profile", icon: "👤", path: "/profile/customer" }
+  ];
+
   const adminMenu = [
     { 
       label: "Admin", 
@@ -1298,9 +1302,27 @@ const Header = ({ onPostPropertyClick }) => {
                               ))}
                             </>
                           )}
-                          
+
+                          {isUser && (
+                            <>
+                              {customerProfileMenu.map((item, index) => (
+                                <button
+                                  key={index}
+                                  onClick={() => handleProfileNavigation(item.path)}
+                                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gradient-to-r from-[#00695C]/5 to-[#26A69A]/5 transition-all duration-300 group"
+                                >
+                                  <span className="text-xl">{item.icon}</span>
+                                  <span className="text-sm font-semibold text-gray-800 group-hover:text-[#00695C] transition-colors">
+                                    {item.label}
+                                  </span>
+                                  <ChevronDown className="w-3.5 h-3.5 ml-auto text-gray-400 group-hover:text-[#00695C] transition-colors -rotate-90" />
+                                </button>
+                              ))}
+                            </>
+                          )}
+
                           <div className="border-t border-gray-200/50 my-1"></div>
-                          
+
                           <button
                             onClick={handleLogout}
                             className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gradient-to-r from-red-50 to-pink-50 transition-all duration-300 group"
@@ -2894,7 +2916,25 @@ const Header = ({ onPostPropertyClick }) => {
                         ))}
                       </>
                     )}
-                    
+
+                    {isUser && (
+                      <>
+                        {customerProfileMenu.map((item, index) => (
+                          <button
+                            key={index}
+                            onClick={() => {
+                              handleProfileNavigation(item.path);
+                              toggleMobileMenu();
+                            }}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 transition-all duration-300"
+                          >
+                            <span className="text-xl">{item.icon}</span>
+                            <span className="text-white text-sm font-medium">{item.label}</span>
+                          </button>
+                        ))}
+                      </>
+                    )}
+
                     <button
                       onClick={() => {
                         handleLogout();

@@ -36,20 +36,20 @@ import adminCustomerService from '../../../../services/adminCustomerService';
 
    Field names below are confirmed against the real backend
    (app/schemas/admin_customer_schemas.py AdminRequirementInput +
-   app/services/admin_customer_service.py's REQUIREMENT_FIELD_MAP /
-   _to_requirement_card), read once the parallel backend agent's code
-   landed mid-task: the requirement row has propertyCategory/listingPurpose/
-   propertyType/budgetMin/budgetMax/furnishingStatus/preferredLocation/its
-   OWN city/state/pincode (independent of the customer's home address) -
-   not the flat propertyType/minBudget/maxBudget/furnishing/location the
-   mock's form used. The mock's single "Property Type" dropdown
-   (Individual/Apartment/.../Hostel) maps to propertyCategory (matching the
-   Properties admin's own category enum); the requirement's own finer
-   propertyType and listingPurpose have no field in this form, so
-   listingPurpose defaults to 'RENT' (this is the rental-requirements page)
-   and propertyType is left unset. requirement.status values
-   (pending/active/expired) already match the backend's REQUIREMENT_STATUSES
-   exactly, no conversion needed.
+   app/services/admin_customer_service.py's _to_requirement_card).
+   CustomerRequirement backs a future requirement-matching page whose real
+   form doesn't exist yet, so its field set is deliberately minimal and NOT
+   final: propertyCategory, listingPurpose, propertyType, bedrooms,
+   preferredLocation, city, state, budgetMin, budgetMax, furnishingStatus,
+   notes, isActive (bool), plus id/userId/createdAt/updatedAt. There is no
+   pincode, tenantType, familySize, moveInDate, rentalDuration,
+   parkingRequired, or petsAllowed on this table - the mock's fields for
+   those stay local/decorative only (never sent, never read back) rather
+   than inventing a backend shape that doesn't exist. isActive is a plain
+   boolean, not the mock's three-state pending/active/expired - mapped
+   isActive=false -> 'expired', isActive=true -> 'active', unset -> 'pending'
+   for display, and formData.status='expired' -> isActive:false, anything
+   else -> isActive:true, when saving.
 ============================================================ */
 const CATEGORY_TO_BACKEND = {
   Individual: 'INDIVIDUAL',
@@ -66,10 +66,15 @@ const CATEGORY_FROM_BACKEND = {
   HOSTEL: 'Hostel',
 };
 
+// tenantType/familySize/moveInDate/rentalDuration/parkingRequired/
+// petsAllowed have no backing column on CustomerRequirement (see the block
+// comment above) - kept as local-only defaults here, never read from or
+// written to the backend.
 function mapRequirementRow(customer, requirement) {
+  const status = requirement.isActive === undefined ? 'pending' : (requirement.isActive ? 'active' : 'expired');
   return {
     id: requirement.id,
-    customerId: customer.id,
+    customerId: customer.userId,
     name: customer.fullName || '',
     email: customer.email || '',
     phone: customer.phoneNumber || '',
@@ -81,13 +86,13 @@ function mapRequirementRow(customer, requirement) {
     propertyType: CATEGORY_FROM_BACKEND[requirement.propertyCategory] || requirement.propertyCategory || 'Apartment',
     furnishing: requirement.furnishingStatus || 'Semi Furnished',
     bedrooms: requirement.bedrooms || 1,
-    moveInDate: requirement.moveInDate || new Date().toISOString(),
-    rentalDuration: requirement.rentalDuration || '12 months',
-    tenantType: requirement.tenantType || 'Family',
-    familySize: requirement.familySize || 1,
-    parkingRequired: !!requirement.parkingRequired,
-    petsAllowed: !!requirement.petsAllowed,
-    status: requirement.status || 'pending',
+    moveInDate: new Date().toISOString(),
+    rentalDuration: '12 months',
+    tenantType: 'Family',
+    familySize: 1,
+    parkingRequired: false,
+    petsAllowed: false,
+    status,
     notes: requirement.notes || '',
     createdAt: requirement.createdAt || new Date().toISOString(),
   };
@@ -96,7 +101,9 @@ function mapRequirementRow(customer, requirement) {
 // Requirement-level fields only - name/email/phone live on the Customer and
 // are saved separately (see saveForm below). city/state are sent at both
 // levels: the mock form only collects one city/state, reused here for the
-// requirement's own (independent) target-location fields too.
+// requirement's own (independent) target-location fields too. tenantType/
+// familySize/moveInDate/rentalDuration/parkingRequired/petsAllowed/pincode
+// are NOT sent - no backing column exists yet (see block comment above).
 function buildRequirementPayload(formData) {
   return {
     propertyCategory: CATEGORY_TO_BACKEND[formData.propertyType] || undefined,
@@ -108,14 +115,8 @@ function buildRequirementPayload(formData) {
     state: formData.state,
     bedrooms: formData.bedrooms,
     furnishingStatus: formData.furnishing,
-    tenantType: formData.tenantType,
-    familySize: formData.familySize,
-    parkingRequired: formData.parkingRequired,
-    petsAllowed: formData.petsAllowed,
-    moveInDate: formData.moveInDate,
-    rentalDuration: formData.rentalDuration,
     notes: formData.notes,
-    status: formData.status,
+    isActive: formData.status !== 'expired',
   };
 }
 
@@ -927,10 +928,10 @@ const TenantRequirements = () => {
     const perCustomer = await Promise.all(
       customers.map(async (customer) => {
         try {
-          const res = await adminCustomerService.listRequirements(customer.id);
+          const res = await adminCustomerService.listRequirements(customer.userId);
           return (res?.data || []).map(req => mapRequirementRow(customer, req));
         } catch (error) {
-          console.error(`Failed to fetch requirements for customer ${customer.id}:`, error);
+          console.error(`Failed to fetch requirements for customer ${customer.userId}:`, error);
           return [];
         }
       })
@@ -1093,7 +1094,7 @@ const TenantRequirements = () => {
         const existing = await adminCustomerService.listCustomers({ customerType: 'tenant', search: data.email, limit: 5 });
         const match = (existing?.data || []).find(c => (c.email || '').toLowerCase() === data.email.toLowerCase());
         if (match) {
-          customerId = match.id;
+          customerId = match.userId;
         } else {
           const created = await adminCustomerService.createCustomer({
             fullName: data.name,
@@ -1104,7 +1105,7 @@ const TenantRequirements = () => {
             customerType: 'tenant',
             password: generateTempPassword(),
           });
-          customerId = (created?.data || created)?.id;
+          customerId = (created?.data || created)?.userId;
         }
 
         const createdReq = await adminCustomerService.createRequirement(customerId, buildRequirementPayload(data));

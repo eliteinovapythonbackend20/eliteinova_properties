@@ -15,6 +15,10 @@ from app.repositories.admin_dashboard_repository import AdminDashboardRepository
 from app.services.admin_dashboard_service import AdminDashboardService
 from app.repositories.admin_customer_repository import AdminCustomerRepository
 from app.services.admin_customer_service import AdminCustomerService
+from app.repositories.customer_repository import CustomerRepository
+from app.services.customer_service import CustomerService
+from app.repositories.admin_property_request_repository import AdminPropertyRequestRepository
+from app.services.admin_property_request_service import AdminPropertyRequestService
 
 security = HTTPBearer(auto_error=False)
 
@@ -37,6 +41,12 @@ async def get_admin_dashboard_service(db: AsyncSession = Depends(get_db)) -> Adm
 
 async def get_admin_customer_service(db: AsyncSession = Depends(get_db)) -> AdminCustomerService:
     return AdminCustomerService(AdminCustomerRepository(db))
+
+async def get_customer_service(db: AsyncSession = Depends(get_db)) -> CustomerService:
+    return CustomerService(CustomerRepository(db), ProfileService(VendorProfileRepository(db)))
+
+async def get_admin_property_request_service(db: AsyncSession = Depends(get_db)) -> AdminPropertyRequestService:
+    return AdminPropertyRequestService(AdminPropertyRequestRepository(db), ProfileService(VendorProfileRepository(db)))
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
@@ -86,3 +96,4 @@ def require_roles(allowed_roles: List[str]):
 require_admin = require_roles(["admin"])
 require_authenticated = require_roles(["admin", "vendor", "user"])
 require_vendor = require_roles(["admin", "vendor"])
+require_customer = require_roles(["admin", "user"])

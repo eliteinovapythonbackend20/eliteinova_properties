@@ -917,6 +917,10 @@ const PropertyManagementProfile = lazy(
   () => import("./components/profiles/PropertyManagementProfile")
 );
 
+const CustomerProfile = lazy(
+  () => import("./components/profiles/CustomerProfile.jsx")
+);
+
 const AdminDashboard = lazy(
   () => import("./components/dashboard/AdminDashboard.jsx")
 );
@@ -1182,6 +1186,11 @@ function AppLayout() {
             <Route
               path="/profile/property-management"
               element={<PropertyManagementProfile />}
+            />
+
+            <Route
+              path="/profile/customer"
+              element={<CustomerProfile />}
             />
 
             {/* ==================================================

@@ -25,7 +25,7 @@ import adminCustomerService from '../../../../services/adminCustomerService';
    Field names confirmed against the real backend
    (app/services/admin_customer_service.py's _to_wishlist_card /
    _base_activity_fields), read once the parallel backend agent's code
-   landed mid-task: id, customerId, customerName, customerEmail,
+   landed mid-task: id, userId, customerName, customerEmail,
    customerPhone, propertyId, propertyTitle, propertyCategory, city, state,
    address, priceAtAdd, currentPrice, priceChanged (server-computed, no
    need to derive it client-side), isNew (server-computed off the

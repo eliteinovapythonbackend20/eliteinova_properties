@@ -48,7 +48,7 @@ function mapCustomerToBuyer(customer) {
   const status = (customer.status || 'pending').toLowerCase();
   const kycStatus = (customer.kycStatus || 'pending').toLowerCase();
   return {
-    id: customer.id,
+    id: customer.userId,
     name: customer.fullName || '',
     email: customer.email || '',
     phone: customer.phoneNumber || '',
@@ -1208,8 +1208,8 @@ const BuyerRegistration = () => {
       // createCustomer has no kyc fields - follow up with the KYC endpoint
       // only if the admin actually set anything on the Add form.
       const kycTouched = formData.kycStatus !== 'pending' || Object.values(formData.kyc || {}).some(Boolean);
-      if (newCustomer?.id && kycTouched) {
-        await adminCustomerService.updateCustomerKyc(newCustomer.id, {
+      if (newCustomer?.userId && kycTouched) {
+        await adminCustomerService.updateCustomerKyc(newCustomer.userId, {
           kycStatus: formData.kycStatus,
           aadhaarVerified: formData.kyc.aadhaar,
           panVerified: formData.kyc.pan,

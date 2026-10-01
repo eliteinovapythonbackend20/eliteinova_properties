@@ -64,6 +64,24 @@ class PropertyRepository:
             joinedload(BaseProperty.property_management_details),
         ]
 
+    @staticmethod
+    def get_full_relations_options_nested(relationship_attr):
+        """Same relation set as get_full_relations_options(), anchored under
+        a parent relationship instead of BaseProperty directly - for callers
+        that reach a property through a join table (e.g.
+        CustomerSavedProperty.property, PropertyRequest.property) and still
+        need every relation ProfileService.to_response touches eagerly
+        loaded, to avoid a MissingGreenlet lazy-load error outside the
+        request's async context."""
+        return [
+            relationship_attr.selectinload(BaseProperty.media),
+            relationship_attr.selectinload(BaseProperty.documents),
+            relationship_attr.joinedload(BaseProperty.owner_details),
+            relationship_attr.joinedload(BaseProperty.agent_details),
+            relationship_attr.joinedload(BaseProperty.builder_details),
+            relationship_attr.joinedload(BaseProperty.property_management_details),
+        ]
+
     def _sanitize_property_data(self, property_data: Dict[str, Any]) -> Dict[str, Any]:
         """Filter property payload down to columns supported by the base property model."""
         if not property_data:

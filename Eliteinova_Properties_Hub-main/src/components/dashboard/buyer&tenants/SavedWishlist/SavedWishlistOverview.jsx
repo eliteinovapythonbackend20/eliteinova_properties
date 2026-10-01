@@ -352,7 +352,7 @@ const SavedWishlistOverview = () => {
       }).length;
 
       const totalWishlist = wishlistRows.length;
-      const wishlistUsers = new Set(wishlistRows.map(r => r.customerId || r.customer?.id).filter(Boolean)).size;
+      const wishlistUsers = new Set(wishlistRows.map(r => r.userId).filter(Boolean)).size;
       const unavailableWishlist = wishlistRows.filter(r => {
         const status = (r.status || r.propertyStatus || '').toLowerCase();
         return status && status !== 'available';

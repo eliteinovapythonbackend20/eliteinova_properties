@@ -51,7 +51,7 @@ function mapCustomerToActivityTenant(customer) {
     ...decorativeActivityExtras(),
   };
   return {
-    id: customer.id,
+    id: customer.userId,
     avatar: (customer.fullName || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'NA',
     status: (customer.status || 'pending').toLowerCase(),
     kycStatus: (customer.kycStatus || 'pending').toLowerCase(),

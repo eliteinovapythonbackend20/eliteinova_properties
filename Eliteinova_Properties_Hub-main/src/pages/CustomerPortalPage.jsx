@@ -108,7 +108,7 @@ const hostelImages = [hostel1, hostel2, hostel3, hostel4, hostel5];
 const hostelSubTypes = [
   { label: "Girls Hostel", path: "/hostel/girls-hostel" },
   { label: "Boys Hostel", path: "/hostel/boys-hostel" },
-  { label: "Co Living Space", path: "/hostel/co-living-space" },
+  { label: "Co Living Space", path: "/hostel/co-living-hostel" },
   { label: "Working Professional Hostel", path: "/hostel/working-professional-hostel" }
 ];
 const hostelItems = hostelSubTypes.map((item, i) => ({

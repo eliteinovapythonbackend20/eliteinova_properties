@@ -12,6 +12,8 @@ from app.middleware.auth_middleware import AuthMiddleware
 from app.api import payment_controller
 from app.api import admin_dashboard_controller
 from app.api import admin_customer_controller
+from app.api import customer_controller
+from app.api import admin_property_request_controller
 
 
 
@@ -87,6 +89,9 @@ app.include_router(payment_controller.router,prefix="/api/v1/payments", tags=["p
 
 app.include_router(admin_dashboard_controller.router, prefix="/api/v1/admin/dashboard", tags=["Admin Dashboard"])
 app.include_router(admin_customer_controller.router, prefix="/api/v1/admin/dashboard/customers", tags=["Admin Customers"])
+app.include_router(admin_property_request_controller.router, prefix="/api/v1/admin/dashboard/property-requests", tags=["Admin Property Requests"])
+
+app.include_router(customer_controller.router, prefix="/api/v1/customer", tags=["Customer"])
 @app.get("/")
 async def root():
     return {

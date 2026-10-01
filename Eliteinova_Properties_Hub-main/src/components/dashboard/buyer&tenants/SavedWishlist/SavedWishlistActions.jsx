@@ -63,7 +63,7 @@ const CATEGORY_FROM_BACKEND = {
 function mapWishlistActionRow(row) {
   return {
     id: row.id,
-    buyerId: row.customerId || '',
+    buyerId: row.userId || '',
     buyerName: row.customerName || '',
     buyerEmail: row.customerEmail || '',
     propertyId: row.propertyId || '',

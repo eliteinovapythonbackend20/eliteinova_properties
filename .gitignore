@@ -5,6 +5,7 @@ venv/
 .venv/
 ENV/
 env/
+realestate/tests
 realestate/venv/
 realestate/.venv/
 
@@ -18,6 +19,9 @@ realestate/.venv/
 .eggs/
 build/
 dist/
+pages1/
+assets1/
+
 
 # ==============================================================================
 # Environment variables & secrets

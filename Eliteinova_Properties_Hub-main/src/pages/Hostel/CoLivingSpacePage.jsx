@@ -1,5 +1,5 @@
 // CoLivingSpacePage.jsx
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ChevronDown, Search, Home, MapPin, Star, Filter, Building, Landmark, Warehouse, Building2, Users, BedDouble } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import backgroundImage from "../../assets/indmainbanner.jpg";
@@ -7,37 +7,91 @@ import CoLivingSpaceFilter from "../../components/filters/Hostel/CoLivingSpaceFi
 import useNavigation from "../../hooks/useNavigation";
 import { usePropertyFilter } from "../../hooks/usePropertyFilter";
 import PropertyList from "../../components/propertycard/PropertyList";
+import Pagination from "../../components/common/Pagination";
+import { usePagination } from "../../hooks/usePagination";
+import { searchPropertiesSimple } from "../../services/filterService";
+
+// Diamond-collage banner photo + category images (matches CommercialPage / pages1 design)
+import bannerImg from "../../assets/hostelban2.png";
+import individualImg from "../../assets/individualcat.jpg";
+import apartmentImg from "../../assets/Apartmentban.jpg";
+import commercialImg from "../../assets/commercialcat.jpg";
+import landPlotsImg from "../../assets/landcat.jpg";
+import categoryThumb from "../../assets/banner1.jpg";
 
 const CoLivingSpacePage = () => {
   const navigate = useNavigate();
   
-  const { 
-    data, 
-    loading, 
-    activeLandType,
-    activeLandSubMenuType,
-    handleNavigation,
-    getLandSubMenuDetails,
-    getSubMenusByProperty
+  const {
+    data,
+    loading,
+    activeHostelType,
+    handleNavigation
   } = useNavigation();
-  
-  const { 
-    filteredData, 
-    filterLoading, 
-    appliedFilters, 
-    handleFilterChange 
+
+  const {
+    filteredData,
+    filterLoading,
+    appliedFilters,
+    handleFilterChange
   } = usePropertyFilter('hostel');
+
+  // ─── Listing-purpose filter (All/Buy/Rent/Lease pill, combined with this
+  // page's own property_type — stays on this page instead of navigating
+  // away to a separate /buy, /rent, /lease route) ───────────────────────
+  const [listingPurpose, setListingPurpose] = useState(null); // null = "All"
+  const [purposeFilteredProperties, setPurposeFilteredProperties] = useState([]);
+  const [purposeLoading, setPurposeLoading] = useState(false);
+
+  useEffect(() => {
+    if (!listingPurpose || !activeHostelType || activeHostelType === "All") {
+      setPurposeFilteredProperties([]);
+      return;
+    }
+    let cancelled = false;
+    setPurposeLoading(true);
+    searchPropertiesSimple({
+      property_type: activeHostelType,
+      listing_purpose: listingPurpose,
+      page: 1,
+      limit: 20,
+    })
+      .then((response) => {
+        if (cancelled) return;
+        setPurposeFilteredProperties(response?.data?.data || response?.data || []);
+      })
+      .catch((error) => {
+        console.error("Error fetching purpose-filtered data:", error);
+        if (!cancelled) setPurposeFilteredProperties([]);
+      })
+      .finally(() => {
+        if (!cancelled) setPurposeLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [listingPurpose, activeHostelType]);
 
   const properties = useMemo(() => {
     if (appliedFilters && filteredData.length > 0) {
       return filteredData;
     }
+    if (listingPurpose) {
+      return purposeFilteredProperties;
+    }
     return data;
-  }, [data, filteredData, appliedFilters]);
+  }, [data, filteredData, appliedFilters, listingPurpose, purposeFilteredProperties]);
 
-  const isLoading = loading || filterLoading;
+  const isLoading = loading || filterLoading || purposeLoading;
 
-  const [activeButton, setActiveButton] = useState("Rent");
+  // ─── Pagination — client-side over the current properties list ────────
+  const resultsRef = useRef(null);
+  const {
+    currentPage,
+    totalPages,
+    paginatedItems: paginatedProperties,
+    goToPage
+  } = usePagination({ items: properties, pageSize: 10, scrollRef: resultsRef });
+
+  const [activeButton, setActiveButton] = useState("All");
   const [openDropdown, setOpenDropdown] = useState(null);
   const [showFilterModal, setShowFilterModal] = useState(false);
 
@@ -49,19 +103,33 @@ const CoLivingSpacePage = () => {
     { name: "Land & Plots", path: "/land-plots", icon: <Building2 className="w-4 h-4" /> }
   ];
 
+  // Diamond collage entries for the banner
+  const bannerDiamonds = [
+    { label: "Individual", path: "/individual", image: individualImg, position: "top" },
+    { label: "Apartment", path: "/apartment", image: apartmentImg, position: "left" },
+    { label: "Commercial", path: "/commercial", image: commercialImg, position: "right" },
+    { label: "Land & Plots", path: "/land-plots", image: landPlotsImg, position: "bottom" },
+  ];
+
   // Sibling hostel types — flat, no submenus needed
   const hostelCategories = [
     { name: "All Hostels", path: "/hostel", icon: <Home className="w-3.5 h-3.5" />, isAllButton: true },
-    { name: "Girls Hostel", path: "/hostel/girls-hostel", icon: <Users className="w-3.5 h-3.5" /> },
-    { name: "Boys Hostel", path: "/hostel/boys-hostel", icon: <Users className="w-3.5 h-3.5" /> },
-    { name: "Co Living Space", path: "/hostel/co-living-space", icon: <Building2 className="w-3.5 h-3.5" /> },
-    { name: "Working Professional Hostel", path: "/hostel/working-professional-hostel", icon: <Building className="w-3.5 h-3.5" /> }
+    { name: "Girls Hostel", path: "/hostel/girls-hostel", icon: <Users className="w-3.5 h-3.5" />, displayName: "Girls", subText: "Hostel" },
+    { name: "Boys Hostel", path: "/hostel/boys-hostel", icon: <Users className="w-3.5 h-3.5" />, displayName: "Boys", subText: "Hostel" },
+    { name: "Co Living Space", path: "/hostel/co-living-hostel", icon: <Building2 className="w-3.5 h-3.5" />, displayName: "Co Living", subText: "Space" },
+    { name: "Working Professional Hostel", path: "/hostel/working-professional-hostel", icon: <Building className="w-3.5 h-3.5" />, displayName: "Working", subText: "Professional" }
   ];
 
-  const activeHostelType = "Co Living Space";
+  // The pinned "All" category (stays fixed on the left of the scroll strip)
+  const allCategory = { name: "All Hostels", path: "/hostel", image: categoryThumb, displayName: "All", subText: "" };
+
+  // Scrollable property-type strip entries — same list as hostelCategories, minus "All"
+  const hostelTypeCategories = hostelCategories
+    .filter((t) => !t.isAllButton)
+    .map((t) => ({ ...t, image: categoryThumb }));
 
   const handleRentBuyNavigation = (item) => {
-    handleNavigation(`/${item.toLowerCase()}`);
+    setListingPurpose(item === "All" ? null : item);
     setActiveButton(item);
     setOpenDropdown(null);
   };
@@ -89,7 +157,7 @@ const CoLivingSpacePage = () => {
 
       {openDropdown === "toggle" && (
         <div className="absolute top-full left-0 mt-2 bg-teal-50/95 backdrop-blur-xl rounded-2xl shadow-2xl overflow-hidden z-50 min-w-[180px] border border-teal-200/30 animate-slide-down-fast">
-          {["Rent", "Lease"].map((item, idx, arr) => (
+          {["All", "Buy", "Rent", "Lease"].map((item, idx, arr) => (
             <React.Fragment key={item}>
               <button
                 onClick={() => handleRentBuyNavigation(item)}
@@ -160,6 +228,82 @@ const CoLivingSpacePage = () => {
     </div>
   );
 
+  /* ─── Single category pill (reused for "All" and marquee items) ─── */
+  const CategoryPill = ({ category, mobile = false, isActive = false }) => (
+    <div
+      className={`group cursor-pointer flex flex-col items-center transition-all duration-300 hover:scale-105 flex-shrink-0 ${
+        mobile ? "active:scale-95" : ""
+      }`}
+      onClick={() => handleHostelNavigation(category.path)}
+    >
+      <div
+        className={`relative ${
+          mobile
+            ? "w-9 h-9 xs:w-10 xs:h-10 border-2"
+            : "w-12 h-12 sm:w-14 sm:h-14 md:w-17 md:h-17 border-[3px]"
+        } rounded-full overflow-hidden transition-all duration-300 shadow-md hover:shadow-lg ${
+          isActive
+            ? 'border-[#00695C] shadow-[0_0_18px_rgba(0,105,92,0.3)]'
+            : 'border-gray-300 hover:border-[#00695C]'
+        }`}
+      >
+        <img
+          src={category.image}
+          alt={category.name}
+          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent" />
+      </div>
+
+      <div className="flex flex-col items-center mt-0.5">
+        <span className={`${
+          mobile ? "text-[7px]" : "text-[8px] sm:text-[9px] md:text-[11px]"
+        } font-semibold text-center leading-tight whitespace-nowrap transition-colors duration-300 ${
+          isActive ? 'text-[#00695C]' : 'text-[#143B35] group-hover:text-[#00695C]'
+        }`}>
+          {category.displayName || category.name}
+        </span>
+        {category.subText && (
+          <span className={`${
+            mobile ? "text-[7px]" : "text-[8px] sm:text-[9px] md:text-[11px]"
+          } font-semibold text-center leading-tight whitespace-nowrap transition-colors duration-300 ${
+            isActive ? 'text-[#00695C]' : 'text-[#143B35] group-hover:text-[#00695C]'
+          }`}>
+            {category.subText}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+
+  /* ─── Category strip: pinned "All" + hostel type pills (static flex-wrap grid) ─── */
+  const CategoryMarquee = ({ mobile = false }) => {
+    const isAllActive = activeHostelType === "All";
+
+    return (
+      <div
+        className={
+          mobile
+            ? "flex items-center gap-3 overflow-x-auto scrollbar-hide pb-1 -mx-1 px-1"
+            : "flex flex-wrap items-center justify-center gap-3.5 md:gap-5 pt-1.5"
+        }
+      >
+        <CategoryPill category={allCategory} mobile={mobile} isActive={isAllActive} />
+        {hostelTypeCategories.map((category) => {
+          const isActive = activeHostelType === category.name;
+          return (
+            <CategoryPill
+              key={category.name}
+              category={category}
+              mobile={mobile}
+              isActive={isActive}
+            />
+          );
+        })}
+      </div>
+    );
+  };
+
   /* ─── Render ─────────────────────────────────────────────────────────── */
 
   return (
@@ -198,26 +342,99 @@ const CoLivingSpacePage = () => {
 
       <div className="relative z-10">
 
-        {/* HERO SECTION */}
-        <section className="w-full relative flex items-center justify-center group py-2 md:py-4">
-          <div className="absolute inset-0 bg-gradient-to-b animate-gradient-slow"></div>
-          <div className="max-w-none mx-auto px-4 sm:px-6 relative z-10 text-center w-full flex flex-col items-center justify-center gap-2">
-            <div className="hidden sm:inline-flex mb-1 items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-teal-600/20 to-emerald-600/20 backdrop-blur-lg border border-teal-300/20 animate-float-glow shadow-[0_0_30px_rgba(0,105,92,0.3)]">
-              <Star className="w-4 h-4 text-teal-300 animate-spin-slow" fill="currentColor" />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-300 to-emerald-300 text-sm font-medium">
-                Co-Living Space
-              </span>
+        {/* ══════════════════════════════════════════════
+            BANNER — diamond collage (matches CommercialPage / pages1 design)
+        ══════════════════════════════════════════════ */}
+        <section className="relative overflow-hidden bg-[#E7EFEA]">
+          <div className="absolute top-0 left-0 w-[130px] h-[45px] rounded-br-[35px] sm:w-[170px] sm:h-[58px] sm:rounded-br-[50px] md:w-[210px] md:h-[72px] md:rounded-br-[60px] lg:w-[250px] lg:h-[85px] lg:rounded-br-[70px] bg-[#D6E4DE]" />
+
+          <div className="max-w-[1600px] mx-auto">
+            <div className="flex flex-row min-h-[170px] sm:min-h-[220px] md:min-h-[280px] lg:min-h-[330px]">
+
+              {/* LEFT CONTENT */}
+              <div className="flex flex-col justify-center w-[38%] sm:w-[37%] md:w-[36%] lg:w-[35%] shrink-0 px-2.5 sm:px-5 md:px-6 lg:px-10 py-2.5 sm:py-4 md:py-6 lg:py-7 z-20">
+                <h1 className="leading-none">
+                  <span className="block text-[11px] sm:text-[15px] md:text-[20px] lg:text-[28px] font-light text-[#042F2A]">
+                    MODERN
+                  </span>
+                  <span className="block text-[16px] sm:text-[24px] md:text-[36px] lg:text-[50px] font-black text-[#012D29] leading-tight">
+                    CO-LIVING
+                  </span>
+                  <span className="block text-[12px] sm:text-[17px] md:text-[23px] lg:text-[30px] font-bold text-[#012D29] leading-tight">
+                    SPACES FOR RENT
+                  </span>
+                </h1>
+
+                <p className="mt-1 sm:mt-2 md:mt-2.5 lg:mt-3 max-w-[120px] sm:max-w-[200px] md:max-w-[280px] lg:max-w-[340px] text-[#31544E] text-[8px] sm:text-[10px] md:text-xs lg:text-sm leading-snug lg:leading-relaxed">
+                  Discover modern co-living spaces with shared amenities, community events, and flexible leases.
+                </p>
+
+                <button
+                  onClick={() => handlePropertyCategoryNavigation("/hostel/co-living-hostel")}
+                  className="mt-1.5 sm:mt-2.5 md:mt-3 lg:mt-4 w-fit px-2.5 py-1 sm:px-4 sm:py-1.5 md:px-5 md:py-1.5 lg:px-6 lg:py-2 rounded-md lg:rounded-lg text-white font-bold shadow-md lg:shadow-xl text-[7px] sm:text-[9px] md:text-[11px] lg:text-sm"
+                  style={{ background: "linear-gradient(135deg,#00695C,#26A69A)" }}
+                >
+                  EXPLORE NOW
+                </button>
+              </div>
+
+              {/* RIGHT COLLAGE */}
+              <div className="relative overflow-hidden flex-1" style={{ aspectRatio: '16/8' }}>
+                <img
+                  src={bannerImg}
+                  alt="Co-Living Space"
+                  className="absolute inset-0 w-full h-full object-cover object-top contrast-105 saturate-110"
+                />
+                <div className="absolute inset-0 bg-gradient-to-r from-[#E7EFEA]/60 via-transparent to-transparent" />
+
+                <div className="absolute inset-0 flex items-center justify-start pl-2 sm:pl-4 md:pl-6 lg:pl-7 z-20">
+                  <div className="relative w-[260px] h-[260px] scale-[0.42] sm:scale-[0.6] md:scale-[0.8] lg:scale-100 origin-left transition-transform duration-300">
+
+                    {bannerDiamonds.map((diamond, idx) => {
+                      const posStyle = {
+                        top: idx === 0 ? "0px" : idx === 3 ? "160px" : "80px",
+                        left: idx === 1 ? "0px" : idx === 2 ? "160px" : "80px",
+                      };
+                      return (
+                        <div
+                          key={diamond.label}
+                          className="absolute cursor-pointer transition-all duration-300 hover:scale-105 hover:z-30"
+                          style={{ width: "100px", height: "100px", ...posStyle }}
+                          onClick={() => handlePropertyCategoryNavigation(diamond.path)}
+                        >
+                          <div
+                            className="relative w-full h-full overflow-hidden shadow-xl"
+                            style={{
+                              transform: "rotate(45deg)",
+                              borderRadius: "18px",
+                              border: "3px solid rgba(255,255,255,0.85)",
+                              boxShadow: "0 6px 30px rgba(0,0,0,0.3)",
+                            }}
+                          >
+                            <img
+                              src={diamond.image}
+                              alt={diamond.label}
+                              className="absolute inset-0 w-full h-full object-cover"
+                              style={{ transform: "rotate(-45deg) scale(1.3)", transformOrigin: "center" }}
+                            />
+                            <div
+                              className="absolute inset-0"
+                              style={{ background: "linear-gradient(to top, rgba(0,0,0,0.4), rgba(0,0,0,0.05))" }}
+                            />
+                          </div>
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span className="text-white font-bold text-[11px] tracking-wide drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] z-10 text-center leading-tight">
+                              {diamond.label}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                  </div>
+                </div>
+              </div>
             </div>
-            <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white animate-slide-up drop-shadow-[0_0_30px_rgba(0,105,92,0.5)]">
-              Find Your Perfect{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-300 via-emerald-300 to-teal-300 animate-gradient-text">
-                Co-Living Space
-              </span>
-            </h1>
-            <p className="text-sm md:text-base lg:text-lg text-white/90 max-w-3xl mx-auto leading-relaxed px-2">
-              Discover modern co-living spaces with shared amenities, community events, and flexible leases
-            </p>
-            <PropertyCategoryButtons />
           </div>
         </section>
 
@@ -230,38 +447,7 @@ const CoLivingSpacePage = () => {
               <AdvancedFilterBtn />
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              {hostelCategories.map((category) => {
-                const isActive = category.name === activeHostelType ||
-                  (category.isAllButton && activeHostelType === "All");
-
-                return (
-                  <button
-                    key={category.name}
-                    onClick={() => handleHostelNavigation(category.path)}
-                    className={`group relative px-4 py-2 rounded-lg font-semibold text-sm shadow-xl transition-all duration-500 whitespace-nowrap transform hover:-translate-y-1 hover:scale-105 overflow-hidden flex items-center gap-2 ${
-                      isActive
-                        ? "text-teal-800 bg-white shadow-none ring-2 ring-teal-600"
-                        : "text-white/90 hover:text-white"
-                    }`}
-                    style={{
-                      background: isActive
-                        ? "#E8F5F2"
-                        : "linear-gradient(135deg, #00695C, #26A69A, #4DB6AC) 200% 200%",
-                      border: "none"
-                    }}
-                  >
-                    <div className={`absolute inset-0 animate-gradient-shift-slow ${isActive ? 'opacity-0' : 'opacity-0 group-hover:opacity-100 transition-opacity duration-500'}`}></div>
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-                    <div className="absolute -inset-1 bg-gradient-to-r from-teal-600 to-emerald-600 rounded-xl blur opacity-0 group-hover:opacity-40 transition-opacity duration-500"></div>
-                    <span className="relative z-10 flex items-center gap-2">
-                      {category.icon}
-                      {category.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            <CategoryMarquee />
           </div>
         </div>
 
@@ -277,26 +463,7 @@ const CoLivingSpacePage = () => {
               </div>
             </div>
             <SearchBar />
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
-              {hostelCategories.map((category) => {
-                const isActive = category.name === activeHostelType ||
-                  (category.isAllButton && activeHostelType === "All");
-                return (
-                  <button
-                    key={category.name}
-                    onClick={() => handleHostelNavigation(category.path)}
-                    className={`flex-shrink-0 px-3 py-1.5 rounded-xl font-semibold text-xs transition-all duration-300 whitespace-nowrap flex items-center gap-1 ${
-                      isActive
-                        ? "bg-white text-teal-800 ring-2 ring-teal-600 shadow-md"
-                        : "bg-gradient-to-r from-teal-600 to-teal-500 text-white/90 hover:text-white"
-                    }`}
-                  >
-                    {category.icon}
-                    {category.name}
-                  </button>
-                );
-              })}
-            </div>
+            <CategoryMarquee mobile />
           </div>
         </div>
 
@@ -316,18 +483,21 @@ const CoLivingSpacePage = () => {
         <div className="max-w-none mx-auto px-4 sm:px-6 py-6 lg:py-12">
           <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
             <div className="w-full lg:w-2/3">
-              <section>
+              <section ref={resultsRef} className="scroll-mt-40 lg:scroll-mt-48">
                 {isLoading ? (
                   <div className="flex justify-center items-center py-20">
                     <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-teal-500"></div>
                   </div>
                 ) : (
-                  <PropertyList 
-                    properties={properties}
-                    emptyMessage="No co-living spaces available at the moment."
-                    emptyIcon="🤝"
-                    emptyTitle="No Co-living Spaces Found"
-                  />
+                  <>
+                    <PropertyList
+                      properties={paginatedProperties}
+                      emptyMessage="No co-living spaces available at the moment."
+                      emptyIcon="🤝"
+                      emptyTitle="No Co-living Spaces Found"
+                    />
+                    <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
+                  </>
                 )}
               </section>
             </div>

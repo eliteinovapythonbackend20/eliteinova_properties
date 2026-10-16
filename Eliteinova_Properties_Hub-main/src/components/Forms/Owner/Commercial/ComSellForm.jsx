@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ArrowLeft, ImagePlus, Video, X, MapPin, Bed, Bath, Home, Car, Trees, Building, Lock, Camera, Wifi, Shield, Sun, Coffee, Users, Briefcase, Square, TrendingUp, Clock, FileText, CheckCircle, Sprout, Leaf, Dumbbell, Waves, Hotel, ParkingCircle, Landmark, ArrowUpDown, Calendar, User, Mail, Phone, Calendar as CalendarIcon, UserCheck, File, MapPin as MapPinIcon, Building as BuildingIcon, Home as HomeIcon, CheckSquare, PenTool } from "lucide-react";
-import { createProperty } from "../../../../services/propertyService";
+import { createProperty, reuseVerifiedResources } from "../../../../services/propertyService";
+import useReusableResources from "../../../../hooks/useReusableResources";
+import ReuseOrUploadPrompt from "../../shared/ReuseOrUploadPrompt";
+import { buildPrefillValues } from "../../../../config/contactPrefillMap";
 
 const steps = ["Owner Details", "Identity Verification", "Property Details", "Pricing & Amenities", "Media Upload", "Legal Documents", "Bank Details", "Communication & Declaration"];
 const subtitles = [
@@ -66,6 +69,17 @@ const isValidIFSC = (value) => /^[A-Z]{4}0[A-Z0-9]{6}$/.test(value);
 export default function ComSellForm({ isOpen, onClose }) {
   const [step, setStep] = useState(0);
 
+  // "Is this listing for yourself, or for someone else?" - asked once, instead
+  // of a per-field "use existing?" toggle. null = not asked/answered yet.
+  const [reuseChoice, setReuseChoice] = useState(null);
+  const { isDocumentVerified, isMediaVerified, profile, hasUsableProfile } = useReusableResources("owner");
+  const hasVerifiedReusables = isDocumentVerified("aadhaar_card") || isDocumentVerified("pan_card")
+    || isMediaVerified("profile_photo");
+  const reusingAadhaar = reuseChoice === "self" && isDocumentVerified("aadhaar_card");
+  const reusingPan = reuseChoice === "self" && isDocumentVerified("pan_card");                          
+  const prefillAppliedRef = useRef(false);
+  const reusingPassportPhoto = reuseChoice === "self" && isMediaVerified("profile_photo");
+
   const [formData, setFormData] = useState({
     // Owner Details (Step 0)
     ownerName: "", contactNumber: "", emailId: "", gender: "",
@@ -112,6 +126,21 @@ export default function ComSellForm({ isOpen, onClose }) {
   const [signaturePoints, setSignaturePoints] = useState([]);
   const [allSignaturePoints, setAllSignaturePoints] = useState([]);
   const [activeCanvas, setActiveCanvas] = useState(null);
+  // "It's me" prefill - see SellAgentComForm.jsx's identical effect for the
+  // full rationale (fills only still-blank mapped fields, once per "self"
+  // episode, safe against the profile/choice race).
+  useEffect(() => {
+    if (reuseChoice !== "self") {
+      prefillAppliedRef.current = false;
+      return;
+    }
+    if (!profile || prefillAppliedRef.current) return;
+    const prefill = buildPrefillValues(profile, "owner", formData);
+    if (Object.keys(prefill).length > 0) {
+      setFormData(prev => ({ ...prev, ...prefill }));
+    }
+    prefillAppliedRef.current = true;
+  }, [reuseChoice, profile]);
 
   const [errors, setErrors] = useState({});
 
@@ -355,8 +384,8 @@ export default function ComSellForm({ isOpen, onClose }) {
     if (s === 1) {
       if (!formData.aadhaarNumber || formData.aadhaarNumber.length !== 12) e.aadhaarNumber = "Aadhaar number must be exactly 12 digits";
       else if (!isOnlyNumbers(formData.aadhaarNumber)) e.aadhaarNumber = "Aadhaar number must contain only numbers";
-      if (!formData.aadhaarCard) e.aadhaarCard = "Aadhaar card upload is required";
-      if (!formData.passportPhoto) e.passportPhoto = "Passport-size photo is required";
+      if (!formData.aadhaarCard && !reusingAadhaar) e.aadhaarCard = "Aadhaar card upload is required";
+      if (!formData.passportPhoto && !reusingPassportPhoto) e.passportPhoto = "Passport-size photo is required";
       if (!formData.addressLine1.trim()) e.addressLine1 = "Address Line 1 is required";
       if (!formData.ownerCity.trim()) e.ownerCity = "City is required";
       else if (!isOnlyLettersAndSpaces(formData.ownerCity)) e.ownerCity = "Only letters and spaces allowed";
@@ -419,6 +448,17 @@ export default function ComSellForm({ isOpen, onClose }) {
       }
       try{
         const response = await createProperty(formData);
+        if (reuseChoice === "self" && response?.id) {
+          try {
+            const reuseResult = await reuseVerifiedResources(response.id);
+            const skipped = [...(reuseResult?.data?.skippedDocuments || []), ...(reuseResult?.data?.skippedMedia || [])];
+            if (skipped.length) {
+              console.warn("Listing created, but some verified items could not be attached:", skipped);
+            }
+          } catch (reuseError) {
+            console.error("Listing created, but reusing verified details failed: ", reuseError);
+          }
+        }
         onClose();
       }
       catch(error){
@@ -470,6 +510,12 @@ export default function ComSellForm({ isOpen, onClose }) {
               inp={inMob}
               formData={formData}
               updateForm={updateForm}
+              reuseChoice={reuseChoice}
+              setReuseChoice={setReuseChoice}
+              hasVerifiedReusables={hasVerifiedReusables}
+              reusingAadhaar={reusingAadhaar}
+              reusingPan={reusingPan}
+              reusingPassportPhoto={reusingPassportPhoto}
               handleAlphaFieldChange={handleAlphaFieldChange}
               handleNumericFieldChange={handleNumericFieldChange}
               handleAlphaNumericFieldChange={handleAlphaNumericFieldChange}
@@ -587,6 +633,12 @@ export default function ComSellForm({ isOpen, onClose }) {
               inp={inDt}
               formData={formData}
               updateForm={updateForm}
+              reuseChoice={reuseChoice}
+              setReuseChoice={setReuseChoice}
+              hasVerifiedReusables={hasVerifiedReusables}
+              reusingAadhaar={reusingAadhaar}
+              reusingPan={reusingPan}
+              reusingPassportPhoto={reusingPassportPhoto}
               handleAlphaFieldChange={handleAlphaFieldChange}
               handleNumericFieldChange={handleNumericFieldChange}
               handleAlphaNumericFieldChange={handleAlphaNumericFieldChange}
@@ -670,7 +722,7 @@ export default function ComSellForm({ isOpen, onClose }) {
 }
 
 // MOBILE CONTENT - COMMERCIAL SELL
-function MobContentComSell({ step, inp, formData, updateForm, handleAlphaFieldChange, handleNumericFieldChange, handleAlphaNumericFieldChange, handlePinCodeChange, imagePreviews, handleImageUpload, removeImage, handleVideoUpload, videoPreview, removeVideo, handleDocumentUpload, handlePassportUpload, toggleAmenity, availableAmenities, customAmenitiesList, addCustomAmenity, removeCustomAmenity, commercialTypeOptions, furnishingOptions, parkingOptions, yesNoOptions, bankOptions, handleCoverImageUpload, handleFloorPlanUpload, coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, toggleContactMethod, isValidEmail, errors, startDrawing, draw, stopDrawing, clearSignature, signaturePoints, allSignaturePoints, setAllSignaturePoints }) {
+function MobContentComSell({ step, inp, formData, updateForm, reuseChoice, setReuseChoice, hasVerifiedReusables, reusingAadhaar, reusingPan, reusingPassportPhoto, handleAlphaFieldChange, handleNumericFieldChange, handleAlphaNumericFieldChange, handlePinCodeChange, imagePreviews, handleImageUpload, removeImage, handleVideoUpload, videoPreview, removeVideo, handleDocumentUpload, handlePassportUpload, toggleAmenity, availableAmenities, customAmenitiesList, addCustomAmenity, removeCustomAmenity, commercialTypeOptions, furnishingOptions, parkingOptions, yesNoOptions, bankOptions, handleCoverImageUpload, handleFloorPlanUpload, coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, toggleContactMethod, isValidEmail, errors, startDrawing, draw, stopDrawing, clearSignature, signaturePoints, allSignaturePoints, setAllSignaturePoints }) {
   const ta = `${inp} resize-y`;
   const signatureCanvasRef = useRef(null);
 
@@ -719,6 +771,9 @@ function MobContentComSell({ step, inp, formData, updateForm, handleAlphaFieldCh
   // STEP 0: Owner Details
   if (step === 0) return (
     <>
+      {hasVerifiedReusables && reuseChoice === null && (
+        <ReuseOrUploadPrompt onChoice={setReuseChoice} />
+      )}
       <Field label="Full Name" required>
         <input className={inp} placeholder="Enter your full name" value={formData.ownerName} onChange={(e) => handleAlphaFieldChange("ownerName", e.target.value)} />
         {errors.ownerName && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.ownerName}</p>}
@@ -759,41 +814,59 @@ function MobContentComSell({ step, inp, formData, updateForm, handleAlphaFieldCh
       <Field label="PAN Number">
         <input className={inp} placeholder="Enter 10-character PAN number" value={formData.panNumber} onChange={(e) => updateForm("panNumber", e.target.value)} />
       </Field>
-      <Field label="Upload Aadhaar Card" required>
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="m-aadhaar-com-sell" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
-          <label htmlFor="m-aadhaar-com-sell" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Aadhaar</span>
-            <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.aadhaarCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.aadhaarCard.name}</p>}
-        {errors.aadhaarCard && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.aadhaarCard}</p>}
-      </Field>
-      <Field label="Upload PAN Card (Optional)">
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="m-pan-com-sell" onChange={(e) => handleDocumentUpload("panCard", e)} />
-          <label htmlFor="m-pan-com-sell" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload PAN</span>
-            <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.panCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.panCard.name}</p>}
-      </Field>
-      <Field label="Upload Passport-size Photo" required>
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
-          <input type="file" accept=".jpg,.jpeg,.png" className="hidden" id="m-passport-com-sell" onChange={(e) => handlePassportUpload("passportPhoto", e)} />
-          <label htmlFor="m-passport-com-sell" className="cursor-pointer flex flex-col items-center">
-            <User className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Photo</span>
-            <span className="text-[9px] text-gray-400">JPG, JPEG, PNG (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.passportPhoto && <p className="text-[10px] text-green-600 mt-1">✓ {formData.passportPhoto.name}</p>}
-        {errors.passportPhoto && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.passportPhoto}</p>}
-      </Field>
+      {reusingAadhaar ? (
+        <Field label="Aadhaar Card">
+          <p className="text-[10px] text-green-600">✓ Using your verified Aadhaar on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload Aadhaar Card" required>
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="m-aadhaar-com-sell" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
+            <label htmlFor="m-aadhaar-com-sell" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Aadhaar</span>
+              <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.aadhaarCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.aadhaarCard.name}</p>}
+          {errors.aadhaarCard && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.aadhaarCard}</p>}
+        </Field>
+      )}
+      {reusingPan ? (
+        <Field label="PAN Card">
+          <p className="text-[10px] text-green-600">✓ Using your verified PAN on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload PAN Card (Optional)">
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="m-pan-com-sell" onChange={(e) => handleDocumentUpload("panCard", e)} />
+            <label htmlFor="m-pan-com-sell" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload PAN</span>
+              <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.panCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.panCard.name}</p>}
+        </Field>
+      )}
+      {reusingPassportPhoto ? (
+        <Field label="Passport-size Photo">
+          <p className="text-[10px] text-green-600">✓ Using your verified profile photo on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload Passport-size Photo" required>
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
+            <input type="file" accept=".jpg,.jpeg,.png" className="hidden" id="m-passport-com-sell" onChange={(e) => handlePassportUpload("passportPhoto", e)} />
+            <label htmlFor="m-passport-com-sell" className="cursor-pointer flex flex-col items-center">
+              <User className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Photo</span>
+              <span className="text-[9px] text-gray-400">JPG, JPEG, PNG (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.passportPhoto && <p className="text-[10px] text-green-600 mt-1">✓ {formData.passportPhoto.name}</p>}
+          {errors.passportPhoto && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.passportPhoto}</p>}
+        </Field>
+      )}
 
       <div className="flex items-center gap-1.5 mt-3 mb-2 pb-1.5 border-b-2 border-green-50">
         <div className="w-1 h-3 bg-[#00695C] rounded" />
@@ -1331,7 +1404,7 @@ function MobContentComSell({ step, inp, formData, updateForm, handleAlphaFieldCh
 }
 
 // DESKTOP CONTENT - COMMERCIAL SELL
-function DtContentComSell({ step, inp, formData, updateForm, handleAlphaFieldChange, handleNumericFieldChange, handleAlphaNumericFieldChange, handlePinCodeChange, imagePreviews, handleImageUpload, removeImage, handleVideoUpload, videoPreview, removeVideo, handleDocumentUpload, handlePassportUpload, toggleAmenity, availableAmenities, customAmenitiesList, addCustomAmenity, removeCustomAmenity, commercialTypeOptions, furnishingOptions, parkingOptions, yesNoOptions, bankOptions, handleCoverImageUpload, handleFloorPlanUpload, coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, toggleContactMethod, isValidEmail, errors, startDrawing, draw, stopDrawing, clearSignature, signaturePoints, allSignaturePoints, setAllSignaturePoints }) {
+function DtContentComSell({ step, inp, formData, updateForm, reuseChoice, setReuseChoice, hasVerifiedReusables, reusingAadhaar, reusingPan, reusingPassportPhoto, handleAlphaFieldChange, handleNumericFieldChange, handleAlphaNumericFieldChange, handlePinCodeChange, imagePreviews, handleImageUpload, removeImage, handleVideoUpload, videoPreview, removeVideo, handleDocumentUpload, handlePassportUpload, toggleAmenity, availableAmenities, customAmenitiesList, addCustomAmenity, removeCustomAmenity, commercialTypeOptions, furnishingOptions, parkingOptions, yesNoOptions, bankOptions, handleCoverImageUpload, handleFloorPlanUpload, coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, toggleContactMethod, isValidEmail, errors, startDrawing, draw, stopDrawing, clearSignature, signaturePoints, allSignaturePoints, setAllSignaturePoints }) {
   const ta = `${inp} resize-y`;
   const signatureCanvasRef = useRef(null);
 
@@ -1380,6 +1453,9 @@ function DtContentComSell({ step, inp, formData, updateForm, handleAlphaFieldCha
   // STEP 0: Owner Details
   if (step === 0) return (
     <>
+      {hasVerifiedReusables && reuseChoice === null && (
+        <ReuseOrUploadPrompt onChoice={setReuseChoice} />
+      )}
       <FieldDt label="Full Name" required>
         <input className={inp} placeholder="Enter your full name" value={formData.ownerName} onChange={(e) => handleAlphaFieldChange("ownerName", e.target.value)} />
         {errors.ownerName && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.ownerName}</p>}
@@ -1420,41 +1496,59 @@ function DtContentComSell({ step, inp, formData, updateForm, handleAlphaFieldCha
       <FieldDt label="PAN Number">
         <input className={inp} placeholder="Enter 10-character PAN number" value={formData.panNumber} onChange={(e) => updateForm("panNumber", e.target.value)} />
       </FieldDt>
-      <FieldDt label="Upload Aadhaar Card" required>
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="dt-aadhaar-com-sell" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
-          <label htmlFor="dt-aadhaar-com-sell" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Aadhaar Card</span>
-            <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.aadhaarCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.aadhaarCard.name}</p>}
-        {errors.aadhaarCard && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.aadhaarCard}</p>}
-      </FieldDt>
-      <FieldDt label="Upload PAN Card (Optional)">
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="dt-pan-com-sell" onChange={(e) => handleDocumentUpload("panCard", e)} />
-          <label htmlFor="dt-pan-com-sell" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload PAN Card</span>
-            <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.panCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.panCard.name}</p>}
-      </FieldDt>
-      <FieldDt label="Upload Passport-size Photo" required>
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
-          <input type="file" accept=".jpg,.jpeg,.png" className="hidden" id="dt-passport-com-sell" onChange={(e) => handlePassportUpload("passportPhoto", e)} />
-          <label htmlFor="dt-passport-com-sell" className="cursor-pointer flex flex-col items-center">
-            <User className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Photo</span>
-            <span className="text-[11px] text-gray-400">JPG, JPEG, PNG (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.passportPhoto && <p className="text-[13px] text-green-600 mt-2">✓ {formData.passportPhoto.name}</p>}
-        {errors.passportPhoto && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.passportPhoto}</p>}
-      </FieldDt>
+      {reusingAadhaar ? (
+        <FieldDt label="Aadhaar Card">
+          <p className="text-[13px] text-green-600">✓ Using your verified Aadhaar on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Upload Aadhaar Card" required>
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="dt-aadhaar-com-sell" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
+            <label htmlFor="dt-aadhaar-com-sell" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Aadhaar Card</span>
+              <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.aadhaarCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.aadhaarCard.name}</p>}
+          {errors.aadhaarCard && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.aadhaarCard}</p>}
+        </FieldDt>
+      )}
+      {reusingPan ? (
+        <FieldDt label="PAN Card">
+          <p className="text-[13px] text-green-600">✓ Using your verified PAN on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Upload PAN Card (Optional)">
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="dt-pan-com-sell" onChange={(e) => handleDocumentUpload("panCard", e)} />
+            <label htmlFor="dt-pan-com-sell" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload PAN Card</span>
+              <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.panCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.panCard.name}</p>}
+        </FieldDt>
+      )}
+      {reusingPassportPhoto ? (
+        <FieldDt label="Passport-size Photo">
+          <p className="text-[13px] text-green-600">✓ Using your verified profile photo on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Upload Passport-size Photo" required>
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
+            <input type="file" accept=".jpg,.jpeg,.png" className="hidden" id="dt-passport-com-sell" onChange={(e) => handlePassportUpload("passportPhoto", e)} />
+            <label htmlFor="dt-passport-com-sell" className="cursor-pointer flex flex-col items-center">
+              <User className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Photo</span>
+              <span className="text-[11px] text-gray-400">JPG, JPEG, PNG (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.passportPhoto && <p className="text-[13px] text-green-600 mt-2">✓ {formData.passportPhoto.name}</p>}
+          {errors.passportPhoto && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.passportPhoto}</p>}
+        </FieldDt>
+      )}
 
       <div className="flex items-center gap-2 mt-4 mb-3 pb-2 border-b-2 border-green-50">
         <div className="w-1 h-4 bg-[#00695C] rounded" />

@@ -29,6 +29,12 @@ class FieldMappingService:
         
         # Agent fields
         'agentName': 'agent_name',
+        # Apartment/Commercial/Hostel/Individual agent forms call this field
+        # 'fullName' instead of 'agentName' (only the LandAndPlots agent forms
+        # use 'agentName') - without this entry it passed through unmapped,
+        # had no route in CONTACT_FIELD_ROUTES, and property_contact_persons.name
+        # (and the property card's displayName, which reads cp.name) stayed NULL.
+        'fullName': 'agent_name',
         'agencyName': 'agency_name',
         'mobileNumber': 'mobile',
         'officeAddress': 'office_address',
@@ -351,6 +357,119 @@ class FieldMappingService:
         'room_type', 'sharing_type', 'selected_feature', 'nearby_places'
     ]
 
+    # Canonical commercial amenity ids, as the Agent/Builder/PropertyManagement
+    # posting forms already store them (see RentAgentComForm.jsx's
+    # commercialRentAmenities, identical across Rent/Lease/Sell and across those
+    # three roles). Every other posting form and every Commercial filter panel
+    # asks for the same handful of concepts under its own spelling - Owner's
+    # commercial forms store human-readable labels ("24/7 Security", "Power
+    # Backup"), some filter panels use longer ids ("cctvSurveillance",
+    # "airConditioning"). The amenities filter needs an exact string match per
+    # selected item (Postgres JSONB containment), so two different spellings of
+    # "has CCTV" could never match each other - a listing was only ever
+    # filterable by amenity if it happened to be posted through a form using the
+    # same spelling as whoever searches. Normalizing every known spelling to this
+    # one vocabulary here, at creation time (map_frontend_to_db_fields runs for
+    # every property, every role), means a listing is filterable by amenity
+    # regardless of which of the ~60 posting forms created it - cheaper and more
+    # reliable than editing each form's own amenity list individually.
+    #
+    # One canonical id per key, every known spelling that should resolve to it
+    # listed together (lower-cased) - easier to audit "what does 'cctv' actually
+    # catch" than the same id repeated as the value on a dozen scattered lines.
+    # _build_alias_lookup() below flattens this to a fast alias -> id dict.
+    COMMERCIAL_AMENITY_ALIASES = {
+        'powerBackup': ['powerbackup', 'power backup', 'generatorbackup'],
+        'security247': ['security247', '24/7 security', 'security24x7', 'twentyfoursevensecurity'],
+        'cctv': ['cctv', 'cctv surveillance', 'cctvsurveillance'],
+        'visitorParking': ['visitorparking', 'visitor parking'],
+        'wifi': ['wifi', 'wi-fi ready', 'wifiready', 'internetbroadband', 'highspeedinternet', 'fiberinternet'],
+        'lift': ['lift', 'lift / elevator', 'liftelevator', 'liftescalator'],
+        'fireSafety': ['firesafety', 'firesafetysystem', 'firesafetyapproved'],
+        'ac': ['ac', 'centralac', 'airconditioning', 'centralizedac'],
+        'pantry': ['pantry', 'pantrycafeteria', 'cafeteria', 'cafeteriafoodcourt'],
+        'loadingDock': ['loadingdock', 'loadingunloading', 'loadingunloadingaccess'],
+        'signage': ['signage', 'signagespace'],
+        'conference': ['conference', 'conferencehall', 'conference room', 'meetingrooms', 'cabinmeetingrooms'],
+    }
+
+    # Same bug, same fix, for Hostel: Owner's hostel forms (HostelRentForm.jsx etc.)
+    # store 25 plain human-readable labels directly; Agent/Builder/PropertyManagement
+    # instead use a 23-id vocabulary (identical across those three roles and all
+    # three purposes - see RentBuilderHostelForm.jsx's hostelRentAmenities). The
+    # id-based vocabulary is missing 2 concepts Owner's label list has ("Rainwater
+    # Harvesting", "Emergency Services"), so this mints canonical ids for those two
+    # as well - no existing form produces them, but a listing that has one needs a
+    # stable id to be filtered by, same as every other amenity here.
+    HOSTEL_AMENITY_ALIASES = {
+        'wifi': ['wifi'],
+        'ac': ['ac'],
+        'hotWater': ['hotwater', 'hot water'],
+        'security24x7': ['security24x7', '24/7 security'],
+        'cctv': ['cctv', 'cctv surveillance'],
+        'powerBackup': ['powerbackup', 'power backup'],
+        'laundry': ['laundry', 'laundry service'],
+        'housekeeping': ['housekeeping'],
+        'parking': ['parking'],
+        'gym': ['gym'],
+        'studyRoom': ['studyroom', 'study room'],
+        'commonTV': ['commontv', 'common tv room'],
+        'lift': ['lift', 'lift/elevator', 'lift / elevator'],
+        'diningHall': ['dininghall', 'dining hall'],
+        'kitchenAccess': ['kitchenaccess', 'kitchen access'],
+        'recreation': ['recreation', 'recreation room'],
+        'garden': ['garden', 'garden/outdoor area', 'garden / outdoor area'],
+        'solarPower': ['solarpower', 'solar power'],
+        'rainwaterHarvesting': ['rainwaterharvesting', 'rainwater harvesting'],
+        'waterPurifier': ['waterpurifier', 'water purifier'],
+        'firstAid': ['firstaid', 'first aid kit'],
+        'fireExtinguisher': ['fireextinguisher', 'fire extinguisher'],
+        'emergencyServices': ['emergencyservices', 'emergency services'],
+        'intercom': ['intercom'],
+        'biometricAccess': ['biometricaccess', 'biometric access'],
+    }
+
+    # tenant_type (occupancyDetails/occupancyType) has the same kind of split, on
+    # a much smaller scale, in two categories: LandAndPlots' PropertyManagement
+    # role alone has a second "Tenant Type" field (singular "Bachelor") sitting
+    # alongside the "Occupancy Details" field every role in that category already
+    # uses (plural "Bachelors") - both feed this same column. Hostel's Owner role
+    # alone spells its options in the singular ("Student", "Working Professional")
+    # where Agent/Builder/PropertyManagement use the plural. Apartment and
+    # Individual were checked too and need no entries.
+    TENANT_TYPE_ALIASES_BY_CATEGORY = {
+        'LAND_PLOT': {
+            'Bachelors': ['bachelors', 'bachelor'],
+        },
+        'HOSTEL': {
+            'Students': ['students', 'student'],
+            'Working Professionals': ['working professionals', 'working professional'],
+        },
+    }
+
+    # Which array-type DB field each per-category alias table above applies to.
+    # Checked every other array field the filter side actually queries
+    # (interior_features, appliance_included, selected_feature, sharing_type,
+    # room_type, nearby_places) - only amenities and tenant_type turned out to
+    # have a genuine, cleanly-aliasable cross-role spelling split; the rest are
+    # either already uniform within each category, or (room_type, nearby_places)
+    # split into vocabularies different enough that no 1:1 alias is faithful -
+    # those need a product decision on one shared vocabulary before any code
+    # changes, not a table here.
+    ARRAY_FIELD_ALIASES = {
+        'amenities': {
+            'COMMERCIAL': COMMERCIAL_AMENITY_ALIASES,
+            'HOSTEL': HOSTEL_AMENITY_ALIASES,
+        },
+        'tenant_type': TENANT_TYPE_ALIASES_BY_CATEGORY,
+    }
+
+    @staticmethod
+    def _build_alias_lookup(aliases: Dict[str, List[str]]) -> Dict[str, str]:
+        """Flattens {canonical_id: [alias, ...]} to {alias: canonical_id} once,
+        the shape actually used to resolve one raw value during canonicalization."""
+        return {alias: canonical for canonical, alias_list in aliases.items() for alias in alias_list}
+
     # Yes/No columns (String(5) on BaseProperty storing the literal "Yes"/"No").
     # Filters compare these case-insensitively (FilterService._YESNO_FIELDS),
     # but only against the words "yes"/"no" - a raw JS boolean or "true"/"false"
@@ -435,6 +554,14 @@ class FieldMappingService:
                 # Pass through unmapped fields
                 mapped_data[key] = value
 
+        # Which alias table applies depends on property_category, which isn't
+        # available inside the generic per-field _convert_value() above - done
+        # as its own pass once the category itself has been mapped.
+        category = mapped_data.get('property_category') or data.get('propertyCategory')
+        for field in self.ARRAY_FIELD_ALIASES:
+            if field in mapped_data:
+                mapped_data[field] = self._canonicalize_array_field(field, mapped_data[field], category)
+
         self._set_defaults(mapped_data)
         return mapped_data
     
@@ -451,10 +578,13 @@ class FieldMappingService:
         if field in self.BOOLEAN_FIELDS:
             return self._convert_boolean(value)
         
-        # Handle array fields
+        # Handle array fields (amenities gets a further, category-aware alias
+        # canonicalization pass afterward - see map_frontend_to_db_fields - since
+        # which alias table applies depends on property_category, not available
+        # to this per-field conversion)
         if field in self.ARRAY_FIELDS:
             return self._convert_array(value)
-        
+
         # negotiable: yes / true -> "Negotiable", no / false / "fixed" -> "Fixed Price"
         if field == 'price_negotiable':
             return self._convert_negotiable(value)
@@ -553,7 +683,34 @@ class FieldMappingService:
         if isinstance(value, str):
             return [item.strip() for item in value.split(',') if item.strip()]
         return [value]
-    
+
+    def _canonicalize_array_field(self, field: str, value: Any, category: str) -> List[Any]:
+        """Translate every known spelling for this db field + property_category
+        to its canonical value (case-insensitive); anything unrecognized (a
+        genuinely custom, user-typed entry, a field/category with no alias
+        table at all, or a spelling the table doesn't know about yet) passes
+        through unchanged rather than being guessed at. De-dupes afterward,
+        since two raw spellings for the same concept would otherwise land as
+        two entries for what the filter treats as one value. See
+        ARRAY_FIELD_ALIASES for which fields have a table and why.
+        """
+        by_category = self.ARRAY_FIELD_ALIASES.get(field)
+        aliases = by_category.get((category or '').strip().upper()) if by_category else None
+        items = self._convert_array(value)
+        if not aliases:
+            return items
+        lookup = self._build_alias_lookup(aliases)
+        out = []
+        seen = set()
+        for item in items:
+            canonical = item
+            if isinstance(item, str):
+                canonical = lookup.get(item.strip().lower(), item)
+            if canonical not in seen:
+                seen.add(canonical)
+                out.append(canonical)
+        return out
+
     def _convert_integer(self, value: Any) -> Optional[int]:
         """Convert to integer"""
         if value is None:

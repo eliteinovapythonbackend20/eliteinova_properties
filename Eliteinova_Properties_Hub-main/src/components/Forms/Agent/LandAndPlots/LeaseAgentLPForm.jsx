@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ArrowLeft, ImagePlus, Video, X, FileText, User, Home, PenTool, Building, Search, ChevronDown } from "lucide-react";
-import { createProperty } from "../../../../services/propertyService";
+import { createProperty, reuseVerifiedResources } from "../../../../services/propertyService";
+import useReusableResources from "../../../../hooks/useReusableResources";
+import ReuseOrUploadPrompt from "../../shared/ReuseOrUploadPrompt";
+import { buildPrefillValues } from "../../../../config/contactPrefillMap";
 
 const steps = ["Agent Details", "Identity Verification", "Land Details", "Pricing & Amenities", "Media Upload", "Legal Documents", "Bank Details", "Social Media", "Communication & Declaration"];
 const subtitles = [
@@ -141,6 +144,11 @@ const serviceAreasOptions = [
 ];
 
 // SearchableMultiSelect Component - Mobile Version
+// Capitalizes each word a vendor types for a new, not-yet-listed option -
+// e.g. "coimbatore" -> "Coimbatore", "navi mumbai" -> "Navi Mumbai".
+const toTitleCase = (text) =>
+  text.trim().replace(/\s+/g, ' ').replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+
 const SearchableMultiSelect = ({ 
   options, selected, onChange, placeholder = "Search and select...", className = "", disabled = false
 }) => {
@@ -174,6 +182,17 @@ const SearchableMultiSelect = ({
   const removeOption = (option, e) => {
     e.stopPropagation();
     onChange(selected.filter(item => item !== option));
+  };
+
+  const trimmedSearch = searchTerm.trim();
+  const canAddCustom = Boolean(trimmedSearch) &&
+    !options.some(o => o.toLowerCase() === trimmedSearch.toLowerCase()) &&
+    !selected.some(s => s.toLowerCase() === trimmedSearch.toLowerCase());
+
+  const addCustomOption = () => {
+    if (!canAddCustom) return;
+    onChange([...selected, toTitleCase(trimmedSearch)]);
+    setSearchTerm("");
   };
 
   return (
@@ -213,20 +232,27 @@ const SearchableMultiSelect = ({
             </div>
           </div>
           <div className="overflow-y-auto flex-1 p-1">
-            {filteredOptions.length === 0 ? (
+            {filteredOptions.map((option) => (
+              <label key={option} className="flex items-center gap-2 px-2 py-1 hover:bg-teal-50 rounded-md cursor-pointer text-[11px]">
+                <input
+                  type="checkbox"
+                  className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer"
+                  checked={selected.includes(option)}
+                  onChange={() => toggleOption(option)}
+                />
+                {option}
+              </label>
+            ))}
+            {canAddCustom && (
+              <div
+                className="px-2 py-1 text-[11px] cursor-pointer hover:bg-teal-50 rounded-md text-[#00695C] font-semibold border-t border-gray-100 mt-1"
+                onClick={addCustomOption}
+              >
+                + Add "{toTitleCase(trimmedSearch)}"
+              </div>
+            )}
+            {filteredOptions.length === 0 && !canAddCustom && (
               <div className="text-center text-gray-400 text-[11px] py-2">No options found</div>
-            ) : (
-              filteredOptions.map((option) => (
-                <label key={option} className="flex items-center gap-2 px-2 py-1 hover:bg-teal-50 rounded-md cursor-pointer text-[11px]">
-                  <input
-                    type="checkbox"
-                    className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer"
-                    checked={selected.includes(option)}
-                    onChange={() => toggleOption(option)}
-                  />
-                  {option}
-                </label>
-              ))
             )}
           </div>
         </div>
@@ -271,6 +297,17 @@ const SearchableMultiSelectDt = ({
     onChange(selected.filter(item => item !== option));
   };
 
+  const trimmedSearch = searchTerm.trim();
+  const canAddCustom = Boolean(trimmedSearch) &&
+    !options.some(o => o.toLowerCase() === trimmedSearch.toLowerCase()) &&
+    !selected.some(s => s.toLowerCase() === trimmedSearch.toLowerCase());
+
+  const addCustomOption = () => {
+    if (!canAddCustom) return;
+    onChange([...selected, toTitleCase(trimmedSearch)]);
+    setSearchTerm("");
+  };
+
   return (
     <div ref={dropdownRef} className={`relative ${className}`}>
       <div 
@@ -308,20 +345,27 @@ const SearchableMultiSelectDt = ({
             </div>
           </div>
           <div className="overflow-y-auto flex-1 p-1.5">
-            {filteredOptions.length === 0 ? (
+            {filteredOptions.map((option) => (
+              <label key={option} className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-teal-50 rounded-md cursor-pointer text-[13px]">
+                <input
+                  type="checkbox"
+                  className="accent-[#00695C] w-4 h-4 cursor-pointer"
+                  checked={selected.includes(option)}
+                  onChange={() => toggleOption(option)}
+                />
+                {option}
+              </label>
+            ))}
+            {canAddCustom && (
+              <div
+                className="px-3 py-1.5 text-[13px] cursor-pointer hover:bg-teal-50 rounded-md text-[#00695C] font-semibold border-t border-gray-100 mt-1"
+                onClick={addCustomOption}
+              >
+                + Add "{toTitleCase(trimmedSearch)}"
+              </div>
+            )}
+            {filteredOptions.length === 0 && !canAddCustom && (
               <div className="text-center text-gray-400 text-[12px] py-3">No options found</div>
-            ) : (
-              filteredOptions.map((option) => (
-                <label key={option} className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-teal-50 rounded-md cursor-pointer text-[13px]">
-                  <input
-                    type="checkbox"
-                    className="accent-[#00695C] w-4 h-4 cursor-pointer"
-                    checked={selected.includes(option)}
-                    onChange={() => toggleOption(option)}
-                  />
-                  {option}
-                </label>
-              ))
             )}
           </div>
         </div>
@@ -332,6 +376,17 @@ const SearchableMultiSelectDt = ({
 
 export default function LeaseAgentLPForm({ isOpen, onClose }) {
   const [step, setStep] = useState(0);
+
+  // "Is this listing for yourself, or for someone else?" - asked once, instead
+  // of a per-field "use existing?" toggle. null = not asked/answered yet.
+  const [reuseChoice, setReuseChoice] = useState(null);
+  const { isDocumentVerified, isMediaVerified, profile, hasUsableProfile } = useReusableResources("agent");
+  const hasVerifiedReusables = isMediaVerified("profile_photo")
+    || isDocumentVerified("aadhaar_card") || isDocumentVerified("pan_card");
+  const reusingProfilePhoto = reuseChoice === "self" && isMediaVerified("profile_photo");
+  const reusingAadhaar = reuseChoice === "self" && isDocumentVerified("aadhaar_card");
+  const reusingPan = reuseChoice === "self" && isDocumentVerified("pan_card");                          
+  const prefillAppliedRef = useRef(false);
 
   const [formData, setFormData] = useState({
     // Agent Details (Step 0)
@@ -388,6 +443,21 @@ export default function LeaseAgentLPForm({ isOpen, onClose }) {
   const [signaturePoints, setSignaturePoints] = useState([]);
   const [allSignaturePoints, setAllSignaturePoints] = useState([]);
   const [activeCanvas, setActiveCanvas] = useState(null);
+  // "It's me" prefill - see SellAgentComForm.jsx's identical effect for the
+  // full rationale (fills only still-blank mapped fields, once per "self"
+  // episode, safe against the profile/choice race).
+  useEffect(() => {
+    if (reuseChoice !== "self") {
+      prefillAppliedRef.current = false;
+      return;
+    }
+    if (!profile || prefillAppliedRef.current) return;
+    const prefill = buildPrefillValues(profile, "agent", formData);
+    if (Object.keys(prefill).length > 0) {
+      setFormData(prev => ({ ...prev, ...prefill }));
+    }
+    prefillAppliedRef.current = true;
+  }, [reuseChoice, profile]);
   const [errors, setErrors] = useState({});
 
   const updateForm = (field, value) => {
@@ -628,7 +698,7 @@ export default function LeaseAgentLPForm({ isOpen, onClose }) {
       } else if (!/^[0-9]{12}$/.test(formData.aadhaarNumber)) {
         e.aadhaarNumber = "Aadhaar number must contain only numbers";
       }
-      if (!formData.aadhaarCard) e.aadhaarCard = "Aadhaar card upload is required";
+      if (!formData.aadhaarCard && !reusingAadhaar) e.aadhaarCard = "Aadhaar card upload is required";
       if (!formData.passportPhoto) e.passportPhoto = "Passport-size photo is required";
       
       // Address fields - only letters, numbers, and spaces
@@ -764,6 +834,17 @@ export default function LeaseAgentLPForm({ isOpen, onClose }) {
       }
       try{
         const response = await createProperty(formData);
+        if (reuseChoice === "self" && response?.id) {
+          try {
+            const reuseResult = await reuseVerifiedResources(response.id);
+            const skipped = [...(reuseResult?.data?.skippedDocuments || []), ...(reuseResult?.data?.skippedMedia || [])];
+            if (skipped.length) {
+              console.warn("Listing created, but some verified items could not be attached:", skipped);
+            }
+          } catch (reuseError) {
+            console.error("Listing created, but reusing verified details failed: ", reuseError);
+          }
+        }
         onClose();
       }
       catch(error){
@@ -815,6 +896,12 @@ export default function LeaseAgentLPForm({ isOpen, onClose }) {
               inp={inMob}
               formData={formData}
               updateForm={updateForm}
+              reuseChoice={reuseChoice}
+              setReuseChoice={setReuseChoice}
+              hasVerifiedReusables={hasVerifiedReusables}
+              reusingProfilePhoto={reusingProfilePhoto}
+              reusingAadhaar={reusingAadhaar}
+              reusingPan={reusingPan}
               imagePreviews={imagePreviews}
               handleImageUpload={handleImageUpload}
               removeImage={removeImage}
@@ -939,6 +1026,12 @@ export default function LeaseAgentLPForm({ isOpen, onClose }) {
               inp={inDt}
               formData={formData}
               updateForm={updateForm}
+              reuseChoice={reuseChoice}
+              setReuseChoice={setReuseChoice}
+              hasVerifiedReusables={hasVerifiedReusables}
+              reusingProfilePhoto={reusingProfilePhoto}
+              reusingAadhaar={reusingAadhaar}
+              reusingPan={reusingPan}
               imagePreviews={imagePreviews}
               handleImageUpload={handleImageUpload}
               removeImage={removeImage}
@@ -1029,8 +1122,10 @@ export default function LeaseAgentLPForm({ isOpen, onClose }) {
 }
 
 // ==================== MOBILE CONTENT ====================
-function MobContentLeaseAgentLP({ 
-  step, inp, formData, updateForm, 
+function MobContentLeaseAgentLP({
+  step, inp, formData, updateForm,
+  reuseChoice, setReuseChoice, hasVerifiedReusables,
+  reusingProfilePhoto, reusingAadhaar, reusingPan,
   imagePreviews, handleImageUpload, removeImage,
   handleVideoUpload, videoPreview, removeVideo,
   handleDocumentUpload, handlePassportUpload,
@@ -1130,6 +1225,9 @@ function MobContentLeaseAgentLP({
   // STEP 0: Agent Details
   if (step === 0) return (
     <>
+      {hasVerifiedReusables && reuseChoice === null && (
+        <ReuseOrUploadPrompt onChoice={setReuseChoice} />
+      )}
       <div className="flex items-center gap-1.5 mb-2 pb-1.5 border-b-2 border-green-50">
         <div className="w-1 h-3 bg-[#00695C] rounded" />
         <h3 className="text-[11px] font-bold text-[#00695C]">Personal Information</h3>
@@ -1172,22 +1270,28 @@ function MobContentLeaseAgentLP({
           ))}
         </div>
       </Field>
-      <Field label="Profile Photo" hint="Max 2MB">
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
-          <input type="file" accept="image/*" className="hidden" id="m-profile-photo-lp" onChange={handleProfilePhotoUpload} />
-          <label htmlFor="m-profile-photo-lp" className="cursor-pointer flex flex-col items-center">
-            <User className="mb-1 w-7 h-7 text-[#00695C]" />
-            <span className="text-[11px] font-semibold text-[#00695C]">Upload Profile Photo</span>
-            <span className="text-[10px] text-gray-400">JPG, PNG (Max 2MB)</span>
-          </label>
-        </div>
-        {profilePhotoPreview && (
-          <div className="mt-2 relative">
-            <img src={profilePhotoPreview} alt="Profile" className="w-20 h-20 object-cover rounded-full border-2 border-[#00695C]" />
-            <button onClick={removeProfilePhoto} className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-red-500 text-white rounded-full text-[9px] flex items-center justify-center">✕</button>
+      {reusingProfilePhoto ? (
+        <Field label="Profile Photo">
+          <p className="text-[10px] text-green-600">✓ Using your verified profile photo on file</p>
+        </Field>
+      ) : (
+        <Field label="Profile Photo" hint="Max 2MB">
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
+            <input type="file" accept="image/*" className="hidden" id="m-profile-photo-lp" onChange={handleProfilePhotoUpload} />
+            <label htmlFor="m-profile-photo-lp" className="cursor-pointer flex flex-col items-center">
+              <User className="mb-1 w-7 h-7 text-[#00695C]" />
+              <span className="text-[11px] font-semibold text-[#00695C]">Upload Profile Photo</span>
+              <span className="text-[10px] text-gray-400">JPG, PNG (Max 2MB)</span>
+            </label>
           </div>
-        )}
-      </Field>
+          {profilePhotoPreview && (
+            <div className="mt-2 relative">
+              <img src={profilePhotoPreview} alt="Profile" className="w-20 h-20 object-cover rounded-full border-2 border-[#00695C]" />
+              <button onClick={removeProfilePhoto} className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-red-500 text-white rounded-full text-[9px] flex items-center justify-center">✕</button>
+            </div>
+          )}
+        </Field>
+      )}
 
       <div className="flex items-center gap-1.5 mt-3 mb-2 pb-1.5 border-b-2 border-green-50">
         <div className="w-1 h-3 bg-[#00695C] rounded" />
@@ -1271,28 +1375,40 @@ function MobContentLeaseAgentLP({
           onChange={(e) => updateForm("panNumber", e.target.value.toUpperCase())} 
         />
       </Field>
-      <Field label="Upload Aadhaar Card" required error={errors.aadhaarCard}>
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="m-aadhaar-lp-agent" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
-          <label htmlFor="m-aadhaar-lp-agent" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Aadhaar</span>
-            <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.aadhaarCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.aadhaarCard.name}</p>}
-      </Field>
-      <Field label="Upload PAN Card (Optional)">
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="m-pan-lp-agent" onChange={(e) => handleDocumentUpload("panCard", e)} />
-          <label htmlFor="m-pan-lp-agent" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload PAN</span>
-            <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.panCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.panCard.name}</p>}
-      </Field>
+      {reusingAadhaar ? (
+        <Field label="Upload Aadhaar Card">
+          <p className="text-[10px] text-green-600">✓ Using your verified Aadhaar on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload Aadhaar Card" required error={errors.aadhaarCard}>
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="m-aadhaar-lp-agent" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
+            <label htmlFor="m-aadhaar-lp-agent" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Aadhaar</span>
+              <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.aadhaarCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.aadhaarCard.name}</p>}
+        </Field>
+      )}
+      {reusingPan ? (
+        <Field label="Upload PAN Card">
+          <p className="text-[10px] text-green-600">✓ Using your verified PAN on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload PAN Card (Optional)">
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="m-pan-lp-agent" onChange={(e) => handleDocumentUpload("panCard", e)} />
+            <label htmlFor="m-pan-lp-agent" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload PAN</span>
+              <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.panCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.panCard.name}</p>}
+        </Field>
+      )}
       <Field label="Upload Passport-size Photo" required error={errors.passportPhoto}>
         <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
           <input type="file" accept=".jpg,.jpeg,.png" className="hidden" id="m-passport-lp-agent" onChange={(e) => handlePassportUpload("passportPhoto", e)} />
@@ -1976,8 +2092,10 @@ function MobContentLeaseAgentLP({
 }
 
 // ==================== DESKTOP CONTENT ====================
-function DtContentLeaseAgentLP({ 
-  step, inp, formData, updateForm, 
+function DtContentLeaseAgentLP({
+  step, inp, formData, updateForm,
+  reuseChoice, setReuseChoice, hasVerifiedReusables,
+  reusingProfilePhoto, reusingAadhaar, reusingPan,
   imagePreviews, handleImageUpload, removeImage,
   handleVideoUpload, videoPreview, removeVideo,
   handleDocumentUpload, handlePassportUpload,
@@ -2077,6 +2195,9 @@ function DtContentLeaseAgentLP({
   // STEP 0: Agent Details - Desktop
   if (step === 0) return (
     <>
+      {hasVerifiedReusables && reuseChoice === null && (
+        <ReuseOrUploadPrompt onChoice={setReuseChoice} />
+      )}
       <div className="flex items-center gap-2 mb-3 pb-2 border-b-2 border-green-50">
         <div className="w-1 h-4 bg-[#00695C] rounded" />
         <h3 className="text-[14px] font-bold text-[#00695C]">Personal Information</h3>
@@ -2119,22 +2240,28 @@ function DtContentLeaseAgentLP({
           ))}
         </div>
       </FieldDt>
-      <FieldDt label="Profile Photo" hint="Max 2MB">
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
-          <input type="file" accept="image/*" className="hidden" id="dt-profile-photo-lp" onChange={handleProfilePhotoUpload} />
-          <label htmlFor="dt-profile-photo-lp" className="cursor-pointer flex flex-col items-center">
-            <User className="mb-1 w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C]">Upload Profile Photo</span>
-            <span className="text-[11px] text-gray-400">JPG, PNG (Max 2MB)</span>
-          </label>
-        </div>
-        {profilePhotoPreview && (
-          <div className="mt-2 relative">
-            <img src={profilePhotoPreview} alt="Profile" className="w-24 h-24 object-cover rounded-full border-2 border-[#00695C]" />
-            <button onClick={removeProfilePhoto} className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-[11px] flex items-center justify-center">✕</button>
+      {reusingProfilePhoto ? (
+        <FieldDt label="Profile Photo">
+          <p className="text-[11px] text-green-600">✓ Using your verified profile photo on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Profile Photo" hint="Max 2MB">
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
+            <input type="file" accept="image/*" className="hidden" id="dt-profile-photo-lp" onChange={handleProfilePhotoUpload} />
+            <label htmlFor="dt-profile-photo-lp" className="cursor-pointer flex flex-col items-center">
+              <User className="mb-1 w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C]">Upload Profile Photo</span>
+              <span className="text-[11px] text-gray-400">JPG, PNG (Max 2MB)</span>
+            </label>
           </div>
-        )}
-      </FieldDt>
+          {profilePhotoPreview && (
+            <div className="mt-2 relative">
+              <img src={profilePhotoPreview} alt="Profile" className="w-24 h-24 object-cover rounded-full border-2 border-[#00695C]" />
+              <button onClick={removeProfilePhoto} className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-[11px] flex items-center justify-center">✕</button>
+            </div>
+          )}
+        </FieldDt>
+      )}
 
       <div className="flex items-center gap-2 mt-4 mb-3 pb-2 border-b-2 border-green-50">
         <div className="w-1 h-4 bg-[#00695C] rounded" />
@@ -2218,28 +2345,40 @@ function DtContentLeaseAgentLP({
           onChange={(e) => updateForm("panNumber", e.target.value.toUpperCase())} 
         />
       </FieldDt>
-      <FieldDt label="Upload Aadhaar Card" required error={errors.aadhaarCard}>
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="dt-aadhaar-lp-agent" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
-          <label htmlFor="dt-aadhaar-lp-agent" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Aadhaar Card</span>
-            <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.aadhaarCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.aadhaarCard.name}</p>}
-      </FieldDt>
-      <FieldDt label="Upload PAN Card (Optional)">
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="dt-pan-lp-agent" onChange={(e) => handleDocumentUpload("panCard", e)} />
-          <label htmlFor="dt-pan-lp-agent" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload PAN Card</span>
-            <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.panCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.panCard.name}</p>}
-      </FieldDt>
+      {reusingAadhaar ? (
+        <FieldDt label="Upload Aadhaar Card">
+          <p className="text-[11px] text-green-600">✓ Using your verified Aadhaar on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Upload Aadhaar Card" required error={errors.aadhaarCard}>
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="dt-aadhaar-lp-agent" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
+            <label htmlFor="dt-aadhaar-lp-agent" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Aadhaar Card</span>
+              <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.aadhaarCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.aadhaarCard.name}</p>}
+        </FieldDt>
+      )}
+      {reusingPan ? (
+        <FieldDt label="Upload PAN Card">
+          <p className="text-[11px] text-green-600">✓ Using your verified PAN on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Upload PAN Card (Optional)">
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="dt-pan-lp-agent" onChange={(e) => handleDocumentUpload("panCard", e)} />
+            <label htmlFor="dt-pan-lp-agent" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload PAN Card</span>
+              <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.panCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.panCard.name}</p>}
+        </FieldDt>
+      )}
       <FieldDt label="Upload Passport-size Photo" required error={errors.passportPhoto}>
         <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
           <input type="file" accept=".jpg,.jpeg,.png" className="hidden" id="dt-passport-lp-agent" onChange={(e) => handlePassportUpload("passportPhoto", e)} />

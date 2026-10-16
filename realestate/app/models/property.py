@@ -197,8 +197,12 @@ class BaseProperty(Base):
     user = relationship("User", back_populates="properties")
     media = relationship("PropertyMedia", back_populates="property", cascade="all, delete-orphan")
     documents = relationship("PropertyDocument", back_populates="property", cascade="all, delete-orphan")
-    owner_details = relationship("OwnerProperty", back_populates="property", uselist=False)
-    agent_details = relationship("PropertyAgentDetails", back_populates="property", uselist=False)
-    builder_details = relationship("PropertyBuilderDetails", back_populates="property", uselist=False)
-    property_management_details = relationship("PropertyManagementProperty", back_populates="property", uselist=False)
+    contact_person_media = relationship(
+        "ContactPersonMedia", back_populates="property", cascade="all, delete-orphan"
+    )
+    # Replaces the old owner_details/agent_details/builder_details/
+    # property_management_details (owner_properties/agent_properties/
+    # builder_properties/property_management_properties - dropped; see
+    # app.models.property_contact and tools/backfill_property_contact_persons.py).
+    contact_person = relationship("PropertyContactPerson", back_populates="property", uselist=False)
 

@@ -21,7 +21,7 @@ export class LoginRequest {
 }
 
 export class RegisterRequest {
-  constructor({ email, password, fullName, phoneNumber, address, city, state, country, role, companyName }) {
+  constructor({ email, password, fullName, phoneNumber, address, city, state, country, role, companyName, vendor_type }) {
     this.email = email;
     this.password = password;
     this.fullName = fullName;
@@ -32,6 +32,8 @@ export class RegisterRequest {
     this.state = state;
     this.country = country;
     this.role = role;
+    // Only sent for vendors; undefined is dropped from the JSON body for customers.
+    this.vendor_type = vendor_type || undefined;
   }
 }
 
@@ -44,12 +46,15 @@ export class AuthResponse {
 }
 
 export class User {
-  constructor({ id, email, name, phone, role, createdAt, updatedAt }) {
+  constructor({ id, email, name, phone, phoneNumber, role, vendor_types, avatarUrl, totpEnabled, createdAt, updatedAt }) {
     this.id = id;
     this.email = email;
     this.name = name;
-    this.phone = phone;
+    this.phone = phone || phoneNumber;
     this.role = role;
+    this.vendor_types = vendor_types || [];
+    this.avatarUrl = avatarUrl || null;
+    this.totpEnabled = Boolean(totpEnabled);
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
   }

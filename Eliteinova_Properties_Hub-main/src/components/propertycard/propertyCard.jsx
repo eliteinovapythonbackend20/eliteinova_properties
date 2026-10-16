@@ -1,6 +1,6 @@
-// Own style card
+// // Own style card
 
-// src/components/PropertyCard.jsx
+// // src/components/PropertyCard.jsx
 // import { useState, useEffect } from 'react';
 // import { createPortal } from 'react-dom';
 // import {
@@ -3681,7 +3681,7 @@ const PropertyCard = ({ property, onContactClick }) => {
             onClick={() => setShowDetailsModal(false)}
           >
             <div
-              className="bg-white rounded-2xl max-w-[95%] sm:max-w-lg md:max-w-2xl w-full max-h-[85vh] overflow-y-auto shadow-2xl animate-scale-in mt-16 md:mt-20"
+              className="bg-white rounded-2xl max-w-[95%] sm:max-w-lg md:max-w-2xl w-full max-h-[85vh] overflow-y-auto shadow-2xl animate-scale-in"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="bg-gradient-to-r from-[#00695C] to-[#26A69A] p-5 rounded-t-2xl flex justify-between items-center sticky top-0 z-10">

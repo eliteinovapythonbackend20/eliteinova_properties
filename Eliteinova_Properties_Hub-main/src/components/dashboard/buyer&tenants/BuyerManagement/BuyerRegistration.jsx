@@ -17,7 +17,7 @@ import {
   FaBuilding, FaUserTie, FaUserCog, FaUsers,
   FaCheck, FaTimes, FaStar as FaStarSolid,
   FaUserCircle, FaStore, FaHome as FaHomeSolid, FaBriefcase as FaBriefcaseSolid,
-  FaCertificate, FaShieldAlt, FaRocket, FaCrown, FaMedal,
+  FaCertificate, FaRocket, FaCrown, FaMedal,
   FaUserGraduate, FaUserMd, FaUserSecret, FaIdCard, FaFileAlt,
   FaRegBuilding
 } from 'react-icons/fa';
@@ -60,7 +60,6 @@ function mapCustomerToBuyer(customer) {
       aadhaar: !!customer.aadhaarVerified,
       pan: !!customer.panVerified,
       gst: !!customer.gstVerified,
-      rera: !!customer.reraVerified,
     },
     // emailVerified/phoneVerified are real, writable Customer columns
     // (via updateCustomer) - not decorative.
@@ -402,7 +401,6 @@ const ViewBuyerModal = ({ buyer, show, actionLoading, onClose, onActivate, onBlo
                   { key: 'aadhaar', label: 'Aadhaar' },
                   { key: 'pan', label: 'PAN' },
                   { key: 'gst', label: 'GST' },
-                  { key: 'rera', label: 'RERA' },
                 ].map(item => (
                   <div
                     key={item.key}
@@ -534,7 +532,6 @@ const BuyerFormModal = ({ buyer, show, onClose, onSave, mode = 'add' }) => {
             aadhaar: buyer.kyc?.aadhaar || false,
             pan: buyer.kyc?.pan || false,
             gst: buyer.kyc?.gst || false,
-            rera: buyer.kyc?.rera || false,
           },
         });
       } else {
@@ -550,7 +547,7 @@ const BuyerFormModal = ({ buyer, show, onClose, onSave, mode = 'add' }) => {
           status: 'pending',
           kycStatus: 'pending',
           verification: { email: false, phone: false },
-          kyc: { aadhaar: false, pan: false, gst: false, rera: false },
+          kyc: { aadhaar: false, pan: false, gst: false },
         });
       }
     }
@@ -597,7 +594,6 @@ const BuyerFormModal = ({ buyer, show, onClose, onSave, mode = 'add' }) => {
     { key: 'aadhaar', label: 'Aadhaar', icon: <FaIdCard className="text-sm" /> },
     { key: 'pan', label: 'PAN', icon: <FaFileAlt className="text-sm" /> },
     { key: 'gst', label: 'GST', icon: <FaCertificate className="text-sm" /> },
-    { key: 'rera', label: 'RERA', icon: <FaShieldAlt className="text-sm" /> },
   ];
 
   return (
@@ -1174,7 +1170,6 @@ const BuyerRegistration = () => {
         aadhaarVerified: updatedData.kyc.aadhaar,
         panVerified: updatedData.kyc.pan,
         gstVerified: updatedData.kyc.gst,
-        reraVerified: updatedData.kyc.rera,
       });
 
       setBuyers(prev => {
@@ -1214,7 +1209,6 @@ const BuyerRegistration = () => {
           aadhaarVerified: formData.kyc.aadhaar,
           panVerified: formData.kyc.pan,
           gstVerified: formData.kyc.gst,
-          reraVerified: formData.kyc.rera,
         });
       }
 

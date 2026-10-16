@@ -18,6 +18,7 @@ const VendorRegister = ({ isOpen, onClose, onSwitchToLogin }) => {
     state: '',
     country: '',
     companyName: '',
+    vendor_type: '',
     password: '',
     confirmPassword: '',
     role:"vendor",
@@ -87,6 +88,11 @@ const VendorRegister = ({ isOpen, onClose, onSwitchToLogin }) => {
       return;
     }
 
+    if (!formData.vendor_type) {
+      setError('Please select your vendor type');
+      return;
+    }
+
     if (formData.password.length < 8) {
       setError('Password must be at least 8 characters long');
       return;
@@ -115,9 +121,10 @@ const VendorRegister = ({ isOpen, onClose, onSwitchToLogin }) => {
       }
       showToast('Vendor account created successfully!', 'success');
       setSuccess(true);
+      const vendorProfile = formData.vendor_type !== 'property_management' ? formData.vendor_type.toLowerCase() : 'property-management';
       setTimeout(() => {
         handleClose();
-        navigate('/');
+        navigate(`/profile/${vendorProfile}`); // Redirect to vendor dashboard or profile page
       }, 2000);
     } catch (err) {
       const message = err?.message || 'Registration failed. Please try again.';
@@ -140,6 +147,7 @@ const VendorRegister = ({ isOpen, onClose, onSwitchToLogin }) => {
       state: '',
       country: '',
       companyName: '',
+      vendor_type: '',
       password: '',
       confirmPassword: '',
       role:"vendor",
@@ -282,6 +290,29 @@ const VendorRegister = ({ isOpen, onClose, onSwitchToLogin }) => {
                     className="w-full pl-10 pr-3 py-3 bg-[#E8F5E9]/30 border-2 border-[#26A69A]/20 rounded-xl focus:outline-none focus:border-[#26A69A] focus:ring-2 focus:ring-[#26A69A]/20 transition-all duration-300 text-gray-800 placeholder-gray-400"
                     required
                   />
+                </div>
+              </div>
+
+              {/* Vendor Type */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Vendor Type <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[#26A69A]" />
+                  <select
+                    name="vendor_type"
+                    value={formData.vendor_type}
+                    onChange={handleChange}
+                    className="w-full pl-10 pr-3 py-3 bg-[#E8F5E9]/30 border-2 border-[#26A69A]/20 rounded-xl focus:outline-none focus:border-[#26A69A] focus:ring-2 focus:ring-[#26A69A]/20 transition-all duration-300 text-gray-800"
+                    required
+                  >
+                    <option value="">Select vendor type</option>
+                    <option value="owner">Owner</option>
+                    <option value="agent">Agent</option>
+                    <option value="builder">Builder</option>
+                    <option value="property_management">Property Management</option>
+                  </select>
                 </div>
               </div>
 

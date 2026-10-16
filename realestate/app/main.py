@@ -2,11 +2,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.api import admin_controller, auth_controller, filter_controller, profile_controller, property_controller
+from app.api import admin_controller, auth_controller, filter_controller, office_controller, profile_controller, property_controller
 from app.middleware.auth_middleware import AuthMiddleware
 
 from app.api import payment_controller
@@ -40,7 +39,8 @@ app = FastAPI(
 )
 
 Path(settings.LOCAL_STORAGE_PATH).mkdir(parents=True, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=settings.LOCAL_STORAGE_PATH), name="uploads")
+# No static mount for /uploads: private documents must never be served as plain
+# files. Public media and private streams both go through document_controller.
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,6 +70,10 @@ app.add_middleware(
         r"^/api/v1/properties/by-purpose",
         r"^/api/v1/properties/[A-Za-z0-9]+/?$",  # GET single property (string IDs like EP202608I00001)
         r"^/api/v1/filters/",  # public search + browse (GET and POST)
+        # Both check their own authorisation: /uploads refuses private paths,
+        # and the stream route needs a valid signed token.
+        r"^/uploads/",
+        r"^/api/v1/documents/stream$",
     ]
 )
 app.include_router(
@@ -85,6 +89,8 @@ app.include_router(profile_controller.router, prefix="/api/v1/profile", tags=["P
 
 app.include_router(admin_controller.router, prefix="/api/v1/admin", tags=["Admin"])
 
+app.include_router(office_controller.router, prefix="/api/v1/office", tags=["Office"])
+
 app.include_router(payment_controller.router,prefix="/api/v1/payments", tags=["payment"])
 
 app.include_router(admin_dashboard_controller.router, prefix="/api/v1/admin/dashboard", tags=["Admin Dashboard"])
@@ -92,6 +98,21 @@ app.include_router(admin_customer_controller.router, prefix="/api/v1/admin/dashb
 app.include_router(admin_property_request_controller.router, prefix="/api/v1/admin/dashboard/property-requests", tags=["Admin Property Requests"])
 
 app.include_router(customer_controller.router, prefix="/api/v1/customer", tags=["Customer"])
+
+from app.api import document_controller  # noqa: E402
+app.include_router(document_controller.user_router)
+app.include_router(document_controller.admin_router)
+app.include_router(document_controller.stream_router)
+
+from app.api import event_audit_controller  # noqa: E402
+app.include_router(event_audit_controller.router)
+
+from app.api import media_controller  # noqa: E402
+app.include_router(media_controller.user_router)
+app.include_router(media_controller.property_router)
+
+from app.api import contact_person_media_controller  # noqa: E402
+app.include_router(contact_person_media_controller.router)
 @app.get("/")
 async def root():
     return {

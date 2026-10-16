@@ -43,7 +43,7 @@ class StorageProvider(ABC):
         pass
     
     @abstractmethod
-    async def generate_signed_url(self, file_url: str, expiration: int = 3600) -> str:
+    async def generate_signed_url(self, file_url: str, expiration: int = 3600, **claims) -> str:
         """
         Generate a signed URL for temporary access
         

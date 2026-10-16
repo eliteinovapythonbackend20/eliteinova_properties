@@ -5,7 +5,6 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.vendor_profile import VendorProfile
-from app.repositories.property_repository import VENDOR_MODEL_MAP
 from app.schemas.vendor_profile_details import ROLE_EXTRA_ALIASES, ROLE_EXTRA_COLUMN, ROLE_EXTRA_SCHEMA
 
 # Frontend sends camelCase keys that don't convert 1:1 to the VendorProfile
@@ -22,7 +21,6 @@ _FIELD_ALIASES = {
     "authFullName": "full_name",
     "authMobile": "phone_number",
     "authWhatsapp": "whatsapp_number",
-    "companyWebsite": "website",
     "facebookPage": "facebook",
     "youtubeChannel": "youtube",
     "linkedIn": "linkedin",
@@ -83,58 +81,3 @@ class VendorProfileRepository:
         await self.db.refresh(profile)
         return profile
 
-    # ============================================
-    # VENDOR-LEVEL DOCUMENT METADATA (sale deed, GST certificate, ...) -
-    # stored inside the role-specific JSONB blob (owner_details/
-    # agency_details/builder_details/pm_details) under a "documents" sub-key,
-    # keyed by doc_type, so the same user_id can hold separate documents per
-    # role instead of colliding on a shared (user_id, doc_type) row. Only
-    # metadata lives here - the actual file stays in the private bucket, and
-    # a fresh signed URL is minted on demand (see ProfileService.get_vendor_document_view_url).
-    # ============================================
-
-    async def get_vendor_document_meta(self, user_id: str, posted_by: str, doc_type: str) -> Optional[Dict[str, Any]]:
-        profile = await self.get_vendor_profile(user_id)
-        if not profile:
-            return None
-        extra_column = ROLE_EXTRA_COLUMN[posted_by]
-        documents = (getattr(profile, extra_column) or {}).get("documents") or {}
-        return documents.get(doc_type)
-
-    async def get_vendor_documents_meta(self, user_id: str, posted_by: str) -> Dict[str, Any]:
-        profile = await self.get_vendor_profile(user_id)
-        if not profile:
-            return {}
-        extra_column = ROLE_EXTRA_COLUMN[posted_by]
-        return dict((getattr(profile, extra_column) or {}).get("documents") or {})
-
-    async def upsert_vendor_document_meta(
-        self, user_id: str, posted_by: str, doc_type: str, metadata: Dict[str, Any]
-    ):
-        profile = await self.get_vendor_profile(user_id)
-        if not profile:
-            return None
-        extra_column = ROLE_EXTRA_COLUMN[posted_by]
-        blob = dict(getattr(profile, extra_column) or {})
-        documents = dict(blob.get("documents") or {})
-        documents[doc_type] = metadata
-        blob["documents"] = documents
-        setattr(profile, extra_column, blob)
-        await self.db.flush()
-        await self.db.refresh(profile)
-        return profile
-
-    async def delete_vendor_document_meta(self, user_id: str, posted_by: str, doc_type: str) -> bool:
-        profile = await self.get_vendor_profile(user_id)
-        if not profile:
-            return False
-        extra_column = ROLE_EXTRA_COLUMN[posted_by]
-        blob = dict(getattr(profile, extra_column) or {})
-        documents = dict(blob.get("documents") or {})
-        if doc_type not in documents:
-            return False
-        documents.pop(doc_type)
-        blob["documents"] = documents
-        setattr(profile, extra_column, blob)
-        await self.db.flush()
-        return True

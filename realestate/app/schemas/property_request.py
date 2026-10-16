@@ -4,7 +4,6 @@ from fastapi import UploadFile
 import json
 
 from app.schemas.property_base import PropertyBaseSchema
-from app.schemas.property_vendor_schemas import OwnerDetailsSchema, AgentDetailsSchema, BuilderDetailsSchema, PMDetailsSchema
 
 class PropertyCreateMultipart(BaseModel):
     """Schema for multipart property creation"""

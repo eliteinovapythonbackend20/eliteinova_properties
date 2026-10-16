@@ -14,12 +14,12 @@ import {
 const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-const ThemedDatePicker = ({ label }) => {
+const ThemedDatePicker = ({ label, value, onChange }) => {
   const today = new Date();
   const [open, setOpen] = useState(false);
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState(value ? new Date(value) : null);
   const ref = useRef(null);
   const inputRef = useRef(null);
 
@@ -79,7 +79,7 @@ const ThemedDatePicker = ({ label }) => {
               const sel = isSelected(day);
               const tod = isToday(day);
               return (
-                <button key={day} type="button" onClick={() => { setSelected(new Date(viewYear, viewMonth, day)); setOpen(false); }}
+                <button key={day} type="button" onClick={() => { const d = new Date(viewYear, viewMonth, day); setSelected(d); onChange?.(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`); setOpen(false); }}
                   className={`w-full rounded text-[9px] font-semibold py-0.5 transition-all duration-150 ${sel ? 'bg-gradient-to-br from-teal-500 to-emerald-500 text-white shadow-sm' : tod ? 'bg-teal-100 text-teal-700 ring-1 ring-teal-400' : 'text-teal-800 hover:bg-teal-100'}`}>
                   {day}
                 </button>
@@ -87,8 +87,8 @@ const ThemedDatePicker = ({ label }) => {
             })}
           </div>
           <div className="bg-teal-50 border-t border-teal-100 flex justify-between px-2 py-0.5">
-            <button type="button" onClick={() => { setSelected(today); setViewMonth(today.getMonth()); setViewYear(today.getFullYear()); setOpen(false); }} className="text-[8px] font-bold text-teal-600 hover:text-teal-800 transition-colors">Today</button>
-            <button type="button" onClick={() => { setSelected(null); if(inputRef.current) inputRef.current.value=''; setOpen(false); }} className="text-[8px] font-bold text-teal-400 hover:text-teal-600 transition-colors">Clear</button>
+            <button type="button" onClick={() => { setSelected(today); setViewMonth(today.getMonth()); setViewYear(today.getFullYear()); onChange?.(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`); setOpen(false); }} className="text-[8px] font-bold text-teal-600 hover:text-teal-800 transition-colors">Today</button>
+            <button type="button" onClick={() => { setSelected(null); if(inputRef.current) inputRef.current.value=''; onChange?.(''); setOpen(false); }} className="text-[8px] font-bold text-teal-400 hover:text-teal-600 transition-colors">Clear</button>
           </div>
         </div>
       )}
@@ -96,164 +96,217 @@ const ThemedDatePicker = ({ label }) => {
   );
 };
 
+// Every one of these used to be defined INSIDE the main component below. A
+// component defined inside another component's body is recreated (new
+// function identity) on every render, so React unmounts and remounts the
+// <input> it renders every time - which is why, once these fields became
+// controlled, typing a single character lost focus: the setState from that
+// keystroke re-rendered the parent, which redefined InputField etc. as a new
+// type, and React threw away the old DOM node. Hoisting them out here, as
+// plain module-level components with no closure over the parent, keeps their
+// identity stable across renders so the underlying <input> is never remounted.
+const FilterSection = ({ title, children }) => {
+  const emoji = title.match(/^\S+/)?.[0] || '';
+  const rest = title.slice(emoji.length);
+  return (
+    <div className="bg-white rounded-xl sm:rounded-2xl shadow-md border-2 border-teal-100 mb-2 sm:mb-3 transition-all duration-300 hover:shadow-xl hover:shadow-teal-200 hover:-translate-y-1 hover:border-teal-300 overflow-visible relative">
+      <style>{`
+        @keyframes wiggle { 0% { transform: rotate(0deg) scale(1); } 15% { transform: rotate(-15deg) scale(1.2); } 30% { transform: rotate(12deg) scale(1.25); } 45% { transform: rotate(-10deg) scale(1.2); } 60% { transform: rotate(8deg) scale(1.15); } 75% { transform: rotate(-5deg) scale(1.1); } 100% { transform: rotate(0deg) scale(1); } }
+        @keyframes continuousBounce { 0%, 100% { transform: translateY(0px) scale(1); } 25% { transform: translateY(-4px) scale(1.1); } 50% { transform: translateY(0px) scale(1); } 75% { transform: translateY(-2px) scale(1.05); } }
+        .emoji-wrap { display: inline-block; animation: continuousBounce 2s ease-in-out infinite; }
+        .emoji-wrap:hover { animation: wiggle 0.6s ease forwards; }
+      `}</style>
+      <div className="px-2 py-1 sm:px-3 sm:py-1 bg-gradient-to-r from-teal-100 to-emerald-100 border-b-2 border-teal-200 rounded-t-xl sm:rounded-t-2xl">
+        <h3 className="font-bold text-teal-800 text-xs sm:text-sm md:text-base">
+          <span className="emoji-wrap">{emoji}</span>
+          {rest}
+        </h3>
+      </div>
+      <div className="p-1.5 sm:p-2 overflow-visible">{children}</div>
+    </div>
+  );
+};
+
+const InputField = ({ label, placeholder, type = "text", value, onChange }) => (
+  <div className="mb-1.5 sm:mb-2">
+    <label className="block text-xs sm:text-sm font-bold text-teal-800 mb-0.5">{label}</label>
+    <input type={type} placeholder={placeholder} value={value ?? ''} onChange={onChange ? (e) => onChange(e.target.value) : undefined} readOnly={!onChange} className="w-full px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg sm:rounded-xl border-2 border-teal-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500 focus:outline-none transition-all duration-300 bg-white text-xs sm:text-sm" />
+  </div>
+);
+
+const InputRange = ({ label, minPlaceholder, maxPlaceholder, minValue, maxValue, onMinChange, onMaxChange }) => (
+  <div className="mb-1.5 sm:mb-2">
+    <label className="block text-xs sm:text-sm font-bold text-teal-800 mb-0.5">{label}</label>
+    <div className="flex gap-2 sm:gap-3">
+      <input type="number" placeholder={minPlaceholder} value={minValue ?? ''} onChange={(e) => onMinChange?.(e.target.value)} className="w-1/2 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg sm:rounded-xl border-2 border-teal-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500 focus:outline-none transition-all duration-300 bg-white text-xs sm:text-sm" />
+      <input type="number" placeholder={maxPlaceholder} value={maxValue ?? ''} onChange={(e) => onMaxChange?.(e.target.value)} className="w-1/2 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg sm:rounded-xl border-2 border-teal-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500 focus:outline-none transition-all duration-300 bg-white text-xs sm:text-sm" />
+    </div>
+  </div>
+);
+
+const NumberInputField = ({ label, placeholder, value, onChange }) => (
+  <div className="mb-1.5 sm:mb-2">
+    <label className="block text-xs sm:text-sm font-bold text-teal-800 mb-0.5">{label}</label>
+    <input type="number" placeholder={placeholder} value={value ?? ''} onChange={onChange ? (e) => onChange(e.target.value) : undefined} readOnly={!onChange} className="w-full px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg sm:rounded-xl border-2 border-teal-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500 focus:outline-none transition-all duration-300 bg-white text-xs sm:text-sm" />
+  </div>
+);
+
+const SelectInput = ({ label, options, value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const handleClickOutside = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+  return (
+    <div className="mb-1.5 sm:mb-2 relative select-wrapper" ref={ref} style={{ overflow: 'visible' }}>
+      <label className="block text-xs sm:text-sm font-bold text-teal-800 mb-0.5">{label}</label>
+      <button type="button" onClick={() => setOpen(!open)} className="w-full px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg sm:rounded-xl border-2 border-teal-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500 focus:outline-none transition-all duration-300 bg-white text-left flex justify-between items-center text-xs sm:text-sm">
+        <span className={value ? 'text-teal-800 font-medium' : 'text-gray-400'}>{value || `Select ${label}`}</span>
+        <svg className={`w-3.5 h-3.5 text-teal-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+      </button>
+      {open && (
+        <div className="relative z-[9999] bg-white rounded-xl shadow-xl border border-teal-200" style={{ maxHeight: '260px', overflowY: 'auto', width: '100%', left: '0', top: 'calc(100% + 4px)' }}>
+          {options.map((opt) => (
+            <div key={opt} onClick={() => { onChange?.(opt); setOpen(false); }} className={`px-2 py-1 text-xs sm:text-sm cursor-pointer font-medium transition-all duration-150 ${value === opt ? 'bg-teal-600 text-white' : 'text-teal-800 hover:bg-teal-500 hover:text-white'}`}>{opt}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const RadioGroup = ({ label, options, value, onChange }) => (
+  <div className="mb-1.5 sm:mb-2">
+    <label className="block text-xs sm:text-sm font-bold text-teal-800 mb-0.5">{label}</label>
+    <div className="flex flex-wrap gap-1.5 sm:gap-2">
+      {options.map(opt => (
+        <label key={opt} className="flex items-center gap-1 sm:gap-1.5 cursor-pointer group">
+          <input type="radio" name={label} checked={value === opt} onChange={() => onChange?.(opt)} className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-teal-600 focus:ring-teal-500 focus:ring-offset-0 accent-teal-600" />
+          <span className="text-xs sm:text-sm text-teal-700 group-hover:text-teal-600 transition-colors font-medium">{opt}</span>
+        </label>
+      ))}
+    </div>
+  </div>
+);
+
+const CheckboxGroup = ({ label, options, value = [], onChange }) => (
+  <div className="mb-1.5 sm:mb-2">
+    <label className="block text-xs sm:text-sm font-bold text-teal-800 mb-0.5">{label}</label>
+    <div className="space-y-0.5 sm:space-y-1">
+      {options.map(option => (
+        <label key={option} className="flex items-center gap-1 sm:gap-1.5 cursor-pointer group">
+          <input type="checkbox" checked={value.includes(option)} onChange={() => onChange?.(option)} className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded border-2 border-teal-300 text-teal-600 focus:ring-teal-500 focus:ring-offset-0 accent-teal-600" />
+          <span className="text-xs sm:text-sm text-teal-700 group-hover:text-teal-600 transition-colors font-medium">{option}</span>
+        </label>
+      ))}
+    </div>
+  </div>
+);
+
 // ── Main Component ──────────────────────────────────────────────────────────
 const LeaseApartmentFilter = ({ activeTab = 'Lease', onFilterChange, onClose }) => {
   const [currentActiveTab, setCurrentActiveTab] = useState(activeTab);
+  const [filters, setFilters] = useState({});
+  const updateFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
+  const toggleFilterOption = (key, option) => {
+    setFilters((prev) => {
+      const current = prev[key] || [];
+      return { ...prev, [key]: current.includes(option) ? current.filter((v) => v !== option) : [...current, option] };
+    });
+  };
 
   const tabs = [
     { id: 'Lease', icon: <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />, label: 'Lease' }
   ];
 
-  const FilterSection = ({ title, children }) => {
-    const emoji = title.match(/^\S+/)?.[0] || '';
-    const rest = title.slice(emoji.length);
-    return (
-      <div className="bg-white rounded-xl sm:rounded-2xl shadow-md border-2 border-teal-100 mb-2 sm:mb-3 transition-all duration-300 hover:shadow-xl hover:shadow-teal-200 hover:-translate-y-1 hover:border-teal-300 overflow-visible relative">
-        <style>{`
-          @keyframes wiggle { 0% { transform: rotate(0deg) scale(1); } 15% { transform: rotate(-15deg) scale(1.2); } 30% { transform: rotate(12deg) scale(1.25); } 45% { transform: rotate(-10deg) scale(1.2); } 60% { transform: rotate(8deg) scale(1.15); } 75% { transform: rotate(-5deg) scale(1.1); } 100% { transform: rotate(0deg) scale(1); } }
-          @keyframes continuousBounce { 0%, 100% { transform: translateY(0px) scale(1); } 25% { transform: translateY(-4px) scale(1.1); } 50% { transform: translateY(0px) scale(1); } 75% { transform: translateY(-2px) scale(1.05); } }
-          .emoji-wrap { display: inline-block; animation: continuousBounce 2s ease-in-out infinite; }
-          .emoji-wrap:hover { animation: wiggle 0.6s ease forwards; }
-        `}</style>
-        <div className="px-2 py-1 sm:px-3 sm:py-1 bg-gradient-to-r from-teal-100 to-emerald-100 border-b-2 border-teal-200 rounded-t-xl sm:rounded-t-2xl">
-          <h3 className="font-bold text-teal-800 text-xs sm:text-sm md:text-base">
-            <span className="emoji-wrap">{emoji}</span>
-            {rest}
-          </h3>
-        </div>
-        <div className="p-1.5 sm:p-2 overflow-visible">{children}</div>
-      </div>
-    );
-  };
-
-  const InputField = ({ label, placeholder, type = "text" }) => (
-    <div className="mb-1.5 sm:mb-2">
-      <label className="block text-xs sm:text-sm font-bold text-teal-800 mb-0.5">{label}</label>
-      <input type={type} placeholder={placeholder} className="w-full px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg sm:rounded-xl border-2 border-teal-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500 focus:outline-none transition-all duration-300 bg-white text-xs sm:text-sm" />
-    </div>
-  );
-
-  const InputRange = ({ label, minPlaceholder, maxPlaceholder }) => (
-    <div className="mb-1.5 sm:mb-2">
-      <label className="block text-xs sm:text-sm font-bold text-teal-800 mb-0.5">{label}</label>
-      <div className="flex gap-2 sm:gap-3">
-        <input type="number" placeholder={minPlaceholder} className="w-1/2 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg sm:rounded-xl border-2 border-teal-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500 focus:outline-none transition-all duration-300 bg-white text-xs sm:text-sm" />
-        <input type="number" placeholder={maxPlaceholder} className="w-1/2 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg sm:rounded-xl border-2 border-teal-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500 focus:outline-none transition-all duration-300 bg-white text-xs sm:text-sm" />
-      </div>
-    </div>
-  );
-
-  const NumberInputField = ({ label, placeholder }) => (
-    <div className="mb-1.5 sm:mb-2">
-      <label className="block text-xs sm:text-sm font-bold text-teal-800 mb-0.5">{label}</label>
-      <input type="number" placeholder={placeholder} className="w-full px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg sm:rounded-xl border-2 border-teal-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500 focus:outline-none transition-all duration-300 bg-white text-xs sm:text-sm" />
-    </div>
-  );
-
-  const SelectInput = ({ label, options }) => {
-    const [open, setOpen] = useState(false);
-    const [selected, setSelected] = useState('');
-    const ref = useRef(null);
-    useEffect(() => {
-      const handleClickOutside = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-    return (
-      <div className="mb-1.5 sm:mb-2 relative select-wrapper" ref={ref} style={{ overflow: 'visible' }}>
-        <label className="block text-xs sm:text-sm font-bold text-teal-800 mb-0.5">{label}</label>
-        <button type="button" onClick={() => setOpen(!open)} className="w-full px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg sm:rounded-xl border-2 border-teal-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500 focus:outline-none transition-all duration-300 bg-white text-left flex justify-between items-center text-xs sm:text-sm">
-          <span className={selected ? 'text-teal-800 font-medium' : 'text-gray-400'}>{selected || `Select ${label}`}</span>
-          <svg className={`w-3.5 h-3.5 text-teal-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-        </button>
-        {open && (
-          <div className="relative z-[9999] bg-white rounded-xl shadow-xl border border-teal-200" style={{ maxHeight: '260px', overflowY: 'auto', width: '100%', left: '0', top: 'calc(100% + 4px)' }}>
-            {options.map((opt) => (
-              <div key={opt} onClick={() => { setSelected(opt); setOpen(false); }} className={`px-2 py-1 text-xs sm:text-sm cursor-pointer font-medium transition-all duration-150 ${selected === opt ? 'bg-teal-600 text-white' : 'text-teal-800 hover:bg-teal-500 hover:text-white'}`}>{opt}</div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const RadioGroup = ({ label, options }) => (
-    <div className="mb-1.5 sm:mb-2">
-      <label className="block text-xs sm:text-sm font-bold text-teal-800 mb-0.5">{label}</label>
-      <div className="flex flex-wrap gap-1.5 sm:gap-2">
-        {options.map(opt => (
-          <label key={opt} className="flex items-center gap-1 sm:gap-1.5 cursor-pointer group">
-            <input type="radio" name={label} className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-teal-600 focus:ring-teal-500 focus:ring-offset-0 accent-teal-600" />
-            <span className="text-xs sm:text-sm text-teal-700 group-hover:text-teal-600 transition-colors font-medium">{opt}</span>
-          </label>
-        ))}
-      </div>
-    </div>
-  );
-
-  const CheckboxGroup = ({ label, options }) => (
-    <div className="mb-1.5 sm:mb-2">
-      <label className="block text-xs sm:text-sm font-bold text-teal-800 mb-0.5">{label}</label>
-      <div className="space-y-0.5 sm:space-y-1">
-        {options.map(option => (
-          <label key={option} className="flex items-center gap-1 sm:gap-1.5 cursor-pointer group">
-            <input type="checkbox" className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded border-2 border-teal-300 text-teal-600 focus:ring-teal-500 focus:ring-offset-0 accent-teal-600" />
-            <span className="text-xs sm:text-sm text-teal-700 group-hover:text-teal-600 transition-colors font-medium">{option}</span>
-          </label>
-        ))}
-      </div>
-    </div>
-  );
-
   // Location Details Section
   const LocationDetailsSection = () => (
     <>
-      <InputField label="City" placeholder="Enter city name" />
-      <InputField label="Area / Locality" placeholder="Enter area or locality" />
-      <InputField label="Landmark" placeholder="Nearby landmark" />
-      <InputField label="PIN Code" placeholder="Enter PIN code" />
-      <InputField label="Nearby Connectivity" placeholder="Metro, Bus, Highway" />
+      <InputField label="City" placeholder="Enter city name" value={filters.city} onChange={(v) => updateFilter('city', v)} />
+      <InputField label="Area / Locality" placeholder="Enter area or locality" value={filters.area} onChange={(v) => updateFilter('area', v)} />
+      <InputField label="Landmark" placeholder="Nearby landmark" value={filters.landmark} onChange={(v) => updateFilter('landmark', v)} />
+      <InputField label="PIN Code" placeholder="Enter PIN code" value={filters.pincode} onChange={(v) => updateFilter('pincode', v)} />
+      <InputField label="Nearby Connectivity" placeholder="Metro, Bus, Highway" value={filters.nearbyConnectivity} onChange={(v) => updateFilter('nearbyConnectivity', v)} />
     </>
   );
 
   // Property Details Section
   const PropertyDetailsSection = () => (
     <>
-      <InputRange label="Built-up Area" minPlaceholder="Min sq.ft" maxPlaceholder="Max sq.ft" />
-      <InputRange label="Carpet Area" minPlaceholder="Min sq.ft" maxPlaceholder="Max sq.ft" />
-      <SelectInput label="Number of Bedrooms" options={['Studio', '1 BHK', '2 BHK', '3 BHK', '4 BHK+']} />
-      <SelectInput label="Number of Bathrooms" options={['1', '2', '3', '4+']} />
-      <NumberInputField label="Floor Number" placeholder="Enter floor number" />
-      <NumberInputField label="Total Floors" placeholder="Enter total floors" />
-      <SelectInput label="Facing Direction" options={['North', 'South', 'East', 'West', 'North-East', 'North-West', 'South-East', 'South-West']} />
-      <NumberInputField label="Balcony Count" placeholder="Enter number of balconies" />
-      <NumberInputField label="Property Age" placeholder="Enter property age in years" />
+      <InputRange label="Built-up Area" minPlaceholder="Min sq.ft" maxPlaceholder="Max sq.ft" minValue={filters.builtUpAreaMin} maxValue={filters.builtUpAreaMax} onMinChange={(v) => updateFilter('builtUpAreaMin', v)} onMaxChange={(v) => updateFilter('builtUpAreaMax', v)} />
+      <InputRange label="Carpet Area" minPlaceholder="Min sq.ft" maxPlaceholder="Max sq.ft" minValue={filters.carpetAreaMin} maxValue={filters.carpetAreaMax} onMinChange={(v) => updateFilter('carpetAreaMin', v)} onMaxChange={(v) => updateFilter('carpetAreaMax', v)} />
+      <SelectInput label="Number of Bedrooms" options={['Studio', '1 BHK', '2 BHK', '3 BHK', '4 BHK+']} value={filters.bedrooms} onChange={(v) => updateFilter('bedrooms', v)} />
+      <SelectInput label="Number of Bathrooms" options={['1', '2', '3', '4+']} value={filters.bathrooms} onChange={(v) => updateFilter('bathrooms', v)} />
+      <NumberInputField label="Floor Number" placeholder="Enter floor number" value={filters.floorNumber} onChange={(v) => updateFilter('floorNumber', v)} />
+      <NumberInputField label="Total Floors" placeholder="Enter total floors" value={filters.totalFloors} onChange={(v) => updateFilter('totalFloors', v)} />
+      <SelectInput label="Facing Direction" options={['North', 'South', 'East', 'West', 'North-East', 'North-West', 'South-East', 'South-West']} value={filters.facingDirection} onChange={(v) => updateFilter('facingDirection', v)} />
+      <NumberInputField label="Balcony Count" placeholder="Enter number of balconies" value={filters.balconyCount} onChange={(v) => updateFilter('balconyCount', v)} />
+      <NumberInputField label="Property Age" placeholder="Enter property age in years" value={filters.propertyAge} onChange={(v) => updateFilter('propertyAge', v)} />
     </>
   );
 
   // Interior Details Section
+  // Both lists below use the exact vocabulary the posting forms store
+  // (interiorFeatures / appliancesIncluded JSONB arrays) - not invented
+  // filter-only text, since the backend's JSONB "contains" check needs an
+  // exact string match.
   const InteriorDetailsSection = () => (
     <>
-      <SelectInput label="Furnishing" options={['Fully Furnished', 'Semi-Furnished', 'Unfurnished']} />
-      <div className="space-y-0.5 sm:space-y-1">
-        {['Modular Kitchen', 'Air Conditioning', 'Wardrobes', 'Utility Area'].map(item => (
-          <label key={item} className="flex items-center gap-1 sm:gap-1.5 cursor-pointer group">
-            <input type="checkbox" className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded border-2 border-teal-300 text-teal-600 focus:ring-teal-500 focus:ring-offset-0 accent-teal-600" />
-            <span className="text-xs sm:text-sm text-teal-700 group-hover:text-teal-600 transition-colors font-medium">{item}</span>
-          </label>
-        ))}
+      <SelectInput label="Furnishing" options={['Fully Furnished', 'Semi-Furnished', 'Unfurnished']} value={filters.furnishing} onChange={(v) => updateFilter('furnishing', v)} />
+      <div className="mb-1.5 sm:mb-2">
+        <label className="block text-xs sm:text-sm font-bold text-teal-800 mb-0.5">Interior Features</label>
+        <div className="space-y-0.5 sm:space-y-1">
+          {['Modular Kitchen', 'Wardrobes', 'Air Conditioning', 'Utility Area', 'Smart Home Features'].map(item => (
+            <label key={item} className="flex items-center gap-1 sm:gap-1.5 cursor-pointer group">
+              <input type="checkbox" checked={(filters.interiorFeatures || []).includes(item)} onChange={() => toggleFilterOption('interiorFeatures', item)} className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded border-2 border-teal-300 text-teal-600 focus:ring-teal-500 focus:ring-offset-0 accent-teal-600" />
+              <span className="text-xs sm:text-sm text-teal-700 group-hover:text-teal-600 transition-colors font-medium">{item}</span>
+            </label>
+          ))}
+        </div>
       </div>
-      <InputField label="Appliances Included" placeholder="e.g., Refrigerator, AC, Washing Machine, Microwave" />
+      <div className="mb-1.5 sm:mb-2">
+        <label className="block text-xs sm:text-sm font-bold text-teal-800 mb-0.5">Appliances Included</label>
+        <div className="space-y-0.5 sm:space-y-1">
+          {['Refrigerator', 'AC', 'Washing Machine', 'Microwave', 'Dishwasher', 'Water Purifier', 'TV', 'Oven'].map(item => (
+            <label key={item} className="flex items-center gap-1 sm:gap-1.5 cursor-pointer group">
+              <input type="checkbox" checked={(filters.appliancesIncluded || []).includes(item)} onChange={() => toggleFilterOption('appliancesIncluded', item)} className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded border-2 border-teal-300 text-teal-600 focus:ring-teal-500 focus:ring-offset-0 accent-teal-600" />
+              <span className="text-xs sm:text-sm text-teal-700 group-hover:text-teal-600 transition-colors font-medium">{item}</span>
+            </label>
+          ))}
+        </div>
+      </div>
     </>
   );
 
   // Amenities Section
+  // Posting forms store the amenity's `id` (e.g. "gym", "swimmingPool"), not
+  // its display label - checking the label would never match via the
+  // backend's JSONB "contains" check.
+  const APARTMENT_AMENITIES = [
+    { id: 'coveredParking', label: 'Covered Parking' },
+    { id: 'lift', label: 'Lift / Elevator' },
+    { id: 'security247', label: '24/7 Security' },
+    { id: 'cctv', label: 'CCTV Surveillance' },
+    { id: 'powerBackup', label: 'Power Backup' },
+    { id: 'gym', label: 'Gym / Fitness Center' },
+    { id: 'swimmingPool', label: 'Swimming Pool' },
+    { id: 'clubhouse', label: 'Clubhouse' },
+    { id: 'playArea', label: "Children's Play Area" },
+    { id: 'garden', label: 'Garden / Park' },
+    { id: 'joggingTrack', label: 'Jogging Track' },
+    { id: 'visitorParking', label: 'Visitor Parking' },
+    { id: 'wifi', label: 'Wi-Fi / Broadband Ready' },
+    { id: 'smartHome', label: 'Smart Home Features' },
+    { id: 'petFriendly', label: 'Pet Friendly' },
+  ];
   const AmenitiesSection = () => (
     <div className="space-y-0.5 sm:space-y-1">
-      {['Parking', 'Lift', '24/7 Security', 'Power Backup', 'Swimming Pool', 'Gym', 'Clubhouse', "Children's Play Area", 'Wi-Fi / Broadband Ready'].map(amenity => (
-        <label key={amenity} className="flex items-center gap-1 sm:gap-1.5 cursor-pointer group">
-          <input type="checkbox" className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded border-2 border-teal-300 text-teal-600 focus:ring-teal-500 focus:ring-offset-0 accent-teal-600" />
-          <span className="text-xs sm:text-sm text-teal-700 group-hover:text-teal-600 transition-colors font-medium">{amenity}</span>
+      {APARTMENT_AMENITIES.map(({ id, label }) => (
+        <label key={id} className="flex items-center gap-1 sm:gap-1.5 cursor-pointer group">
+          <input type="checkbox" checked={(filters.selectedAmenities || []).includes(id)} onChange={() => toggleFilterOption('selectedAmenities', id)} className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded border-2 border-teal-300 text-teal-600 focus:ring-teal-500 focus:ring-offset-0 accent-teal-600" />
+          <span className="text-xs sm:text-sm text-teal-700 group-hover:text-teal-600 transition-colors font-medium">{label}</span>
         </label>
       ))}
     </div>
@@ -264,7 +317,7 @@ const LeaseApartmentFilter = ({ activeTab = 'Lease', onFilterChange, onClose }) 
     <div className="space-y-0.5 sm:space-y-1">
       {['School', 'Hospital', 'Metro / Bus Stop', 'Shopping Mall / Market', 'IT Park / Office Hub'].map(place => (
         <label key={place} className="flex items-center gap-1 sm:gap-1.5 cursor-pointer group">
-          <input type="checkbox" className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded border-2 border-teal-300 text-teal-600 focus:ring-teal-500 focus:ring-offset-0 accent-teal-600" />
+          <input type="checkbox" checked={(filters.nearbyAccess || []).includes(place)} onChange={() => toggleFilterOption('nearbyAccess', place)} className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded border-2 border-teal-300 text-teal-600 focus:ring-teal-500 focus:ring-offset-0 accent-teal-600" />
           <span className="text-xs sm:text-sm text-teal-700 group-hover:text-teal-600 transition-colors font-medium">{place}</span>
         </label>
       ))}
@@ -274,8 +327,8 @@ const LeaseApartmentFilter = ({ activeTab = 'Lease', onFilterChange, onClose }) 
   // Contact Preference Section
   const ContactPreferenceSection = () => (
     <>
-      <SelectInput label="Contact via" options={['Owner', 'Agent', 'Builder']} />
-      <SelectInput label="Preferred Contact Time" options={['Morning (9 AM - 12 PM)', 'Afternoon (12 PM - 4 PM)', 'Evening (4 PM - 8 PM)', 'Anytime']} />
+      <SelectInput label="Contact via" options={['Owner', 'Agent', 'Builder']} value={filters.contactVia} onChange={(v) => updateFilter('contactVia', v)} />
+      <SelectInput label="Preferred Contact Time" options={['Morning (9 AM - 12 PM)', 'Afternoon (12 PM - 4 PM)', 'Evening (4 PM - 8 PM)', 'Anytime']} value={filters.preferredContactTime} onChange={(v) => updateFilter('preferredContactTime', v)} />
     </>
   );
 
@@ -283,34 +336,34 @@ const LeaseApartmentFilter = ({ activeTab = 'Lease', onFilterChange, onClose }) 
   const renderLeaseFilters = () => (
     <>
       <FilterSection title="📋 Basic Details">
-        <InputField label="Property Type" placeholder="Lease Apartment" type="text" />
-        <InputField label="Purpose" placeholder="Lease" type="text" />
-        <SelectInput label="Listing Type" options={['Owner', 'Agent', 'Builder']} />
+        <InputField label="Property Type" placeholder="Lease Apartment" type="text" value="Lease Apartment" />
+        <InputField label="Purpose" placeholder="Lease" type="text" value="Lease" />
+        <SelectInput label="Listing Type" options={['Owner', 'Agent', 'Builder']} value={filters.listingType} onChange={(v) => updateFilter('listingType', v)} />
       </FilterSection>
-      <FilterSection title="📍 Location Details"><LocationDetailsSection /></FilterSection>
+      <FilterSection title="📍 Location Details">{LocationDetailsSection()}</FilterSection>
       <FilterSection title="📄 Lease Details">
-        <InputRange label="Lease Amount" minPlaceholder="Min ₹" maxPlaceholder="Max ₹" />
-        <SelectInput label="Lease Duration" options={['1 Year', '2 Years', '3+ Years']} />
-        <InputRange label="Refundable Deposit" minPlaceholder="Min ₹" maxPlaceholder="Max ₹" />
-        <NumberInputField label="Maintenance Charges" placeholder="Enter amount" />
-        <RadioGroup label="Lease Negotiable" options={['Yes', 'No']} />
+        <InputRange label="Lease Amount" minPlaceholder="Min ₹" maxPlaceholder="Max ₹" minValue={filters.minLeaseAmount} maxValue={filters.maxLeaseAmount} onMinChange={(v) => updateFilter('minLeaseAmount', v)} onMaxChange={(v) => updateFilter('maxLeaseAmount', v)} />
+        <SelectInput label="Lease Duration" options={['1 Year', '2 Years', '3+ Years']} value={filters.leaseDuration} onChange={(v) => updateFilter('leaseDuration', v)} />
+        <InputRange label="Refundable Deposit" minPlaceholder="Min ₹" maxPlaceholder="Max ₹" minValue={filters.securityDepositMin} maxValue={filters.securityDepositMax} onMinChange={(v) => { updateFilter('securityDepositMin', v); updateFilter('securityDeposit', v); }} onMaxChange={(v) => updateFilter('securityDepositMax', v)} />
+        <NumberInputField label="Maintenance Charges" placeholder="Enter amount" value={filters.maintenanceCharges} onChange={(v) => updateFilter('maintenanceCharges', v)} />
+        <RadioGroup label="Lease Negotiable" options={['Yes', 'No']} value={filters.leaseNegotiable} onChange={(v) => updateFilter('leaseNegotiable', v)} />
       </FilterSection>
-      <FilterSection title="🏠 Property Details"><PropertyDetailsSection /></FilterSection>
-      <FilterSection title="🪑 Interior Details"><InteriorDetailsSection /></FilterSection>
+      <FilterSection title="🏠 Property Details">{PropertyDetailsSection()}</FilterSection>
+      <FilterSection title="🪑 Interior Details">{InteriorDetailsSection()}</FilterSection>
       <FilterSection title="👥 Tenant Preferences">
-        <CheckboxGroup label="Tenant Type" options={['Family', 'Bachelor', 'Working Professionals', 'Students']} />
-        <RadioGroup label="Pet Friendly" options={['Yes', 'No']} />
-        <RadioGroup label="Dietary Preference" options={['Veg Only', 'No Restriction']} />
-        <RadioGroup label="Smoking Allowed" options={['Yes', 'No']} />
+        <CheckboxGroup label="Tenant Type" options={['Family', 'Bachelor', 'Working Professionals', 'Students']} value={filters.tenantType || []} onChange={(opt) => toggleFilterOption('tenantType', opt)} />
+        <RadioGroup label="Pet Friendly" options={['Yes', 'No']} value={filters.petFriendly} onChange={(v) => updateFilter('petFriendly', v)} />
+        <RadioGroup label="Dietary Preference" options={['Veg Only', 'No Restriction']} value={filters.dietaryPreference} onChange={(v) => updateFilter('dietaryPreference', v)} />
+        <RadioGroup label="Smoking Allowed" options={['Yes', 'No']} value={filters.smokingAllowed} onChange={(v) => updateFilter('smokingAllowed', v)} />
       </FilterSection>
-      <FilterSection title="✨ Amenities"><AmenitiesSection /></FilterSection>
+      <FilterSection title="✨ Amenities">{AmenitiesSection()}</FilterSection>
       <FilterSection title="📅 Availability">
-        <RadioGroup label="Immediate Occupancy" options={['Yes', 'No']} />
-        <ThemedDatePicker label="Available From" />
-        <RadioGroup label="Lease Renewal Option" options={['Yes', 'No']} />
+        <RadioGroup label="Immediate Occupancy" options={['Yes', 'No']} value={filters.immediateOccupancy} onChange={(v) => updateFilter('immediateOccupancy', v)} />
+        <ThemedDatePicker label="Available From" value={filters.availableFrom} onChange={(v) => updateFilter('availableFrom', v)} />
+        <RadioGroup label="Lease Renewal Option" options={['Yes', 'No']} value={filters.leaseRenewalOption} onChange={(v) => updateFilter('leaseRenewalOption', v)} />
       </FilterSection>
-      <FilterSection title="📍 Nearby Access"><NearbyAccessSection /></FilterSection>
-      <FilterSection title="📞 Contact Preference"><ContactPreferenceSection /></FilterSection>
+      <FilterSection title="📍 Nearby Access">{NearbyAccessSection()}</FilterSection>
+      {/* <FilterSection title="📞 Contact Preference">{ContactPreferenceSection()}</FilterSection> */}
     </>
   );
 
@@ -370,18 +423,22 @@ const LeaseApartmentFilter = ({ activeTab = 'Lease', onFilterChange, onClose }) 
           {/* Sticky Bottom Buttons */}
       <div className="sticky bottom-0 p-2 border-t-2 border-teal-100 bg-gradient-to-r from-teal-50 to-emerald-50">
         <div className="flex gap-2">
-          <button 
+          <button
             onClick={() => {
+              setFilters({});
               if (onFilterChange) onFilterChange({});
             }}
-            className="flex-1 px-2 py-1.5 rounded-xl border-2 border-teal-300 text-teal-700 font-semibold text-xs hover:bg-teal-100 transition-all flex items-center justify-center gap-1.5" 
+            className="flex-1 px-2 py-1.5 rounded-xl border-2 border-teal-300 text-teal-700 font-semibold text-xs hover:bg-teal-100 transition-all flex items-center justify-center gap-1.5"
             type="button"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Reset All
           </button>
-          <button 
+          <button
             onClick={() => {
-              if (onFilterChange) onFilterChange({ activeTab: currentActiveTab });
+              // "Lease Apartment" is now a real selectable Property Type option on the
+              // posting forms (not just "any apartment, for lease"), so it has its own
+              // exact-match propertyType like the other 9 Apartment filter pages.
+              if (onFilterChange) onFilterChange({ ...filters, activeTab: currentActiveTab, propertyType: 'Lease Apartment' });
               if (onClose) onClose();
             }}
             className="flex-1 px-2 py-1.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-semibold text-xs hover:shadow-lg transition-all flex items-center justify-center gap-1.5" 
@@ -393,7 +450,7 @@ const LeaseApartmentFilter = ({ activeTab = 'Lease', onFilterChange, onClose }) 
       </div>
 
             {/* Theme Scrollbar Styles */}
-      <style jsx>{`
+      <style>{`
         .custom-scroll::-webkit-scrollbar { width: 6px; }
         .custom-scroll::-webkit-scrollbar-track { background: #E6FFFA; border-radius: 10px; }
         .custom-scroll::-webkit-scrollbar-thumb { background: linear-gradient(to bottom, #00695C, #26A69A); border-radius: 10px; }

@@ -11,7 +11,10 @@ import {
   BriefcaseBusiness, Building2, Factory, Store, ShieldCheck, Warehouse,
   Search, ChevronDown
 } from "lucide-react";
-import { createProperty } from "../../../../services/propertyService";
+import { createProperty, reuseVerifiedResources } from "../../../../services/propertyService";
+import useReusableResources from "../../../../hooks/useReusableResources";
+import ReuseOrUploadPrompt from "../../shared/ReuseOrUploadPrompt";
+import { buildPrefillValues } from "../../../../config/contactPrefillMap";
 
 const steps = [
   "Business Details",
@@ -350,6 +353,20 @@ export default function RentPMComForm({ isOpen, onClose }) {
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
 
+  // "Is this listing for yourself, or for someone else?" - asked once, instead
+  // of a per-field "use existing?" toggle. null = not asked/answered yet.
+  const [reuseChoice, setReuseChoice] = useState(null);
+  const { isDocumentVerified, isMediaVerified, profile, hasUsableProfile } = useReusableResources("propertyManagement");
+  const hasVerifiedReusables = isMediaVerified("company_logo")
+    || isDocumentVerified("aadhaar_card") || isDocumentVerified("pan_card")
+    || isDocumentVerified("business_registration_certificate") || isDocumentVerified("office_address_proof");
+  const reusingCompanyLogo = reuseChoice === "self" && isMediaVerified("company_logo");
+  const reusingAadhaar = reuseChoice === "self" && isDocumentVerified("aadhaar_card");
+  const reusingPan = reuseChoice === "self" && isDocumentVerified("pan_card");                          
+  const prefillAppliedRef = useRef(false);
+  const reusingBusinessRegCert = reuseChoice === "self" && isDocumentVerified("business_registration_certificate");
+  const reusingOfficeAddressProof = reuseChoice === "self" && isDocumentVerified("office_address_proof");
+
   const [formData, setFormData] = useState({
     // Business Details (Step 0)
     pmCompanyName: "", pmBusinessRegNumber: "", pmReraNumber: "", pmGstNumber: "",
@@ -409,6 +426,21 @@ export default function RentPMComForm({ isOpen, onClose }) {
   const [signaturePoints, setSignaturePoints] = useState([]);
   const [allSignaturePoints, setAllSignaturePoints] = useState([]);
   const [activeCanvas, setActiveCanvas] = useState(null);
+  // "It's me" prefill - see SellAgentComForm.jsx's identical effect for the
+  // full rationale (fills only still-blank mapped fields, once per "self"
+  // episode, safe against the profile/choice race).
+  useEffect(() => {
+    if (reuseChoice !== "self") {
+      prefillAppliedRef.current = false;
+      return;
+    }
+    if (!profile || prefillAppliedRef.current) return;
+    const prefill = buildPrefillValues(profile, "propertyManagement", formData);
+    if (Object.keys(prefill).length > 0) {
+      setFormData(prev => ({ ...prev, ...prefill }));
+    }
+    prefillAppliedRef.current = true;
+  }, [reuseChoice, profile]);
   const [nearbyPlaces, setNearbyPlaces] = useState([]);
   const [nearbyPlaceInput, setNearbyPlaceInput] = useState("");
 
@@ -453,7 +485,7 @@ export default function RentPMComForm({ isOpen, onClose }) {
           newErrors.pmYearsOfExperience = "Years of experience is required";
           isValid = false;
         }
-        if (!formData.pmCompanyLogo) {
+        if (!formData.pmCompanyLogo && !reusingCompanyLogo) {
           newErrors.pmCompanyLogo = "Company logo is required";
           isValid = false;
         }
@@ -534,19 +566,19 @@ export default function RentPMComForm({ isOpen, onClose }) {
           newErrors.panNumber = "Please enter a valid PAN number (e.g., ABCDE1234F)";
           isValid = false;
         }
-        if (!formData.aadhaarCard) {
+        if (!formData.aadhaarCard && !reusingAadhaar) {
           newErrors.aadhaarCard = "Aadhaar card is required";
           isValid = false;
         }
-        if (!formData.panCard) {
+        if (!formData.panCard && !reusingPan) {
           newErrors.panCard = "PAN card is required";
           isValid = false;
         }
-        if (!formData.pmBusinessRegCert) {
+        if (!formData.pmBusinessRegCert && !reusingBusinessRegCert) {
           newErrors.pmBusinessRegCert = "Business registration certificate is required";
           isValid = false;
         }
-        if (!formData.officeAddressProof) {
+        if (!formData.officeAddressProof && !reusingOfficeAddressProof) {
           newErrors.officeAddressProof = "Office address proof is required";
           isValid = false;
         }
@@ -884,6 +916,17 @@ export default function RentPMComForm({ isOpen, onClose }) {
       }
       try{
         const response = await createProperty(formData);
+        if (reuseChoice === "self" && response?.id) {
+          try {
+            const reuseResult = await reuseVerifiedResources(response.id);
+            const skipped = [...(reuseResult?.data?.skippedDocuments || []), ...(reuseResult?.data?.skippedMedia || [])];
+            if (skipped.length) {
+              console.warn("Listing created, but some verified items could not be attached:", skipped);
+            }
+          } catch (reuseError) {
+            console.error("Listing created, but reusing verified details failed: ", reuseError);
+          }
+        }
         onClose();
       }
       catch(error){
@@ -937,6 +980,14 @@ export default function RentPMComForm({ isOpen, onClose }) {
               formData={formData}
               updateForm={updateForm}
               errors={errors}
+              reuseChoice={reuseChoice}
+              setReuseChoice={setReuseChoice}
+              hasVerifiedReusables={hasVerifiedReusables}
+              reusingCompanyLogo={reusingCompanyLogo}
+              reusingAadhaar={reusingAadhaar}
+              reusingPan={reusingPan}
+              reusingBusinessRegCert={reusingBusinessRegCert}
+              reusingOfficeAddressProof={reusingOfficeAddressProof}
               imagePreviews={imagePreviews}
               handleImageUpload={handleImageUpload}
               removeImage={removeImage}
@@ -1051,6 +1102,14 @@ export default function RentPMComForm({ isOpen, onClose }) {
               formData={formData}
               updateForm={updateForm}
               errors={errors}
+              reuseChoice={reuseChoice}
+              setReuseChoice={setReuseChoice}
+              hasVerifiedReusables={hasVerifiedReusables}
+              reusingCompanyLogo={reusingCompanyLogo}
+              reusingAadhaar={reusingAadhaar}
+              reusingPan={reusingPan}
+              reusingBusinessRegCert={reusingBusinessRegCert}
+              reusingOfficeAddressProof={reusingOfficeAddressProof}
               imagePreviews={imagePreviews}
               handleImageUpload={handleImageUpload}
               removeImage={removeImage}
@@ -1131,6 +1190,8 @@ export default function RentPMComForm({ isOpen, onClose }) {
 // MOBILE CONTENT - Rent PM Commercial
 function MobContentRentPMCom({
   step, inp, errorBorder, formData, updateForm, errors,
+  reuseChoice, setReuseChoice, hasVerifiedReusables,
+  reusingCompanyLogo, reusingAadhaar, reusingPan, reusingBusinessRegCert, reusingOfficeAddressProof,
   imagePreviews, handleImageUpload, removeImage,
   handleVideoUpload, videoPreview, removeVideo,
   handleDocumentUpload,
@@ -1215,6 +1276,9 @@ function MobContentRentPMCom({
   // STEP 0: Business Details
   if (step === 0) return (
     <>
+      {hasVerifiedReusables && reuseChoice === null && (
+        <ReuseOrUploadPrompt onChoice={setReuseChoice} />
+      )}
       <Field label="Property Management Company Name" required error={errors.pmCompanyName}>
         <input className={`${inp} ${getErrorClass('pmCompanyName')}`} placeholder="Enter company name" value={formData.pmCompanyName} onChange={(e) => handleAlphaNumericChange("pmCompanyName", e.target.value)} />
       </Field>
@@ -1241,17 +1305,23 @@ function MobContentRentPMCom({
       <Field label="Company Website (Optional)">
         <input className={inp} placeholder="e.g. www.company.com" value={formData.pmCompanyWebsite} onChange={(e) => updateForm("pmCompanyWebsite", e.target.value)} />
       </Field>
-      <Field label="Company Logo" required error={errors.pmCompanyLogo}>
-        <div className={`border-2 border-dashed ${errors.pmCompanyLogo ? 'border-red-400' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
-          <input type="file" accept=".jpg,.jpeg,.png" className="hidden" id="m-pm-logo-com" onChange={(e) => handleDocumentUpload("pmCompanyLogo", e, 2)} />
-          <label htmlFor="m-pm-logo-com" className="cursor-pointer flex flex-col items-center">
-            <ImagePlus className="w-5 h-5 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Logo</span>
-            <span className="text-[9px] text-gray-400">JPG/PNG (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.pmCompanyLogo && <p className="text-[10px] text-green-600 mt-1">✓ {formData.pmCompanyLogo.name}</p>}
-      </Field>
+      {reusingCompanyLogo ? (
+        <Field label="Company Logo">
+          <p className="text-[10px] text-green-600">✓ Using your verified company logo on file</p>
+        </Field>
+      ) : (
+        <Field label="Company Logo" required error={errors.pmCompanyLogo}>
+          <div className={`border-2 border-dashed ${errors.pmCompanyLogo ? 'border-red-400' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
+            <input type="file" accept=".jpg,.jpeg,.png" className="hidden" id="m-pm-logo-com" onChange={(e) => handleDocumentUpload("pmCompanyLogo", e, 2)} />
+            <label htmlFor="m-pm-logo-com" className="cursor-pointer flex flex-col items-center">
+              <ImagePlus className="w-5 h-5 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Logo</span>
+              <span className="text-[9px] text-gray-400">JPG/PNG (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.pmCompanyLogo && <p className="text-[10px] text-green-600 mt-1">✓ {formData.pmCompanyLogo.name}</p>}
+        </Field>
+      )}
       <Field label="Company Description" required error={errors.pmCompanyDescription}>
         <textarea className={`${ta} ${getErrorClass('pmCompanyDescription')} min-h-[60px]`} placeholder="Describe your property management company" value={formData.pmCompanyDescription} onChange={(e) => updateForm("pmCompanyDescription", e.target.value)} />
       </Field>
@@ -1353,41 +1423,59 @@ function MobContentRentPMCom({
         <input className={`${inp} ${getErrorClass('panNumber')}`} placeholder="Enter 10-character PAN number" value={formData.panNumber} onChange={(e) => updateForm("panNumber", e.target.value.toUpperCase())} maxLength="10" />
       </Field>
 
-      <Field label="Upload Aadhaar Card" required error={errors.aadhaarCard}>
-        <div className={`border-2 border-dashed ${errors.aadhaarCard ? 'border-red-400' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
-          <input type="file" accept=".pdf" className="hidden" id="m-aadhaar-com" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
-          <label htmlFor="m-aadhaar-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Aadhaar</span>
-            <span className="text-[9px] text-gray-400">PDF (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.aadhaarCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.aadhaarCard.name}</p>}
-      </Field>
+      {reusingAadhaar ? (
+        <Field label="Aadhaar Card">
+          <p className="text-[10px] text-green-600">✓ Using your verified Aadhaar on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload Aadhaar Card" required error={errors.aadhaarCard}>
+          <div className={`border-2 border-dashed ${errors.aadhaarCard ? 'border-red-400' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
+            <input type="file" accept=".pdf" className="hidden" id="m-aadhaar-com" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
+            <label htmlFor="m-aadhaar-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Aadhaar</span>
+              <span className="text-[9px] text-gray-400">PDF (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.aadhaarCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.aadhaarCard.name}</p>}
+        </Field>
+      )}
 
-      <Field label="Upload PAN Card" required error={errors.panCard}>
-        <div className={`border-2 border-dashed ${errors.panCard ? 'border-red-400' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
-          <input type="file" accept=".pdf" className="hidden" id="m-pan-com" onChange={(e) => handleDocumentUpload("panCard", e)} />
-          <label htmlFor="m-pan-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload PAN</span>
-            <span className="text-[9px] text-gray-400">PDF (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.panCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.panCard.name}</p>}
-      </Field>
+      {reusingPan ? (
+        <Field label="PAN Card">
+          <p className="text-[10px] text-green-600">✓ Using your verified PAN on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload PAN Card" required error={errors.panCard}>
+          <div className={`border-2 border-dashed ${errors.panCard ? 'border-red-400' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
+            <input type="file" accept=".pdf" className="hidden" id="m-pan-com" onChange={(e) => handleDocumentUpload("panCard", e)} />
+            <label htmlFor="m-pan-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload PAN</span>
+              <span className="text-[9px] text-gray-400">PDF (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.panCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.panCard.name}</p>}
+        </Field>
+      )}
 
-      <Field label="Upload Business Registration Certificate" required error={errors.pmBusinessRegCert}>
-        <div className={`border-2 border-dashed ${errors.pmBusinessRegCert ? 'border-red-400' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
-          <input type="file" accept=".pdf" className="hidden" id="m-pm-reg-com" onChange={(e) => handleDocumentUpload("pmBusinessRegCert", e)} />
-          <label htmlFor="m-pm-reg-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Registration</span>
-            <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
-          </label>
-        </div>
-        {formData.pmBusinessRegCert && <p className="text-[10px] text-green-600 mt-1">✓ {formData.pmBusinessRegCert.name}</p>}
-      </Field>
+      {reusingBusinessRegCert ? (
+        <Field label="Business Registration Certificate">
+          <p className="text-[10px] text-green-600">✓ Using your verified business registration certificate on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload Business Registration Certificate" required error={errors.pmBusinessRegCert}>
+          <div className={`border-2 border-dashed ${errors.pmBusinessRegCert ? 'border-red-400' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
+            <input type="file" accept=".pdf" className="hidden" id="m-pm-reg-com" onChange={(e) => handleDocumentUpload("pmBusinessRegCert", e)} />
+            <label htmlFor="m-pm-reg-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Registration</span>
+              <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
+            </label>
+          </div>
+          {formData.pmBusinessRegCert && <p className="text-[10px] text-green-600 mt-1">✓ {formData.pmBusinessRegCert.name}</p>}
+        </Field>
+      )}
 
       <Field label="Upload GST Certificate (Optional)">
         <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
@@ -1413,17 +1501,23 @@ function MobContentRentPMCom({
         {formData.pmReraCert && <p className="text-[10px] text-green-600 mt-1">✓ {formData.pmReraCert.name}</p>}
       </Field>
 
-      <Field label="Upload Office Address Proof" required error={errors.officeAddressProof}>
-        <div className={`border-2 border-dashed ${errors.officeAddressProof ? 'border-red-400' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
-          <input type="file" accept=".pdf" className="hidden" id="m-office-proof-com" onChange={(e) => handleDocumentUpload("officeAddressProof", e)} />
-          <label htmlFor="m-office-proof-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Address Proof</span>
-            <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
-          </label>
-        </div>
-        {formData.officeAddressProof && <p className="text-[10px] text-green-600 mt-1">✓ {formData.officeAddressProof.name}</p>}
-      </Field>
+      {reusingOfficeAddressProof ? (
+        <Field label="Office Address Proof">
+          <p className="text-[10px] text-green-600">✓ Using your verified office address proof on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload Office Address Proof" required error={errors.officeAddressProof}>
+          <div className={`border-2 border-dashed ${errors.officeAddressProof ? 'border-red-400' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
+            <input type="file" accept=".pdf" className="hidden" id="m-office-proof-com" onChange={(e) => handleDocumentUpload("officeAddressProof", e)} />
+            <label htmlFor="m-office-proof-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Address Proof</span>
+              <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
+            </label>
+          </div>
+          {formData.officeAddressProof && <p className="text-[10px] text-green-600 mt-1">✓ {formData.officeAddressProof.name}</p>}
+        </Field>
+      )}
     </>
   );
 
@@ -1900,6 +1994,8 @@ function MobContentRentPMCom({
 // DESKTOP CONTENT - Rent PM Commercial
 function DtContentRentPMCom({
   step, inp, errorBorder, formData, updateForm, errors,
+  reuseChoice, setReuseChoice, hasVerifiedReusables,
+  reusingCompanyLogo, reusingAadhaar, reusingPan, reusingBusinessRegCert, reusingOfficeAddressProof,
   imagePreviews, handleImageUpload, removeImage,
   handleVideoUpload, videoPreview, removeVideo,
   handleDocumentUpload,
@@ -1984,6 +2080,9 @@ function DtContentRentPMCom({
   // STEP 0: Business Details
   if (step === 0) return (
     <>
+      {hasVerifiedReusables && reuseChoice === null && (
+        <ReuseOrUploadPrompt onChoice={setReuseChoice} />
+      )}
       <FieldDt label="Property Management Company Name" required error={errors.pmCompanyName}>
         <input className={`${inp} ${getErrorClass('pmCompanyName')}`} placeholder="Enter company name" value={formData.pmCompanyName} onChange={(e) => handleAlphaNumericChange("pmCompanyName", e.target.value)} />
       </FieldDt>
@@ -2010,17 +2109,23 @@ function DtContentRentPMCom({
       <FieldDt label="Company Website (Optional)">
         <input className={inp} placeholder="e.g. www.company.com" value={formData.pmCompanyWebsite} onChange={(e) => updateForm("pmCompanyWebsite", e.target.value)} />
       </FieldDt>
-      <FieldDt label="Company Logo" required error={errors.pmCompanyLogo}>
-        <div className={`border-2 border-dashed ${errors.pmCompanyLogo ? 'border-red-400' : 'border-teal-300'} rounded-xl p-3 text-center hover:bg-green-50`}>
-          <input type="file" accept=".jpg,.jpeg,.png" className="hidden" id="dt-pm-logo-com" onChange={(e) => handleDocumentUpload("pmCompanyLogo", e, 2)} />
-          <label htmlFor="dt-pm-logo-com" className="cursor-pointer flex flex-col items-center">
-            <ImagePlus className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Logo</span>
-            <span className="text-[11px] text-gray-400">JPG/PNG (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.pmCompanyLogo && <p className="text-[13px] text-green-600 mt-2">✓ {formData.pmCompanyLogo.name}</p>}
-      </FieldDt>
+      {reusingCompanyLogo ? (
+        <FieldDt label="Company Logo">
+          <p className="text-[13px] text-green-600">✓ Using your verified company logo on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Company Logo" required error={errors.pmCompanyLogo}>
+          <div className={`border-2 border-dashed ${errors.pmCompanyLogo ? 'border-red-400' : 'border-teal-300'} rounded-xl p-3 text-center hover:bg-green-50`}>
+            <input type="file" accept=".jpg,.jpeg,.png" className="hidden" id="dt-pm-logo-com" onChange={(e) => handleDocumentUpload("pmCompanyLogo", e, 2)} />
+            <label htmlFor="dt-pm-logo-com" className="cursor-pointer flex flex-col items-center">
+              <ImagePlus className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Logo</span>
+              <span className="text-[11px] text-gray-400">JPG/PNG (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.pmCompanyLogo && <p className="text-[13px] text-green-600 mt-2">✓ {formData.pmCompanyLogo.name}</p>}
+        </FieldDt>
+      )}
       <FieldDt label="Company Description" required error={errors.pmCompanyDescription}>
         <textarea className={`${ta} ${getErrorClass('pmCompanyDescription')} min-h-[70px]`} placeholder="Describe your property management company" value={formData.pmCompanyDescription} onChange={(e) => updateForm("pmCompanyDescription", e.target.value)} />
       </FieldDt>
@@ -2122,41 +2227,59 @@ function DtContentRentPMCom({
         <input className={`${inp} ${getErrorClass('panNumber')}`} placeholder="Enter 10-character PAN number" value={formData.panNumber} onChange={(e) => updateForm("panNumber", e.target.value.toUpperCase())} maxLength="10" />
       </FieldDt>
 
-      <FieldDt label="Upload Aadhaar Card" required error={errors.aadhaarCard}>
-        <div className={`border-2 border-dashed ${errors.aadhaarCard ? 'border-red-400' : 'border-teal-300'} rounded-xl p-3 text-center hover:bg-green-50`}>
-          <input type="file" accept=".pdf" className="hidden" id="dt-aadhaar-com" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
-          <label htmlFor="dt-aadhaar-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Aadhaar Card</span>
-            <span className="text-[11px] text-gray-400">PDF (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.aadhaarCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.aadhaarCard.name}</p>}
-      </FieldDt>
+      {reusingAadhaar ? (
+        <FieldDt label="Aadhaar Card">
+          <p className="text-[13px] text-green-600">✓ Using your verified Aadhaar on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Upload Aadhaar Card" required error={errors.aadhaarCard}>
+          <div className={`border-2 border-dashed ${errors.aadhaarCard ? 'border-red-400' : 'border-teal-300'} rounded-xl p-3 text-center hover:bg-green-50`}>
+            <input type="file" accept=".pdf" className="hidden" id="dt-aadhaar-com" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
+            <label htmlFor="dt-aadhaar-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Aadhaar Card</span>
+              <span className="text-[11px] text-gray-400">PDF (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.aadhaarCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.aadhaarCard.name}</p>}
+        </FieldDt>
+      )}
 
-      <FieldDt label="Upload PAN Card" required error={errors.panCard}>
-        <div className={`border-2 border-dashed ${errors.panCard ? 'border-red-400' : 'border-teal-300'} rounded-xl p-3 text-center hover:bg-green-50`}>
-          <input type="file" accept=".pdf" className="hidden" id="dt-pan-com" onChange={(e) => handleDocumentUpload("panCard", e)} />
-          <label htmlFor="dt-pan-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload PAN Card</span>
-            <span className="text-[11px] text-gray-400">PDF (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.panCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.panCard.name}</p>}
-      </FieldDt>
+      {reusingPan ? (
+        <FieldDt label="PAN Card">
+          <p className="text-[13px] text-green-600">✓ Using your verified PAN on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Upload PAN Card" required error={errors.panCard}>
+          <div className={`border-2 border-dashed ${errors.panCard ? 'border-red-400' : 'border-teal-300'} rounded-xl p-3 text-center hover:bg-green-50`}>
+            <input type="file" accept=".pdf" className="hidden" id="dt-pan-com" onChange={(e) => handleDocumentUpload("panCard", e)} />
+            <label htmlFor="dt-pan-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload PAN Card</span>
+              <span className="text-[11px] text-gray-400">PDF (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.panCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.panCard.name}</p>}
+        </FieldDt>
+      )}
 
-      <FieldDt label="Upload Business Registration Certificate" required error={errors.pmBusinessRegCert}>
-        <div className={`border-2 border-dashed ${errors.pmBusinessRegCert ? 'border-red-400' : 'border-teal-300'} rounded-xl p-3 text-center hover:bg-green-50`}>
-          <input type="file" accept=".pdf" className="hidden" id="dt-pm-reg-com" onChange={(e) => handleDocumentUpload("pmBusinessRegCert", e)} />
-          <label htmlFor="dt-pm-reg-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Registration Certificate</span>
-            <span className="text-[11px] text-gray-400">PDF (Max 5MB)</span>
-          </label>
-        </div>
-        {formData.pmBusinessRegCert && <p className="text-[13px] text-green-600 mt-2">✓ {formData.pmBusinessRegCert.name}</p>}
-      </FieldDt>
+      {reusingBusinessRegCert ? (
+        <FieldDt label="Business Registration Certificate">
+          <p className="text-[13px] text-green-600">✓ Using your verified business registration certificate on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Upload Business Registration Certificate" required error={errors.pmBusinessRegCert}>
+          <div className={`border-2 border-dashed ${errors.pmBusinessRegCert ? 'border-red-400' : 'border-teal-300'} rounded-xl p-3 text-center hover:bg-green-50`}>
+            <input type="file" accept=".pdf" className="hidden" id="dt-pm-reg-com" onChange={(e) => handleDocumentUpload("pmBusinessRegCert", e)} />
+            <label htmlFor="dt-pm-reg-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Registration Certificate</span>
+              <span className="text-[11px] text-gray-400">PDF (Max 5MB)</span>
+            </label>
+          </div>
+          {formData.pmBusinessRegCert && <p className="text-[13px] text-green-600 mt-2">✓ {formData.pmBusinessRegCert.name}</p>}
+        </FieldDt>
+      )}
 
       <FieldDt label="Upload GST Certificate (Optional)">
         <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
@@ -2182,17 +2305,23 @@ function DtContentRentPMCom({
         {formData.pmReraCert && <p className="text-[13px] text-green-600 mt-2">✓ {formData.pmReraCert.name}</p>}
       </FieldDt>
 
-      <FieldDt label="Upload Office Address Proof" required error={errors.officeAddressProof}>
-        <div className={`border-2 border-dashed ${errors.officeAddressProof ? 'border-red-400' : 'border-teal-300'} rounded-xl p-3 text-center hover:bg-green-50`}>
-          <input type="file" accept=".pdf" className="hidden" id="dt-office-proof-com" onChange={(e) => handleDocumentUpload("officeAddressProof", e)} />
-          <label htmlFor="dt-office-proof-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Address Proof</span>
-            <span className="text-[11px] text-gray-400">PDF (Max 5MB)</span>
-          </label>
-        </div>
-        {formData.officeAddressProof && <p className="text-[13px] text-green-600 mt-2">✓ {formData.officeAddressProof.name}</p>}
-      </FieldDt>
+      {reusingOfficeAddressProof ? (
+        <FieldDt label="Office Address Proof">
+          <p className="text-[13px] text-green-600">✓ Using your verified office address proof on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Upload Office Address Proof" required error={errors.officeAddressProof}>
+          <div className={`border-2 border-dashed ${errors.officeAddressProof ? 'border-red-400' : 'border-teal-300'} rounded-xl p-3 text-center hover:bg-green-50`}>
+            <input type="file" accept=".pdf" className="hidden" id="dt-office-proof-com" onChange={(e) => handleDocumentUpload("officeAddressProof", e)} />
+            <label htmlFor="dt-office-proof-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Address Proof</span>
+              <span className="text-[11px] text-gray-400">PDF (Max 5MB)</span>
+            </label>
+          </div>
+          {formData.officeAddressProof && <p className="text-[13px] text-green-600 mt-2">✓ {formData.officeAddressProof.name}</p>}
+        </FieldDt>
+      )}
     </>
   );
 

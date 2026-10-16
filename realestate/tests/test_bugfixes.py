@@ -71,7 +71,7 @@ class FakeEmailService:
         self.sent.append(("verification", email, user_name))
         return True
 
-    async def send_password_reset_email(self, email, reset_token, user_name):
+    async def send_password_reset_otp_email(self, email, otp, user_name, expire_minutes):
         self.sent.append(("reset", email, user_name))
         return True
 
@@ -115,7 +115,7 @@ async def test_send_password_reset_email_does_not_crash_for_vendor():
         email_service=email_service,
     )
 
-    await service.send_password_reset_email(user.email, "some-token")
+    await service.send_password_reset_otp_email(user.email, "123456")
 
     assert email_service.sent == [("reset", user.email, "Vendor Name")]
 
@@ -130,7 +130,7 @@ async def test_send_password_reset_email_does_not_crash_for_customer():
         email_service=email_service,
     )
 
-    await service.send_password_reset_email(user.email, "some-token")
+    await service.send_password_reset_otp_email(user.email, "123456")
 
     assert email_service.sent == [("reset", user.email, "Customer Name")]
 
@@ -211,32 +211,42 @@ class _FakeDoc:
         self.file_url = file_url
 
 
-@pytest.mark.asyncio
-async def test_user_owns_profile_file_true_for_own_profile_picture():
+def _ownership_service(monkeypatch, media_url):
+    """ProfileService with the current user media stubbed: EP1's current profile photo is media_url."""
+    from types import SimpleNamespace
+
+    from app.services import user_media_service
     from app.services.profile_service import ProfileService
 
-    class _Profile:
-        profile_picture = "vendor/EP1/profile_images/profile_primary_abc.webp"
-        company_logo_url = None
+    async def fake_current(db, user_id, media_type):
+        if user_id == "EP1" and media_type == "profile_photo" and media_url:
+            return SimpleNamespace(file_asset_id=7)
+        return None
 
+    class _DB:
+        async def get(self, model, pk):
+            return SimpleNamespace(file_url=media_url)
+
+    monkeypatch.setattr(user_media_service, "current_user_media", fake_current)
     service = ProfileService.__new__(ProfileService)
-    service.vendor_profile_repository = _FakeProfileRepoForOwnership(profile=_Profile())
-
-    assert await service._user_owns_profile_file("EP1", _Profile.profile_picture, []) is True
+    repo = _FakeProfileRepoForOwnership(profile=None)
+    repo.db = _DB()
+    service.vendor_profile_repository = repo
+    return service
 
 
 @pytest.mark.asyncio
-async def test_user_owns_profile_file_false_for_someone_elses_file():
-    from app.services.profile_service import ProfileService
+async def test_user_owns_profile_file_true_for_own_current_profile_photo(monkeypatch):
+    url = "http://localhost:8000/uploads/EP1/users/EP1/media/profile_photo/abc.webp"
+    service = _ownership_service(monkeypatch, url)
+    assert await service._user_owns_profile_file("EP1", url, []) is True
 
-    class _Profile:
-        profile_picture = "vendor/EP1/profile_images/profile_primary_abc.webp"
-        company_logo_url = None
 
-    service = ProfileService.__new__(ProfileService)
-    service.vendor_profile_repository = _FakeProfileRepoForOwnership(profile=_Profile())
-
-    other_vendors_file = "vendor/EP2/profile_images/profile_primary_xyz.webp"
+@pytest.mark.asyncio
+async def test_user_owns_profile_file_false_for_someone_elses_file(monkeypatch):
+    url = "http://localhost:8000/uploads/EP1/users/EP1/media/profile_photo/abc.webp"
+    service = _ownership_service(monkeypatch, url)
+    other_vendors_file = "http://localhost:8000/uploads/EP2/users/EP2/media/profile_photo/xyz.webp"
     assert await service._user_owns_profile_file("EP1", other_vendors_file, []) is False
 
 
@@ -262,12 +272,27 @@ async def test_user_owns_profile_file_true_for_own_document():
 # uploads silently never showed up after refresh.
 # ---------------------------------------------------------------------------
 
-def test_field_aliases_map_photo_and_logo_keys_to_real_columns():
-    assert _to_snake_case("profilePhotoUrl") == "profile_photo_url"  # sanity check on the generic converter
+def test_field_aliases_point_only_at_real_vendor_profile_columns():
+    """The legacy photo/logo aliases were removed with the vendor-profile media columns. Every
+    remaining alias must target a column that exists on vendor_profile."""
+    from app.models.vendor_profile import VendorProfile
     from app.repositories.profile_repository import _FIELD_ALIASES
 
-    assert _FIELD_ALIASES["profile_photo_url"] == "profile_picture"
-    assert _FIELD_ALIASES["agency_logo_url"] == "company_logo_url"
+    columns = {c.name for c in VendorProfile.__table__.columns}
+    for source, target in _FIELD_ALIASES.items():
+        assert target in columns, f"{source} -> {target}: no such vendor_profile column"
+    assert "profile_photo_url" not in _FIELD_ALIASES, "profile media now lives in user_media"
+
+
+def test_role_extra_schemas_carry_no_file_location():
+    """The vendor-profile JSONB blobs (agency_details/builder_details/pm_details/
+    owner_details) hold metadata only. Profile photo and logo are USER_MEDIA,
+    never a field on these schemas."""
+    from app.schemas.vendor_profile_details import ROLE_EXTRA_SCHEMA
+
+    for role, schema in ROLE_EXTRA_SCHEMA.items():
+        assert "profile_photo_url" not in schema.model_fields, role
+        assert "company_logo_url" not in schema.model_fields, role
 
 
 # ---------------------------------------------------------------------------

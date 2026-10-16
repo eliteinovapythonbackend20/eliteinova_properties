@@ -12,14 +12,13 @@ always comes from current_user, never a request field - see
 app.schemas.customer_schemas's module docstring for why.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi import status as http_status
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.api.dependencies import require_customer, get_customer_service
-from app.core.response_utils import strip_none_values
 from app.schemas.customer_schemas import (
     CustomerProfileUpdate,
     CustomerRequirementCreate,
@@ -28,6 +27,9 @@ from app.schemas.customer_schemas import (
     SavedPropertyCreate,
     WishlistItemCreate,
 )
+from app.schemas.common_response import DataResponse, SimpleSuccessResponse, SuccessResponse, ViewUrlResult
+from app.schemas.customer_profile_card import CustomerProfileCard, PropertyRequestCard, RequirementCard
+from app.schemas.vendor_property_card import VendorPropertyCard
 from app.services.customer_service import CustomerService
 from app.services.file_service import FileService
 
@@ -51,16 +53,16 @@ async def _get_single_file_from_form(request: Request) -> UploadFile:
 # ----------------------------------------------------------------------
 # Profile
 # ----------------------------------------------------------------------
-@router.get("/profile")
+@router.get("/profile", response_model=SuccessResponse[CustomerProfileCard], response_model_exclude_none=True)
 async def get_my_profile(
     current_user: Dict[str, Any] = Depends(require_customer),
     service: CustomerService = Depends(get_customer_service),
 ):
     data = await service.get_my_profile(current_user.get("user_id"))
-    return strip_none_values({"success": True, "data": data})
+    return SuccessResponse[CustomerProfileCard](data=CustomerProfileCard.model_validate(data))
 
 
-@router.patch("/profile")
+@router.patch("/profile", response_model=SuccessResponse[CustomerProfileCard], response_model_exclude_none=True)
 async def update_my_profile(
     body: CustomerProfileUpdate,
     current_user: Dict[str, Any] = Depends(require_customer),
@@ -68,10 +70,12 @@ async def update_my_profile(
 ):
     fields = body.model_dump(exclude_unset=True)
     data = await service.update_my_profile(current_user.get("user_id"), fields)
-    return strip_none_values({"success": True, "data": data, "message": "Profile updated successfully"})
+    return SuccessResponse[CustomerProfileCard](
+        data=CustomerProfileCard.model_validate(data), message="Profile updated successfully",
+    )
 
 
-@router.post("/profile/photo")
+@router.post("/profile/photo", response_model=SuccessResponse[CustomerProfileCard], response_model_exclude_none=True)
 async def upload_my_profile_photo(
     request: Request,
     current_user: Dict[str, Any] = Depends(require_customer),
@@ -83,19 +87,23 @@ async def upload_my_profile_photo(
         field_name="profilePhoto", is_primary=True,
     )
     data = await service.set_profile_picture_url(current_user.get("user_id"), upload_result["file_url"])
-    return strip_none_values({"success": True, "data": data, "message": "Profile photo uploaded successfully"})
+    return SuccessResponse[CustomerProfileCard](
+        data=CustomerProfileCard.model_validate(data), message="Profile photo uploaded successfully",
+    )
 
 
-@router.delete("/profile/photo")
+@router.delete("/profile/photo", response_model=SuccessResponse[CustomerProfileCard], response_model_exclude_none=True)
 async def delete_my_profile_photo(
     current_user: Dict[str, Any] = Depends(require_customer),
     service: CustomerService = Depends(get_customer_service),
 ):
     data = await service.set_profile_picture_url(current_user.get("user_id"), None)
-    return strip_none_values({"success": True, "data": data, "message": "Profile photo deleted"})
+    return SuccessResponse[CustomerProfileCard](
+        data=CustomerProfileCard.model_validate(data), message="Profile photo deleted",
+    )
 
 
-@router.post("/profile/documents/{doc_type}")
+@router.post("/profile/documents/{doc_type}", response_model=SuccessResponse[CustomerProfileCard], response_model_exclude_none=True)
 async def upload_my_kyc_document(
     doc_type: str,
     request: Request,
@@ -103,25 +111,35 @@ async def upload_my_kyc_document(
     service: CustomerService = Depends(get_customer_service),
 ):
     file = await _get_single_file_from_form(request)
-    upload_result = await FileService().upload_document(
-        file=file, user_id=current_user.get("user_id"), property_id="profile", idx=0
+    data = await service.upload_kyc_document(current_user.get("user_id"), doc_type, file)
+    return SuccessResponse[CustomerProfileCard](
+        data=CustomerProfileCard.model_validate(data), message=f"{doc_type} document uploaded successfully",
     )
-    data = await service.set_kyc_doc_url(current_user.get("user_id"), doc_type, upload_result["file_url"])
-    return strip_none_values({"success": True, "data": data, "message": f"{doc_type} document uploaded successfully"})
+
+
+@router.get("/profile/documents/{doc_type}/view-url", response_model=SuccessResponse[ViewUrlResult], response_model_exclude_none=True)
+async def get_my_kyc_document_view_url(
+    doc_type: str,
+    current_user: Dict[str, Any] = Depends(require_customer),
+    service: CustomerService = Depends(get_customer_service),
+):
+    view_url = await service.get_kyc_document_view_url(current_user.get("user_id"), doc_type)
+    return SuccessResponse[ViewUrlResult](data=ViewUrlResult(view_url=view_url))
 
 
 # ----------------------------------------------------------------------
 # Requirements
 # ----------------------------------------------------------------------
-@router.get("/requirements")
+@router.get("/requirements", response_model=DataResponse[List[RequirementCard]], response_model_exclude_none=True)
 async def list_my_requirements(
     current_user: Dict[str, Any] = Depends(require_customer),
     service: CustomerService = Depends(get_customer_service),
 ):
-    return strip_none_values(await service.list_my_requirements(current_user.get("user_id")))
+    result = await service.list_my_requirements(current_user.get("user_id"))
+    return DataResponse[List[RequirementCard]](data=[RequirementCard.model_validate(r) for r in result["data"]])
 
 
-@router.post("/requirements", status_code=http_status.HTTP_201_CREATED)
+@router.post("/requirements", status_code=http_status.HTTP_201_CREATED, response_model=SuccessResponse[RequirementCard], response_model_exclude_none=True)
 async def create_my_requirement(
     body: CustomerRequirementCreate,
     current_user: Dict[str, Any] = Depends(require_customer),
@@ -129,10 +147,10 @@ async def create_my_requirement(
 ):
     fields = body.model_dump(exclude_unset=True)
     data = await service.create_my_requirement(current_user.get("user_id"), fields)
-    return strip_none_values({"success": True, "data": data})
+    return SuccessResponse[RequirementCard](data=RequirementCard.model_validate(data))
 
 
-@router.patch("/requirements/{requirement_id}")
+@router.patch("/requirements/{requirement_id}", response_model=SuccessResponse[RequirementCard], response_model_exclude_none=True)
 async def update_my_requirement(
     requirement_id: int,
     body: CustomerRequirementUpdate,
@@ -141,30 +159,37 @@ async def update_my_requirement(
 ):
     fields = body.model_dump(exclude_unset=True)
     data = await service.update_my_requirement(requirement_id, current_user.get("user_id"), fields)
-    return strip_none_values({"success": True, "data": data})
+    return SuccessResponse[RequirementCard](data=RequirementCard.model_validate(data))
 
 
-@router.delete("/requirements/{requirement_id}")
+@router.delete("/requirements/{requirement_id}", response_model=SimpleSuccessResponse, response_model_exclude_none=True)
 async def delete_my_requirement(
     requirement_id: int,
     current_user: Dict[str, Any] = Depends(require_customer),
     service: CustomerService = Depends(get_customer_service),
 ):
-    return await service.delete_my_requirement(requirement_id, current_user.get("user_id"))
+    result = await service.delete_my_requirement(requirement_id, current_user.get("user_id"))
+    return SimpleSuccessResponse.model_validate(result)
 
 
 # ----------------------------------------------------------------------
 # Saved properties
 # ----------------------------------------------------------------------
-@router.get("/saved-properties")
+@router.get("/saved-properties", response_model=DataResponse[List[VendorPropertyCard]], response_model_exclude_none=True)
 async def list_my_saved_properties(
     current_user: Dict[str, Any] = Depends(require_customer),
     service: CustomerService = Depends(get_customer_service),
 ):
-    return strip_none_values(await service.list_my_saved_properties(current_user.get("user_id")))
+    result = await service.list_my_saved_properties(current_user.get("user_id"))
+    return DataResponse[List[VendorPropertyCard]](data=[VendorPropertyCard.model_validate(p) for p in result["data"]])
 
 
-@router.post("/saved-properties/{property_id}", status_code=http_status.HTTP_201_CREATED)
+@router.post(
+    "/saved-properties/{property_id}",
+    status_code=http_status.HTTP_201_CREATED,
+    response_model=SuccessResponse[SimpleSuccessResponse],
+    response_model_exclude_none=True,
+)
 async def save_property(
     property_id: str,
     body: SavedPropertyCreate = SavedPropertyCreate(),
@@ -172,61 +197,75 @@ async def save_property(
     service: CustomerService = Depends(get_customer_service),
 ):
     data = await service.save_property(current_user.get("user_id"), property_id, body.notes)
-    return strip_none_values({"success": True, "data": data})
+    return SuccessResponse[SimpleSuccessResponse](data=SimpleSuccessResponse.model_validate(data))
 
 
-@router.delete("/saved-properties/{property_id}")
+@router.delete("/saved-properties/{property_id}", response_model=SimpleSuccessResponse, response_model_exclude_none=True)
 async def unsave_property(
     property_id: str,
     current_user: Dict[str, Any] = Depends(require_customer),
     service: CustomerService = Depends(get_customer_service),
 ):
-    return await service.unsave_property(current_user.get("user_id"), property_id)
+    result = await service.unsave_property(current_user.get("user_id"), property_id)
+    return SimpleSuccessResponse.model_validate(result)
 
 
 # ----------------------------------------------------------------------
 # Wishlist
 # ----------------------------------------------------------------------
-@router.get("/wishlist")
+@router.get("/wishlist", response_model=DataResponse[List[VendorPropertyCard]], response_model_exclude_none=True)
 async def list_my_wishlist(
     current_user: Dict[str, Any] = Depends(require_customer),
     service: CustomerService = Depends(get_customer_service),
 ):
-    return strip_none_values(await service.list_my_wishlist(current_user.get("user_id")))
+    result = await service.list_my_wishlist(current_user.get("user_id"))
+    return DataResponse[List[VendorPropertyCard]](data=[VendorPropertyCard.model_validate(p) for p in result["data"]])
 
 
-@router.post("/wishlist/{property_id}", status_code=http_status.HTTP_201_CREATED)
+@router.post(
+    "/wishlist/{property_id}",
+    status_code=http_status.HTTP_201_CREATED,
+    response_model=SuccessResponse[SimpleSuccessResponse],
+    response_model_exclude_none=True,
+)
 async def add_to_wishlist(
     property_id: str,
     current_user: Dict[str, Any] = Depends(require_customer),
     service: CustomerService = Depends(get_customer_service),
 ):
     data = await service.add_to_wishlist(current_user.get("user_id"), property_id)
-    return strip_none_values({"success": True, "data": data})
+    return SuccessResponse[SimpleSuccessResponse](data=SimpleSuccessResponse.model_validate(data))
 
 
-@router.delete("/wishlist/{property_id}")
+@router.delete("/wishlist/{property_id}", response_model=SimpleSuccessResponse, response_model_exclude_none=True)
 async def remove_from_wishlist(
     property_id: str,
     current_user: Dict[str, Any] = Depends(require_customer),
     service: CustomerService = Depends(get_customer_service),
 ):
-    return await service.remove_from_wishlist(current_user.get("user_id"), property_id)
+    result = await service.remove_from_wishlist(current_user.get("user_id"), property_id)
+    return SimpleSuccessResponse.model_validate(result)
 
 
 # ----------------------------------------------------------------------
 # Property requests (purchase / rental) - "Requested Properties"
 # ----------------------------------------------------------------------
-@router.get("/property-requests")
+@router.get("/property-requests", response_model=DataResponse[List[PropertyRequestCard]], response_model_exclude_none=True)
 async def list_my_property_requests(
     requestType: Optional[str] = None,
     current_user: Dict[str, Any] = Depends(require_customer),
     service: CustomerService = Depends(get_customer_service),
 ):
-    return strip_none_values(await service.list_my_property_requests(current_user.get("user_id"), requestType))
+    result = await service.list_my_property_requests(current_user.get("user_id"), requestType)
+    return DataResponse[List[PropertyRequestCard]](data=[PropertyRequestCard.model_validate(r) for r in result["data"]])
 
 
-@router.post("/property-requests/{property_id}", status_code=http_status.HTTP_201_CREATED)
+@router.post(
+    "/property-requests/{property_id}",
+    status_code=http_status.HTTP_201_CREATED,
+    response_model=SuccessResponse[PropertyRequestCard],
+    response_model_exclude_none=True,
+)
 async def create_my_property_request(
     property_id: str,
     body: PropertyRequestCreate,
@@ -237,4 +276,4 @@ async def create_my_property_request(
     data = await service.create_my_property_request(
         current_user.get("user_id"), property_id, body.requestType, fields
     )
-    return strip_none_values({"success": True, "data": data})
+    return SuccessResponse[PropertyRequestCard](data=PropertyRequestCard.model_validate(data))

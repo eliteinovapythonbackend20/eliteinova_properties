@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/authContext';
 import { useToast } from '../../hooks/useToast';
 import Toast from '../common/Toast';
+import ForgotPasswordModal from './ForgotPasswordModal';
 
 const VendorLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
 
@@ -16,6 +17,7 @@ const VendorLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const navigate = useNavigate();
   const { toast, showToast } = useToast();
 
@@ -34,7 +36,7 @@ const VendorLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
     setError('');
 
     try {
-      const res = await login(formData);
+      const res = await login(formData, ['vendor']);
       if (!res?.success) {
         const message = res?.error?.message || 'Invalid credentials. Please try again.';
         setError(message);
@@ -43,8 +45,8 @@ const VendorLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
       }
       showToast('Login successful!', 'success');
       handleClose();
-      navigate('/profile/owner')
-      // navigate('/vendor-dashboard');
+      const vendorProfile = res?.user?.vendor_types[0].toLowerCase() === 'property_management' ? 'property-management' : res?.user?.vendor_types[0]?.toLowerCase();
+      navigate(`/profile/${vendorProfile}`);
     } catch (err) {
       const message = err?.message || 'Invalid credentials. Please try again.';
       setError(message);
@@ -209,6 +211,7 @@ const VendorLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
               </label>
               <button
                 type="button"
+                onClick={() => setShowForgotPassword(true)}
                 className="text-sm text-[#26A69A] hover:text-[#00695C] font-medium transition-colors"
               >
                 Forgot password?
@@ -283,6 +286,7 @@ const VendorLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
           animation: fade 0.25s ease-out forwards;
         }
       `}</style>
+      <ForgotPasswordModal isOpen={showForgotPassword} onClose={() => setShowForgotPassword(false)} />
       <Toast toast={toast} />
     </div>
   );

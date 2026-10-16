@@ -534,7 +534,7 @@ const RetailShopFilter = ({ activeTab = 'Buy', onFilterChange, onClose, onTabCha
   };
 
   const applyFilters = () => {
-    const filtersToSend = { ...filters, purpose: currentTab };
+    const filtersToSend = { ...filters, purpose: currentTab, propertyType: 'Retail Shop' };
     if (onFilterChange) onFilterChange(filtersToSend);
     if (onClose) onClose();
   };

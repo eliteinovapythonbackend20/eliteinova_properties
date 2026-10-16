@@ -438,11 +438,14 @@ import {
 } from "react-router-dom";
 
 import { AuthProvider } from "./context/authContext.jsx";
-import ProtectedRoute from "./models/ProtectedRoute.jsx";
+import ProtectedRoute, { VendorTypeRoute } from "./models/ProtectedRoute.jsx";
 
 import Header from "./components/common/Header";
-import CustomerLoginWrapper from "./components/login/CustomerLoginWrapper.jsx";
 import HomePage from "./pages/HomePage.jsx";
+import AdminDashboardSkeleton from "./components/dashboard/AdminDashboardSkeleton.jsx";
+
+const AdminLogin = lazy(() => import("./components/login/AdminLogin.jsx"));
+const OfficeLogin = lazy(() => import("./components/login/OfficeLogin.jsx"));
 
 // ============================================================
 // MAIN PAGES
@@ -1033,17 +1036,53 @@ const CleaningPage = lazy(
 
 function Unauthorized() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
-      <h1 className="text-2xl font-bold text-gray-800 mb-2">
-        Access denied
-      </h1>
+    // Full screen-ish modern layout grid/flex
+    <div className="flex items-center justify-center min-h-[70vh] w-full px-6 py-12 bg-gray-50/50">
+      {/* Immersive Modern Card Container */}
+      <div className="relative flex flex-col items-center justify-center w-full max-w-[640px] text-center p-12 md:p-16 rounded-2xl border border-gray-100 bg-white shadow-[0_22px_70px_4px_rgba(0,0,0,0.056)] transition-all duration-300 hover:shadow-[0_22px_80px_4px_rgba(0,0,0,0.08)]">
+        
+        {/* Glow Accent Top Bar */}
+        <div className="absolute top-0 left-0 right-0 h-[4px] bg-gradient-to-r from-teal-500 via-teal-500 to-teal-500 rounded-t-2xl" />
 
-      <p className="text-gray-500">
-        You don't have permission to view this page.
-      </p>
+        {/* Dynamic Modern Lock Icon Backdrop */}
+        <div className="mb-8 flex items-center justify-center w-20 h-20 bg-red-50 text-red-500 rounded-2xl shadow-sm ring-1 ring-red-100/80">
+          <svg className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" xmlns="http://w3.org">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+          </svg>
+        </div>
+
+        {/* Typographic Stack */}
+        <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight sm:text-4xl mb-4">
+          Restricted Access
+        </h1>
+
+        <p className="text-base text-gray-500 max-w-[460px] leading-relaxed mb-10">
+          You don't have permission to view this section. It looks like your account doesn't have the right access level for this page. Try going back to your main page, or sign in with a different account.
+        </p>
+
+        {/* Modern Call to Action Layout */}
+        <div className="flex flex-col sm:flex-row gap-4 w-full justify-center">
+          <button 
+            onClick={() => window.history.back()}
+            className="inline-flex items-center justify-center px-6 py-3 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-xl shadow-sm hover:bg-gray-50 hover:text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 cursor-pointer"
+          >
+            Go Back
+          </button>
+          
+          <button 
+            onClick={() => window.location.href = '/'}
+            className="inline-flex items-center justify-center px-6 py-3 text-sm font-semibold text-white bg-gray-900 rounded-xl shadow-md hover:bg-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 cursor-pointer"
+          >
+            Return to Home
+          </button>
+        </div>
+        
+      </div>
     </div>
   );
 }
+
+
 
 // ============================================================
 // SERVICE LAYOUT
@@ -1164,28 +1203,33 @@ function AppLayout() {
             ================================================== */}
 
             <Route
-              path="/login"
-              element={<CustomerLoginWrapper />}
+              path="/admin/login"
+              element={<AdminLogin />}
+            />
+
+            <Route
+              path="/office/login"
+              element={<OfficeLogin />}
             />
 
             <Route
               path="/profile/owner"
-              element={<OwnerProfile />}
+              element={<VendorTypeRoute vendorType="OWNER"><OwnerProfile /></VendorTypeRoute>}
             />
 
             <Route
               path="/profile/agent"
-              element={<AgentProfile />}
+              element={<VendorTypeRoute vendorType="AGENT"><AgentProfile /></VendorTypeRoute>}
             />
 
             <Route
               path="/profile/builder"
-              element={<BuilderProfile />}
+              element={<VendorTypeRoute vendorType="BUILDER"><BuilderProfile /></VendorTypeRoute>}
             />
 
             <Route
               path="/profile/property-management"
-              element={<PropertyManagementProfile />}
+              element={<VendorTypeRoute vendorType="PROPERTY_MANAGEMENT"><PropertyManagementProfile /></VendorTypeRoute>}
             />
 
             <Route
@@ -1221,9 +1265,11 @@ function AppLayout() {
               element={
                 <ProtectedRoute
                   allowedRoles={["admin"]}
-                  redirectTo="/login"
+                  redirectTo="/admin/login"
                 >
-                  <AdminDashboard />
+                  <Suspense fallback={<AdminDashboardSkeleton />}>
+                    <AdminDashboard />
+                  </Suspense>
                 </ProtectedRoute>
               }
             />

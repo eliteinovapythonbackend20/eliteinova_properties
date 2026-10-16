@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import { ChevronDown, Search, Home, MapPin, Star, Filter, X, Building, Landmark, Warehouse, Building2, Grid3X3, LayoutGrid, Hotel, HomeIcon, Building as BuildingIcon, Castle, Crown, Instagram, Globe, Phone } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import CondominiumApartmentFilter from "../../components/filters/Apartment/CondominiumApartmentFilter";
-import useNavigation from "../../hooks/useNavigation";
+import useNavigation, { APARTMENT_TYPE_SEARCH_TERM } from "../../hooks/useNavigation";
 import { usePropertyFilter } from "../../hooks/usePropertyFilter";
 import { searchPropertiesSimple } from "../../services/filterService";
 
@@ -40,11 +40,12 @@ const CondominiumApartmentPage = () => {
   } = useNavigation();
   
   // ✅ USE CENTRALIZED FILTER HOOK
-  const { 
-    filteredData, 
-    filterLoading, 
-    appliedFilters, 
-    handleFilterChange 
+  const {
+    filteredData,
+    filterLoading,
+    appliedFilters,
+    handleFilterChange,
+    resetFilters
   } = usePropertyFilter('apartment');
 
   // ─── Listing-purpose filter (Buy/Rent/Lease pill, combined with this
@@ -62,7 +63,10 @@ const CondominiumApartmentPage = () => {
     let cancelled = false;
     setPurposeLoading(true);
     searchPropertiesSimple({
-      property_type: activeApartmentType,
+      // "Condominium (Condo)" is a display name - the posting forms actually
+      // store "Condo Apartment", matched here via the same substring
+      // translation useNavigation.js uses for the default browse list.
+      property_type: APARTMENT_TYPE_SEARCH_TERM[activeApartmentType] || activeApartmentType,
       listing_purpose: listingPurpose,
       page: 1,
       limit: 20,
@@ -82,6 +86,12 @@ const CondominiumApartmentPage = () => {
   }, [listingPurpose, activeApartmentType]);
 
   // ─── Combine Data from All Sources ────────────────────────────────────
+  // A filter search that matched nothing still falls through to the normal
+  // browse list below (rather than showing a dead end) - `filterReturnedEmpty`
+  // is what drives the separate "nothing matched your filter" notice above it,
+  // so the user isn't left guessing why the list changed to something they
+  // didn't filter for.
+  const filterReturnedEmpty = Boolean(appliedFilters) && filteredData.length === 0;
   const properties = useMemo(() => {
     if (appliedFilters && filteredData.length > 0) {
       return filteredData;
@@ -854,6 +864,20 @@ const CondominiumApartmentPage = () => {
                   </div>
                 ) : (
                   <>
+                    {filterReturnedEmpty && paginatedProperties.length > 0 && (
+                      <div className="w-full bg-white rounded-2xl shadow-2xl border border-teal-100 p-6 text-center mb-5">
+                        <div className="text-5xl mb-3">🏢</div>
+                        <h3 className="text-lg font-bold text-slate-800 mb-1">No Condominiums Found From Your Filter</h3>
+                        <p className="text-xs text-slate-500 mb-3">No listings matched what you filtered for. You can view or look at the properties below instead.</p>
+                        <button
+                          type="button"
+                          onClick={resetFilters}
+                          className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-xs font-semibold hover:shadow-lg transition-all"
+                        >
+                          Browse All Condominiums
+                        </button>
+                      </div>
+                    )}
                     <PropertyList
                       properties={paginatedProperties}
                       emptyMessage="No condominiums available at the moment."

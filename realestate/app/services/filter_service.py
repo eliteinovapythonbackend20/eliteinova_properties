@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.models.property import BaseProperty as Property
+from app.models.contact_person_media import ContactPersonMedia
 from app.repositories.property_repository import PropertyRepository
 from app.schemas.property_filter import PropertyFilter, RangeFilter
 
@@ -27,6 +28,7 @@ _JSONB_CONTAINS_FIELDS = {
     "room_type": Property.room_type,
     "sharing_type": Property.sharing_type,
     "tenant_type": Property.tenant_type,
+    "nearby_places": Property.nearby_places,
 }
 
 _YESNO_FIELDS = {
@@ -39,6 +41,15 @@ _YESNO_FIELDS = {
     "kitchen_access": Property.kitchen_access,
     "utilities_included": Property.utilities_included,
     "electricity_available": Property.electricity_available,
+    "maintenance_included": Property.maintenance_included,
+    "immediate_move_in": Property.immediate_move_in,
+    "ready_to_buy": Property.ready_to_buy,
+    "under_construction": Property.underconstruction,
+    "immediate_possession": Property.immediate_possession,
+    "title_deed_verify": Property.title_deed_verify,
+    "loan_eligible": Property.loan_eligible,
+    "rera_approved": Property.rera_approved,
+    "renewable_option": Property.renewable_option,
 }
 
 _EXACT_ISH_FIELDS = {
@@ -60,6 +71,11 @@ _EXACT_ISH_FIELDS = {
     "soil_type": Property.soil_type,
     "water_source": Property.water_source,
     "area_unit": Property.area_unit,
+    "landmark": Property.landmark,
+    "nearby_connectivity": Property.nearby_connectivity,
+    "dietary_preference": Property.dietary_preference,
+    "price_negotiable": Property.price_negotiable,
+    "property_tax": Property.property_tax,
 }
 
 
@@ -100,11 +116,9 @@ class FilterService:
         query = select(Property).where(func.upper(Property.status) == PUBLIC_STATUS.upper())
         query = query.options(
             selectinload(Property.media),
+            selectinload(Property.contact_person_media).joinedload(ContactPersonMedia.file_asset),
             joinedload(Property.user),
-            joinedload(Property.owner_details),
-            joinedload(Property.agent_details),
-            joinedload(Property.builder_details),
-            joinedload(Property.property_management_details),
+            joinedload(Property.contact_person),
         )
 
         # taxonomy
@@ -205,8 +219,15 @@ class FilterService:
             if value:
                 query = query.where(column.ilike(f"%{value}%"))
 
+        if filters.floor_number is not None:
+            query = query.where(Property.floor_number == filters.floor_number)
+        if filters.total_floors is not None:
+            query = query.where(Property.total_floors == filters.total_floors)
         if filters.property_age is not None:
             query = query.where(Property.property_age <= filters.property_age)
+        if filters.road_width is not None:
+            # A buyer filtering by road width wants "at least this wide", not an exact match.
+            query = query.where(Property.road_width >= filters.road_width)
         if filters.minimum_duration:
             query = query.where(or_(
                 Property.minimum_duration.ilike(f"%{filters.minimum_duration}%"),

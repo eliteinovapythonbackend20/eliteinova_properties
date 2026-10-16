@@ -12,7 +12,7 @@ import {
   Layers, Grid, Layout, Palette, Circle, Square,
   Menu, MoreHorizontal, Copy, ExternalLink, Link,
   Bookmark, Flag, Bell, Settings, Power,
-  Search, Filter, Grid as GridIcon, List,
+  Search, Filter, Grid as GridIcon, List, RefreshCw,
   Eye as ViewIcon, Bed, Bath, Trees, Wifi,
   ChevronLeft, ChevronRight,
   File, FolderOpen, FileImage, FileSpreadsheet, ImagePlus,
@@ -941,6 +941,18 @@ const PropertyManagementProfile = () => {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('company');
   const [showEditModal, setShowEditModal] = useState(false);
+  // Mirrors showEditModal but readable synchronously (no re-render lag) -
+  // a photo/logo upload mid-edit calls fetchPMProfileData() to refresh
+  // the properties/documents lists, and without this guard that call's
+  // setEditForm(...) would stomp over whatever the vendor had typed but not
+  // yet saved. Set it alongside every setShowEditModal call, never on its own.
+  const isEditingRef = useRef(false);
+  // Only suppress the editForm overwrite once it has real data in it at
+  // least once - otherwise clicking "Edit" before the very first fetch
+  // resolves (e.g. right after the manual refresh button) would permanently
+  // skip the only fetch that was ever going to populate the form, leaving
+  // every required field blank and Save unusable.
+  const hasLoadedProfileRef = useRef(false);
   const { toast, showToast, hideToast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteItem, setDeleteItem] = useState(null);
@@ -948,6 +960,7 @@ const PropertyManagementProfile = () => {
   const [showCompanyLogoDeleteConfirm, setShowCompanyLogoDeleteConfirm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [showPdfViewer, setShowPdfViewer] = useState(false);
   const [pdfToView, setPdfToView] = useState(null);
@@ -973,6 +986,7 @@ const PropertyManagementProfile = () => {
 
   // ============ STATE - EDIT FORM ============
   const [editForm, setEditForm] = useState({
+    userId: '',
     // Company Information
     pmCompanyName: '',
     pmBusinessRegNumber: '',
@@ -1064,7 +1078,14 @@ const PropertyManagementProfile = () => {
       const propertiesData = response?.properties?.data || [];
 
       // ============ 1. SET EDIT FORM (PM Profile Data) ============
-      setEditForm({
+      // Skipped only while the edit modal is open AND the form already has
+      // real data in it - a photo/logo upload mid-edit re-fetches to refresh
+      // properties/documents below, and overwriting editForm in that case
+      // would wipe out anything the vendor had typed but not yet saved (see
+      // isEditingRef/hasLoadedProfileRef above). The very first load always
+      // goes through, even if "Edit" was clicked before it resolved.
+      if (!isEditingRef.current || !hasLoadedProfileRef.current) setEditForm({
+        userId: profileData.userId || '',
         // Company Information
         pmCompanyName: profileData.companyName || profileData.pmCompanyName || '',
         pmBusinessRegNumber: profileData.businessRegNumber || profileData.companyRegNumber || '',
@@ -1078,8 +1099,8 @@ const PropertyManagementProfile = () => {
         // Authorized Representative
         authFullName: profileData.fullName || profileData.authFullName || '',
         authDesignation: profileData.authDesignation || profileData.designation || '',
-        authMobile: profileData.authMobile || profileData.mobile || '',
-        authEmail: profileData.authEmail || profileData.email || '',
+        authMobile: profileData.phoneNumber || profileData.mobile || '',
+        authEmail: profileData.emailAddress || profileData.email || '',
         authWhatsapp: profileData.authWhatsapp || profileData.whatsappNumber || '',
         authPhoto: null,
 
@@ -1113,6 +1134,7 @@ const PropertyManagementProfile = () => {
         linkedIn: profileData.linkedIn || profileData.linkedin || '',
         youtubeChannel: profileData.youtubeChannel || profileData.youtube || '',
       });
+      hasLoadedProfileRef.current = true;
 
       // ============ 2. SET PROPERTIES ============
       const formattedProperties = propertiesData.map(mapPropertyToFrontend);
@@ -1187,6 +1209,28 @@ const PropertyManagementProfile = () => {
     fetchPMProfileData();
   }, []);
 
+  // Manual refresh (the icon next to the search bar) - re-fetches profile +
+  // properties without a full browser reload.
+  const handleRefreshProperties = async () => {
+    setIsRefreshing(true);
+    try {
+      await fetchPMProfileData();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Posting a new property from anywhere in the app dispatches this event
+  // (see propertyService.createProperty) - auto-refresh this profile's own
+  // property list if it's mounted when that happens.
+  useEffect(() => {
+    const handlePropertyCreated = () => {
+      fetchPMProfileData();
+    };
+    window.addEventListener('eliteinova:property-created', handlePropertyCreated);
+    return () => window.removeEventListener('eliteinova:property-created', handlePropertyCreated);
+  }, []);
+
   // ============ NAVIGATION ============
   const handleNavigateBack = () => {
     if (window.history.length > 2) navigate(-1);
@@ -1227,7 +1271,7 @@ const PropertyManagementProfile = () => {
         authFullName: editForm.authFullName,
         authDesignation: editForm.authDesignation,
         authMobile: editForm.authMobile,
-        authEmail: editForm.authEmail,
+        // authEmail intentionally not sent - it's the login email, read-only here.
         authWhatsapp: editForm.authWhatsapp,
         officeAddress: editForm.officeAddress,
         officeCity: editForm.officeCity,
@@ -1250,6 +1294,7 @@ const PropertyManagementProfile = () => {
       };
 
       await updateMyProfile('property-management', profileData);
+      isEditingRef.current = false;
       setShowEditModal(false);
       showSuccessToast('Profile updated successfully!');
       await fetchPMProfileData();
@@ -1975,7 +2020,19 @@ const PropertyManagementProfile = () => {
               </div>
               <div className="space-y-3 w-full">
                 <AnimatedCard label="Years of Experience" value={editForm.pmYearsOfExperience} icon={<Award className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.33} />
-                <AnimatedCard label="Company Website" value={editForm.pmCompanyWebsite || 'Not provided'} icon={<Globe2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.4} />
+                <AnimatedCard label="Company Website" icon={<Globe2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.4}>
+                  {editForm.pmCompanyWebsite ? (
+                    <a
+                      href={editForm.pmCompanyWebsite.startsWith('http') ? editForm.pmCompanyWebsite : `https://${editForm.pmCompanyWebsite.replace(/^www\./, '')}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-xs sm:text-[13px] font-semibold text-[#00695C] hover:text-[#004D40] hover:underline flex items-center gap-1.5 sm:gap-2 transition-all duration-300"
+                    >
+                      {editForm.pmCompanyWebsite} <ExternalLink className="w-3 h-3 sm:w-3.5 sm:h-3.5 inline" />
+                    </a>
+                  ) : (
+                    <span className="text-xs sm:text-[13px] text-gray-400 font-medium italic">Not provided</span>
+                  )}
+                </AnimatedCard>
                 <AnimatedCard label="Company Description" value={editForm.pmCompanyDescription} icon={<FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.47} />
                 <AnimatedCard label="Company Logo" icon={<Image className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.54}>
                   {documents.companyLogo ? (
@@ -2104,9 +2161,9 @@ const PropertyManagementProfile = () => {
       case 'documents': {
         const docFields = [
           'companyLogo', 'companyBrochure', 'companyRegCert',
-          'reraCert', 'gstCert', 'panCard', 'aadhaarCard',
+           'gstCert', 'panCard', 'aadhaarCard',
           'officeAddressProof'
-        ];
+        ]; // 'reraCert',
         const filledCount = docFields.filter(f => documents[f] !== null && documents[f] !== undefined).length;
         const docList = [
           { field: 'companyLogo', label: 'Company Logo', icon: <Image className="w-3.5 h-3.5 sm:w-4 sm:h-4" />, isImage: true },
@@ -2114,7 +2171,7 @@ const PropertyManagementProfile = () => {
           { field: 'aadhaarCard', label: 'Aadhaar Card', icon: <IdCard className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
           { field: 'panCard', label: 'PAN Card', icon: <CreditCard className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
           { field: 'gstCert', label: 'GST Certificate (Optional)', icon: <Hash className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
-          { field: 'reraCert', label: 'RERA Certificate (Optional)', icon: <BadgeCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
+          // { field: 'reraCert', label: 'RERA Certificate (Optional)', icon: <BadgeCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
           { field: 'officeAddressProof', label: 'Office Address Proof', icon: <Landmark className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
           { field: 'companyBrochure', label: 'Company Profile/Brochure (Optional)', icon: <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
         ];
@@ -2221,6 +2278,16 @@ const PropertyManagementProfile = () => {
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto flex-wrap">
+          <button
+            onClick={handleRefreshProperties}
+            disabled={isRefreshing}
+            className="p-1.5 sm:p-2 rounded-lg border-2 border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-[#00695C] hover:text-[#00695C] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Refresh properties"
+            title="Refresh properties"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          </button>
+
           <div className="relative flex-1 sm:flex-initial min-w-[100px] sm:min-w-[120px]">
             <input type="text" placeholder="Search..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full px-2 sm:px-3 py-1 sm:py-1.5 pl-6 sm:pl-8 rounded-lg border-2 border-gray-200 focus:border-[#00695C] focus:ring-3 focus:ring-[#00695C]/20 outline-none transition-all duration-300 text-[10px] sm:text-xs" />
@@ -2491,7 +2558,7 @@ const PropertyManagementProfile = () => {
                 <div className="bg-white/20 p-1.5 sm:p-2 rounded-xl"><Edit2 className="w-4 h-4 sm:w-5 sm:h-5" /></div>
                 Edit Property Management Profile
               </h2>
-              <button onClick={() => setShowEditModal(false)} className="text-white/80 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110">
+              <button onClick={() => { isEditingRef.current = false; setShowEditModal(false); }} className="text-white/80 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110">
                 <X className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
@@ -2549,7 +2616,7 @@ const PropertyManagementProfile = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 w-full">
                   <div className="space-y-1 sm:space-y-1.5 w-full">
                     <label className="block text-[10px] sm:text-xs font-bold text-gray-700 uppercase tracking-wider">👤 Full Name *</label>
-                    <input type="text" name="authFullName" value={editForm.authFullName} onChange={handleEditChange} className={inputCls} />
+                    {editForm.authFullName ? <input type="text" name="authFullName" value={editForm.authFullName} disabled readOnly className={`${inputCls} bg-gray-100 text-gray-500 cursor-not-allowed`} /> : <input type="text" name="authFullName" value={editForm.authFullName} onChange={handleEditChange} className={inputCls} />}
                   </div>
                   <div className="space-y-1 sm:space-y-1.5 w-full">
                     <label className="block text-[10px] sm:text-xs font-bold text-gray-700 uppercase tracking-wider">💼 Designation *</label>
@@ -2557,15 +2624,16 @@ const PropertyManagementProfile = () => {
                   </div>
                   <div className="space-y-1 sm:space-y-1.5 w-full">
                     <label className="block text-[10px] sm:text-xs font-bold text-gray-700 uppercase tracking-wider">📱 Mobile Number *</label>
-                    <input type="text" name="authMobile" value={editForm.authMobile} onChange={handleEditChange} className={inputCls} />
+                    {editForm.authMobile ? <input type="text" name="authMobile" value={editForm.authMobile} disabled readOnly className={`${inputCls} bg-gray-100 text-gray-500 cursor-not-allowed`} /> : <input type="text" name="authMobile" value={editForm.authMobile} onChange={handleEditChange} className={inputCls} />}
                   </div>
                   <div className="space-y-1 sm:space-y-1.5 w-full">
                     <label className="block text-[10px] sm:text-xs font-bold text-gray-700 uppercase tracking-wider">✉️ Email Address *</label>
-                    <input type="email" name="authEmail" value={editForm.authEmail} onChange={handleEditChange} className={inputCls} />
+                    {/* Login email - not editable from here (it lives on the account, not this vendor profile). Shown for reference only. */}
+                    {editForm.authEmail ? <input type="email" name="authEmail" value={editForm.authEmail} disabled readOnly title="Contact support to change your login email" className={`${inputCls} bg-gray-100 text-gray-500 cursor-not-allowed`} /> : <input type="email" name="authEmail" value={editForm.authEmail} onChange={handleEditChange} className={`${inputCls} bg-gray-100 text-gray-500 cursor-not-allowed`} />}
                   </div>
                   <div className="space-y-1 sm:space-y-1.5 w-full">
                     <label className="block text-[10px] sm:text-xs font-bold text-gray-700 uppercase tracking-wider">📱 WhatsApp Number</label>
-                    <input type="text" name="authWhatsapp" value={editForm.authWhatsapp} onChange={handleEditChange} className={inputCls} />
+                    {editForm.authWhatsapp ? <input type="text" name="authWhatsapp" value={editForm.authWhatsapp} disabled readOnly className={`${inputCls} bg-gray-100 text-gray-500 cursor-not-allowed`} /> : <input type="text" name="authWhatsapp" value={editForm.authWhatsapp} onChange={handleEditChange} className={inputCls} />}
                   </div>
                   <div className="space-y-1 sm:space-y-1.5 w-full">
                     <label className="block text-[10px] sm:text-xs font-bold text-gray-700 uppercase tracking-wider">📸 Profile Photo *</label>
@@ -2739,7 +2807,7 @@ const PropertyManagementProfile = () => {
 
             </div>
             <div className="px-4 sm:px-6 md:px-8 py-3 sm:py-4 md:py-5 bg-white border-t-2 border-gray-100 flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 flex-shrink-0">
-              <button onClick={() => setShowEditModal(false)} className="px-4 sm:px-6 md:px-8 py-2 sm:py-3 rounded-2xl border-2 border-gray-300 text-gray-700 text-xs sm:text-sm font-bold hover:bg-gray-100 transition-all duration-300 hover:scale-105 w-full sm:w-auto">
+              <button onClick={() => { isEditingRef.current = false; setShowEditModal(false); }} className="px-4 sm:px-6 md:px-8 py-2 sm:py-3 rounded-2xl border-2 border-gray-300 text-gray-700 text-xs sm:text-sm font-bold hover:bg-gray-100 transition-all duration-300 hover:scale-105 w-full sm:w-auto">
                 Cancel
               </button>
               <button onClick={handleSave} disabled={isLoading}
@@ -2807,7 +2875,7 @@ const PropertyManagementProfile = () => {
                 </p>
               </div>
             </div>
-            <button onClick={() => setShowEditModal(true)}
+            <button onClick={() => { isEditingRef.current = true; setShowEditModal(true); }}
               className="relative flex items-center gap-1.5 sm:gap-2 px-4 sm:px-5 md:px-6 py-2 sm:py-2.5 md:py-3 bg-gradient-to-r from-[#00695C] to-[#26A69A] hover:from-[#005A4F] hover:to-[#1B9E8E] text-white rounded-xl sm:rounded-2xl font-bold transition-all duration-300 shadow-lg hover:shadow-2xl w-full sm:w-auto justify-center transform hover:scale-105 hover:-translate-y-1 group text-xs sm:text-sm overflow-hidden">
               <span className="absolute top-0 left-[-100%] w-full h-full bg-gradient-to-r from-transparent via-white/25 to-transparent group-hover:left-full transition-all duration-700 ease-out" />
               <Edit2 className="relative w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:rotate-12 transition-transform duration-300" />
@@ -2855,7 +2923,7 @@ const PropertyManagementProfile = () => {
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-1.5 sm:gap-2 mb-1 sm:mb-1.5">
                 <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-gray-800">{editForm.pmCompanyName}</h2>
                 <span className="text-[10px] sm:text-xs text-[#00695C] font-medium bg-gray-100 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full border border-gray-200">
-                  PM ID: #PM-{editForm.authMobile?.slice(-4) || '0000'}
+                  {editForm.userId}
                 </span>
                 <span className="relative overflow-hidden bg-gradient-to-r from-[#00695C] to-[#26A69A] text-white px-2 sm:px-3 py-0.5 rounded-full text-[8px] sm:text-[10px] font-bold">
                   RERA Verified

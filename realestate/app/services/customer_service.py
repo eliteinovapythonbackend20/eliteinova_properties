@@ -16,11 +16,13 @@ thinner "card" shape (see app.services.profile_service.ProfileService.to_respons
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 
 from app.core.response_utils import strip_none_values
 from app.repositories.customer_repository import CustomerRepository
+from app.repositories.document_repository import UserDocumentRepository
 from app.services.profile_service import ProfileService
+from app.services.user_document_service import UserDocumentService
 
 # camelCase (as dumped from CustomerProfileUpdate) -> the Customer model's
 # actual column name. Identical mapping to admin_customer_service's
@@ -85,12 +87,36 @@ PROPERTY_REQUEST_FIELD_MAP = {
     "notes": "notes",
 }
 
-DOC_URL_FIELD_BY_TYPE = {
-    "aadhaar": "aadhaar_doc_url",
-    "pan": "pan_doc_url",
-    "gst": "gst_doc_url",
-    "rera": "rera_doc_url",
+# Short path-param name the frontend already sends -> the canonical
+# document_catalog key. No "rera" entry: a buyer/tenant has no personal RERA
+# registration (RERA is a property/project-level certificate), so it isn't a
+# customer KYC document type at all.
+CUSTOMER_DOC_TYPE_TO_KEY = {
+    "aadhaar": "aadhaar_card",
+    "pan": "pan_card",
+    "gst": "gst_certificate",
 }
+
+
+async def build_kyc_documents(db, user_id: str) -> Dict[str, Any]:
+    """Status-only view of a customer's KYC documents - never a raw file
+    URL (that would be an unsigned, unauthenticated link to a private
+    document). Shared by CustomerService and AdminCustomerService so both
+    read sides stay in sync. A real, signed view URL is minted on demand by
+    CustomerService.get_kyc_document_view_url, never embedded here."""
+    rows = await UserDocumentRepository(db).list_current(user_id)
+    by_key = {row.document_key: row for row in rows}
+    documents: Dict[str, Any] = {}
+    for short, key in CUSTOMER_DOC_TYPE_TO_KEY.items():
+        row = by_key.get(key)
+        if row is None:
+            continue
+        documents[short] = strip_none_values({
+            "status": row.status,
+            "uploadedAt": row.created_at.isoformat() if row.created_at else None,
+            "verifiedAt": row.verified_at.isoformat() if row.verified_at else None,
+        })
+    return documents
 
 
 class CustomerService:
@@ -101,9 +127,9 @@ class CustomerService:
         self.profile_service = profile_service
 
     # ------------------------------------------------------------------
-    @staticmethod
-    def _to_profile_card(customer) -> Dict[str, Any]:
+    async def _to_profile_card(self, customer) -> Dict[str, Any]:
         user = getattr(customer, "user", None)
+        documents = await build_kyc_documents(self.repository.db, customer.user_id)
         return strip_none_values({
             "userId": customer.user_id,
             "fullName": customer.full_name,
@@ -124,11 +150,7 @@ class CustomerService:
             "kycAadhaarVerified": bool(customer.kyc_aadhaar_verified),
             "kycPanVerified": bool(customer.kyc_pan_verified),
             "kycGstVerified": bool(customer.kyc_gst_verified),
-            "kycReraVerified": bool(customer.kyc_rera_verified),
-            "aadhaarDocUrl": customer.aadhaar_doc_url,
-            "panDocUrl": customer.pan_doc_url,
-            "gstDocUrl": customer.gst_doc_url,
-            "reraDocUrl": customer.rera_doc_url,
+            "documents": documents,
             "emailVerified": bool(customer.email_verified),
             "phoneVerified": bool(customer.phone_verified),
             "occupation": customer.occupation,
@@ -199,7 +221,7 @@ class CustomerService:
         customer = await self.repository.get_customer_by_user_id(user_id)
         if not customer:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer profile not found")
-        return self._to_profile_card(customer)
+        return await self._to_profile_card(customer)
 
     async def update_my_profile(self, user_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
         if not fields:
@@ -209,27 +231,43 @@ class CustomerService:
         if not updated:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer profile not found")
         await self.repository.commit()
-        return self._to_profile_card(updated)
+        return await self._to_profile_card(updated)
 
     async def set_profile_picture_url(self, user_id: str, file_url: Optional[str]) -> Dict[str, Any]:
         updated = await self.repository.update_customer_fields(user_id, {"profile_picture": file_url})
         if not updated:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer profile not found")
         await self.repository.commit()
-        return self._to_profile_card(updated)
+        return await self._to_profile_card(updated)
 
-    async def set_kyc_doc_url(self, user_id: str, doc_type: str, file_url: str) -> Dict[str, Any]:
-        column = DOC_URL_FIELD_BY_TYPE.get(doc_type)
-        if not column:
+    async def upload_kyc_document(self, user_id: str, doc_type: str, file: UploadFile) -> Dict[str, Any]:
+        canonical_key = CUSTOMER_DOC_TYPE_TO_KEY.get(doc_type)
+        if not canonical_key:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid document type '{doc_type}'. Must be one of: {', '.join(DOC_URL_FIELD_BY_TYPE.keys())}",
+                detail=f"Invalid document type '{doc_type}'. Must be one of: {', '.join(CUSTOMER_DOC_TYPE_TO_KEY.keys())}",
             )
-        updated = await self.repository.update_customer_fields(user_id, {column: file_url})
-        if not updated:
+        # UserDocumentService creates the FileAsset + a new UserDocument version
+        # (pending admin verification) and commits - the same engine vendor KYC
+        # docs already use. No URL is ever written onto Customer itself.
+        await UserDocumentService(self.repository.db).upload_version(
+            user_id=user_id, raw_key=canonical_key, file=file
+        )
+        customer = await self.repository.get_customer_by_user_id(user_id)
+        if not customer:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer profile not found")
-        await self.repository.commit()
-        return self._to_profile_card(updated)
+        return await self._to_profile_card(customer)
+
+    async def get_kyc_document_view_url(self, user_id: str, doc_type: str) -> str:
+        canonical_key = CUSTOMER_DOC_TYPE_TO_KEY.get(doc_type)
+        if not canonical_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid document type '{doc_type}'. Must be one of: {', '.join(CUSTOMER_DOC_TYPE_TO_KEY.keys())}",
+            )
+        return await UserDocumentService(self.repository.db).access_url(
+            requester={"user_id": user_id, "role": "user"}, raw_key=canonical_key
+        )
 
     # ------------------------------------------------------------------
     # Requirements

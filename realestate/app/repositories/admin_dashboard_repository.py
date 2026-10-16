@@ -17,12 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.models.property import BaseProperty
-from app.models.property_agent import PropertyAgentDetails
-from app.models.property_builder import PropertyBuilderDetails
 from app.models.property_document import PropertyDocument
 from app.models.property_media import PropertyMedia
-from app.models.property_owner import OwnerProperty
-from app.models.property_pm import PropertyManagementProperty
+from app.models.property_contact import PropertyContactPerson
 
 
 def _day_bounds(d: date, end_of_day: bool) -> datetime:
@@ -106,10 +103,7 @@ class AdminDashboardRepository:
             # Needed to resolve the "who posted this" display name: owner/agent
             # show the person's name, builder/PM show their company name (see
             # AdminDashboardService._posted_by_name).
-            joinedload(BaseProperty.owner_details),
-            joinedload(BaseProperty.agent_details),
-            joinedload(BaseProperty.builder_details),
-            joinedload(BaseProperty.property_management_details),
+            joinedload(BaseProperty.contact_person),
         )
         query = query.order_by(BaseProperty.created_at.desc()).offset(skip).limit(limit)
 
@@ -265,8 +259,7 @@ class AdminDashboardRepository:
     async def get_property_with_relations(self, property_id: str) -> Optional[BaseProperty]:
         """Same eager-loads as list_properties - needed whenever the caller
         will hand the row to AdminDashboardService._to_card, which touches
-        user/owner_details/agent_details/builder_details/
-        property_management_details/media. Without this, accessing those on
+        user/contact_person/media. Without this, accessing those on
         a bare get_property_by_id() row lazy-loads outside an async
         greenlet and raises (which the auth middleware's catch-all then
         mislabels as an auth error)."""
@@ -276,10 +269,7 @@ class AdminDashboardRepository:
             .options(
                 selectinload(BaseProperty.media),
                 joinedload(BaseProperty.user),
-                joinedload(BaseProperty.owner_details),
-                joinedload(BaseProperty.agent_details),
-                joinedload(BaseProperty.builder_details),
-                joinedload(BaseProperty.property_management_details),
+                joinedload(BaseProperty.contact_person),
             )
         )
         return result.unique().scalar_one_or_none()
@@ -324,10 +314,7 @@ class AdminDashboardRepository:
         if not prop:
             return False
 
-        for model in (
-            OwnerProperty, PropertyAgentDetails, PropertyBuilderDetails,
-            PropertyManagementProperty, PropertyMedia, PropertyDocument,
-        ):
+        for model in (PropertyContactPerson, PropertyMedia, PropertyDocument):
             await self.db.execute(delete(model).where(model.property_id == property_id))
 
         await self.db.delete(prop)

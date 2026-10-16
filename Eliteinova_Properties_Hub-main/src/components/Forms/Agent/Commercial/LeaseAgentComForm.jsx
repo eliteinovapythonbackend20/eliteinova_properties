@@ -9,7 +9,10 @@ import {
   MapPin as MapPinIcon, Building as BuildingIcon, Home as HomeIcon, 
   CheckSquare, PenTool, Store, Warehouse, Factory, Search, ChevronDown
 } from "lucide-react";
-import { createProperty } from "../../../../services/propertyService";
+import { createProperty, reuseVerifiedResources } from "../../../../services/propertyService";
+import useReusableResources from "../../../../hooks/useReusableResources";
+import ReuseOrUploadPrompt from "../../shared/ReuseOrUploadPrompt";
+import { buildPrefillValues } from "../../../../config/contactPrefillMap";
 
 const steps = [
   "Personal Details",
@@ -106,6 +109,11 @@ const nearbyPlacesOptions = [
 ];
 
 // SearchableMultiSelect Component - Mobile Version
+// Capitalizes each word a vendor types for a new, not-yet-listed option -
+// e.g. "coimbatore" -> "Coimbatore", "navi mumbai" -> "Navi Mumbai".
+const toTitleCase = (text) =>
+  text.trim().replace(/\s+/g, ' ').replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+
 const SearchableMultiSelect = ({ 
   options, 
   selected, 
@@ -144,6 +152,17 @@ const SearchableMultiSelect = ({
   const removeOption = (option, e) => {
     e.stopPropagation();
     onChange(selected.filter(item => item !== option));
+  };
+
+  const trimmedSearch = searchTerm.trim();
+  const canAddCustom = Boolean(trimmedSearch) &&
+    !options.some(o => o.toLowerCase() === trimmedSearch.toLowerCase()) &&
+    !selected.some(s => s.toLowerCase() === trimmedSearch.toLowerCase());
+
+  const addCustomOption = () => {
+    if (!canAddCustom) return;
+    onChange([...selected, toTitleCase(trimmedSearch)]);
+    setSearchTerm("");
   };
 
   return (
@@ -186,23 +205,30 @@ const SearchableMultiSelect = ({
             </div>
           </div>
           <div className="overflow-y-auto flex-1 p-1">
-            {filteredOptions.length === 0 ? (
+            {filteredOptions.map((option) => (
+              <label
+                key={option}
+                className="flex items-center gap-2 px-2 py-1 hover:bg-teal-50 rounded-md cursor-pointer text-[11px]"
+              >
+                <input
+                  type="checkbox"
+                  className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer"
+                  checked={selected.includes(option)}
+                  onChange={() => toggleOption(option)}
+                />
+                {option}
+              </label>
+            ))}
+            {canAddCustom && (
+              <div
+                className="px-2 py-1 text-[11px] cursor-pointer hover:bg-teal-50 rounded-md text-[#00695C] font-semibold border-t border-gray-100 mt-1"
+                onClick={addCustomOption}
+              >
+                + Add "{toTitleCase(trimmedSearch)}"
+              </div>
+            )}
+            {filteredOptions.length === 0 && !canAddCustom && (
               <div className="text-center text-gray-400 text-[11px] py-2">No options found</div>
-            ) : (
-              filteredOptions.map((option) => (
-                <label
-                  key={option}
-                  className="flex items-center gap-2 px-2 py-1 hover:bg-teal-50 rounded-md cursor-pointer text-[11px]"
-                >
-                  <input
-                    type="checkbox"
-                    className="accent-[#00695C] w-3.5 h-3.5 cursor-pointer"
-                    checked={selected.includes(option)}
-                    onChange={() => toggleOption(option)}
-                  />
-                  {option}
-                </label>
-              ))
             )}
           </div>
         </div>
@@ -252,6 +278,17 @@ const SearchableMultiSelectDt = ({
     onChange(selected.filter(item => item !== option));
   };
 
+  const trimmedSearch = searchTerm.trim();
+  const canAddCustom = Boolean(trimmedSearch) &&
+    !options.some(o => o.toLowerCase() === trimmedSearch.toLowerCase()) &&
+    !selected.some(s => s.toLowerCase() === trimmedSearch.toLowerCase());
+
+  const addCustomOption = () => {
+    if (!canAddCustom) return;
+    onChange([...selected, toTitleCase(trimmedSearch)]);
+    setSearchTerm("");
+  };
+
   return (
     <div ref={dropdownRef} className={`relative ${className}`}>
       <div 
@@ -292,23 +329,30 @@ const SearchableMultiSelectDt = ({
             </div>
           </div>
           <div className="overflow-y-auto flex-1 p-1.5">
-            {filteredOptions.length === 0 ? (
+            {filteredOptions.map((option) => (
+              <label
+                key={option}
+                className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-teal-50 rounded-md cursor-pointer text-[13px]"
+              >
+                <input
+                  type="checkbox"
+                  className="accent-[#00695C] w-4 h-4 cursor-pointer"
+                  checked={selected.includes(option)}
+                  onChange={() => toggleOption(option)}
+                />
+                {option}
+              </label>
+            ))}
+            {canAddCustom && (
+              <div
+                className="px-3 py-1.5 text-[13px] cursor-pointer hover:bg-teal-50 rounded-md text-[#00695C] font-semibold border-t border-gray-100 mt-1"
+                onClick={addCustomOption}
+              >
+                + Add "{toTitleCase(trimmedSearch)}"
+              </div>
+            )}
+            {filteredOptions.length === 0 && !canAddCustom && (
               <div className="text-center text-gray-400 text-[12px] py-3">No options found</div>
-            ) : (
-              filteredOptions.map((option) => (
-                <label
-                  key={option}
-                  className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-teal-50 rounded-md cursor-pointer text-[13px]"
-                >
-                  <input
-                    type="checkbox"
-                    className="accent-[#00695C] w-4 h-4 cursor-pointer"
-                    checked={selected.includes(option)}
-                    onChange={() => toggleOption(option)}
-                  />
-                  {option}
-                </label>
-              ))
             )}
           </div>
         </div>
@@ -328,6 +372,18 @@ const isValidMobile = (value) => /^\d{10}$/.test(value);
 
 export default function LeaseAgentComForm({ isOpen, onClose }) {
   const [step, setStep] = useState(0);
+
+  // "Is this listing for yourself, or for someone else?" - asked once, instead
+  // of a per-field "use existing?" toggle. null = not asked/answered yet.
+  const [reuseChoice, setReuseChoice] = useState(null);
+  const { isDocumentVerified, isMediaVerified, profile, hasUsableProfile } = useReusableResources("agent");
+  const hasVerifiedReusables = isMediaVerified("profile_photo") || isMediaVerified("agency_logo")
+    || isDocumentVerified("aadhaar_card") || isDocumentVerified("pan_card");
+  const reusingProfilePhoto = reuseChoice === "self" && isMediaVerified("profile_photo");
+  const reusingAgencyLogo = reuseChoice === "self" && isMediaVerified("agency_logo");
+  const reusingAadhaar = reuseChoice === "self" && isDocumentVerified("aadhaar_card");
+  const reusingPan = reuseChoice === "self" && isDocumentVerified("pan_card");
+  const prefillAppliedRef = useRef(false);
   const [errors, setErrors] = useState({});
 
   const [formData, setFormData] = useState({
@@ -386,6 +442,21 @@ export default function LeaseAgentComForm({ isOpen, onClose }) {
   const [signaturePoints, setSignaturePoints] = useState([]);
   const [allSignaturePoints, setAllSignaturePoints] = useState([]);
   const [activeCanvas, setActiveCanvas] = useState(null);
+  // "It's me" prefill - see SellAgentComForm.jsx's identical effect for the
+  // full rationale (fills only still-blank mapped fields, once per "self"
+  // episode, safe against the profile/choice race).
+  useEffect(() => {
+    if (reuseChoice !== "self") {
+      prefillAppliedRef.current = false;
+      return;
+    }
+    if (!profile || prefillAppliedRef.current) return;
+    const prefill = buildPrefillValues(profile, "agent", formData);
+    if (Object.keys(prefill).length > 0) {
+      setFormData(prev => ({ ...prev, ...prefill }));
+    }
+    prefillAppliedRef.current = true;
+  }, [reuseChoice, profile]);
 
   const updateForm = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -676,8 +747,8 @@ export default function LeaseAgentComForm({ isOpen, onClose }) {
       if (formData.propertyImages.length === 0) e.propertyImages = "At least one property photo is required";
     }
     if (s === 5) {
-      if (!formData.aadhaarCardDoc) e.aadhaarCardDoc = "Aadhaar card is required";
-      if (!formData.panCardDoc) e.panCardDoc = "PAN card is required";
+      if (!formData.aadhaarCardDoc && !reusingAadhaar) e.aadhaarCardDoc = "Aadhaar card is required";
+      if (!formData.panCardDoc && !reusingPan) e.panCardDoc = "PAN card is required";
       if (!formData.floorPlan) e.floorPlan = "Floor plan is required";
       if (!formData.leaseAgreement) e.leaseAgreement = "Lease agreement is required";
       if (!formData.tradeLicense) e.tradeLicense = "Trade license is required";
@@ -725,6 +796,17 @@ export default function LeaseAgentComForm({ isOpen, onClose }) {
     }
     try{
       const response = await createProperty(formData);
+      if (reuseChoice === "self" && response?.id) {
+        try {
+          const reuseResult = await reuseVerifiedResources(response.id);
+          const skipped = [...(reuseResult?.data?.skippedDocuments || []), ...(reuseResult?.data?.skippedMedia || [])];
+          if (skipped.length) {
+            console.warn("Listing created, but some verified items could not be attached:", skipped);
+          }
+        } catch (reuseError) {
+          console.error("Listing created, but reusing verified details failed: ", reuseError);
+        }
+      }
       onClose();
     }
     catch(error){
@@ -776,6 +858,13 @@ export default function LeaseAgentComForm({ isOpen, onClose }) {
               inp={inMob}
               formData={formData}
               updateForm={updateForm}
+              reuseChoice={reuseChoice}
+              setReuseChoice={setReuseChoice}
+              hasVerifiedReusables={hasVerifiedReusables}
+              reusingProfilePhoto={reusingProfilePhoto}
+              reusingAgencyLogo={reusingAgencyLogo}
+              reusingAadhaar={reusingAadhaar}
+              reusingPan={reusingPan}
               handleAlphaFieldChange={handleAlphaFieldChange}
               handleNumericFieldChange={handleNumericFieldChange}
               handleAlphaNumericFieldChange={handleAlphaNumericFieldChange}
@@ -900,6 +989,13 @@ export default function LeaseAgentComForm({ isOpen, onClose }) {
               inp={inDt}
               formData={formData}
               updateForm={updateForm}
+              reuseChoice={reuseChoice}
+              setReuseChoice={setReuseChoice}
+              hasVerifiedReusables={hasVerifiedReusables}
+              reusingProfilePhoto={reusingProfilePhoto}
+              reusingAgencyLogo={reusingAgencyLogo}
+              reusingAadhaar={reusingAadhaar}
+              reusingPan={reusingPan}
               handleAlphaFieldChange={handleAlphaFieldChange}
               handleNumericFieldChange={handleNumericFieldChange}
               handleAlphaNumericFieldChange={handleAlphaNumericFieldChange}
@@ -990,8 +1086,10 @@ export default function LeaseAgentComForm({ isOpen, onClose }) {
 }
 
 // MOBILE CONTENT - Lease Agent Commercial
-function MobContentLeaseAgentCom({ 
-  step, inp, formData, updateForm, 
+function MobContentLeaseAgentCom({
+  step, inp, formData, updateForm,
+  reuseChoice, setReuseChoice, hasVerifiedReusables,
+  reusingProfilePhoto, reusingAgencyLogo, reusingAadhaar, reusingPan,
   handleAlphaFieldChange, handleNumericFieldChange, handleAlphaNumericFieldChange, handlePinCodeChange, handleMobileChange, handleAadhaarChange,
   errors,
   imagePreviews, handleImageUpload, removeImage,
@@ -1059,6 +1157,9 @@ function MobContentLeaseAgentCom({
   // STEP 0: Personal Details
   if (step === 0) return (
     <>
+      {hasVerifiedReusables && reuseChoice === null && (
+        <ReuseOrUploadPrompt onChoice={setReuseChoice} />
+      )}
       <Field label="Full Name" required error={errors.fullName}>
         <input className={inp} placeholder="Enter your full name" value={formData.fullName} onChange={(e) => handleAlphaFieldChange("fullName", e.target.value)} />
       </Field>
@@ -1441,29 +1542,41 @@ function MobContentLeaseAgentCom({
       </div>
       <p className="text-[9px] text-gray-400 mb-2">All documents must be in PDF format</p>
 
-      <Field label="Aadhaar Card" required error={errors.aadhaarCardDoc}>
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="m-aadhaar-lease-com" onChange={(e) => handleDocumentUpload("aadhaarCardDoc", e)} />
-          <label htmlFor="m-aadhaar-lease-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Aadhaar</span>
-            <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.aadhaarCardDoc && <p className="text-[10px] text-green-600 mt-1">✓ {formData.aadhaarCardDoc.name}</p>}
-      </Field>
+      {reusingAadhaar ? (
+        <Field label="Aadhaar Card">
+          <p className="text-[10px] text-green-600">✓ Using your verified Aadhaar on file</p>
+        </Field>
+      ) : (
+        <Field label="Aadhaar Card" required error={errors.aadhaarCardDoc}>
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="m-aadhaar-lease-com" onChange={(e) => handleDocumentUpload("aadhaarCardDoc", e)} />
+            <label htmlFor="m-aadhaar-lease-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Aadhaar</span>
+              <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.aadhaarCardDoc && <p className="text-[10px] text-green-600 mt-1">✓ {formData.aadhaarCardDoc.name}</p>}
+        </Field>
+      )}
 
-      <Field label="PAN Card" required error={errors.panCardDoc}>
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="m-pan-lease-com" onChange={(e) => handleDocumentUpload("panCardDoc", e)} />
-          <label htmlFor="m-pan-lease-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload PAN</span>
-            <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.panCardDoc && <p className="text-[10px] text-green-600 mt-1">✓ {formData.panCardDoc.name}</p>}
-      </Field>
+      {reusingPan ? (
+        <Field label="PAN Card">
+          <p className="text-[10px] text-green-600">✓ Using your verified PAN on file</p>
+        </Field>
+      ) : (
+        <Field label="PAN Card" required error={errors.panCardDoc}>
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="m-pan-lease-com" onChange={(e) => handleDocumentUpload("panCardDoc", e)} />
+            <label htmlFor="m-pan-lease-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload PAN</span>
+              <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.panCardDoc && <p className="text-[10px] text-green-600 mt-1">✓ {formData.panCardDoc.name}</p>}
+        </Field>
+      )}
 
       <Field label="Agency Logo" hint="Optional (JPG, PNG max 2MB)">
         <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
@@ -1756,8 +1869,10 @@ function MobContentLeaseAgentCom({
 }
 
 // DESKTOP CONTENT - Lease Agent Commercial
-function DtContentLeaseAgentCom({ 
-  step, inp, formData, updateForm, 
+function DtContentLeaseAgentCom({
+  step, inp, formData, updateForm,
+  reuseChoice, setReuseChoice, hasVerifiedReusables,
+  reusingProfilePhoto, reusingAgencyLogo, reusingAadhaar, reusingPan,
   handleAlphaFieldChange, handleNumericFieldChange, handleAlphaNumericFieldChange, handlePinCodeChange, handleMobileChange, handleAadhaarChange,
   errors,
   imagePreviews, handleImageUpload, removeImage,
@@ -1829,6 +1944,9 @@ function DtContentLeaseAgentCom({
         <div className="w-1 h-4 bg-[#00695C] rounded" />
         <h3 className="text-[14px] font-bold text-[#00695C]">Personal Information</h3>
       </div>
+      {hasVerifiedReusables && reuseChoice === null && (
+        <ReuseOrUploadPrompt onChoice={setReuseChoice} />
+      )}
       <FieldDt label="Full Name" required error={errors.fullName}>
         <input className={inp} placeholder="Enter your full name" value={formData.fullName} onChange={(e) => handleAlphaFieldChange("fullName", e.target.value)} />
       </FieldDt>
@@ -2210,29 +2328,41 @@ function DtContentLeaseAgentCom({
       </div>
       <p className="text-[11px] text-gray-400 mb-3">All documents must be in PDF format</p>
 
-      <FieldDt label="Aadhaar Card" required error={errors.aadhaarCardDoc}>
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="dt-aadhaar-lease-com" onChange={(e) => handleDocumentUpload("aadhaarCardDoc", e)} />
-          <label htmlFor="dt-aadhaar-lease-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Aadhaar</span>
-            <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.aadhaarCardDoc && <p className="text-[13px] text-green-600 mt-2">✓ {formData.aadhaarCardDoc.name}</p>}
-      </FieldDt>
+      {reusingAadhaar ? (
+        <FieldDt label="Aadhaar Card">
+          <p className="text-[13px] text-green-600">✓ Using your verified Aadhaar on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Aadhaar Card" required error={errors.aadhaarCardDoc}>
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="dt-aadhaar-lease-com" onChange={(e) => handleDocumentUpload("aadhaarCardDoc", e)} />
+            <label htmlFor="dt-aadhaar-lease-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Aadhaar</span>
+              <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.aadhaarCardDoc && <p className="text-[13px] text-green-600 mt-2">✓ {formData.aadhaarCardDoc.name}</p>}
+        </FieldDt>
+      )}
 
-      <FieldDt label="PAN Card" required error={errors.panCardDoc}>
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="dt-pan-lease-com" onChange={(e) => handleDocumentUpload("panCardDoc", e)} />
-          <label htmlFor="dt-pan-lease-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload PAN</span>
-            <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.panCardDoc && <p className="text-[13px] text-green-600 mt-2">✓ {formData.panCardDoc.name}</p>}
-      </FieldDt>
+      {reusingPan ? (
+        <FieldDt label="PAN Card">
+          <p className="text-[13px] text-green-600">✓ Using your verified PAN on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="PAN Card" required error={errors.panCardDoc}>
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="dt-pan-lease-com" onChange={(e) => handleDocumentUpload("panCardDoc", e)} />
+            <label htmlFor="dt-pan-lease-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload PAN</span>
+              <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.panCardDoc && <p className="text-[13px] text-green-600 mt-2">✓ {formData.panCardDoc.name}</p>}
+        </FieldDt>
+      )}
 
       <FieldDt label="Agency Logo" hint="Optional (JPG, PNG max 2MB)">
         <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">

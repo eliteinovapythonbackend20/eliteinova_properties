@@ -39,20 +39,12 @@ class AdminDashboardService:
         Owner/Agent but a company name for Builder/Property Management -
         matching how each role actually presents itself (an owner has no
         company; a builder's/PM's own name is secondary to their company)."""
-        posted_by = prop.posted_by
-        if posted_by == "OWNER":
-            detail = getattr(prop, "owner_details", None)
-            return detail.owner_name if detail else None
-        if posted_by == "AGENT":
-            detail = getattr(prop, "agent_details", None)
-            return detail.agent_name if detail else None
-        if posted_by == "BUILDER":
-            detail = getattr(prop, "builder_details", None)
-            return detail.company_name if detail else None
-        if posted_by == "PROPERTY_MANAGEMENT":
-            detail = getattr(prop, "property_management_details", None)
-            return detail.company_name if detail else None
-        return None
+        cp = getattr(prop, "contact_person", None)
+        if not cp:
+            return None
+        if cp.vendor_type in ("BUILDER", "PROPERTY_MANAGEMENT"):
+            return (cp.role_details or {}).get("companyName")
+        return cp.name
 
     def _to_card(self, prop) -> Dict[str, Any]:
         """Moderation-list card - just enough to identify, locate, and act on

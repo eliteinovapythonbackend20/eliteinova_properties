@@ -223,98 +223,11 @@ def test_update_vendor_detail_accepts_property_id():
     assert "property_id" in sig.parameters
 
 
-class FakeVendorProfileImageRepository:
-    db = None
-
-    def __init__(self, property_obj):
-        self._property = property_obj
-        self.calls = []
-
-    async def get_property_by_id(self, property_id):
-        return self._property if property_id == self._property.id else None
-
-    async def update_vendor_profile_image(self, user_id, db_column, image_url, property_id):
-        self.calls.append(("update_vendor_profile_image", user_id, db_column, image_url, property_id))
-
-    async def update_vendor_detail(self, user_id, posted_by, update_data, property_id=None):
-        self.calls.append(("update_vendor_detail", user_id, posted_by, update_data, property_id))
-
-    async def get_vendor_detail_for_property(self, property_id, posted_by, user_id):
-        self.calls.append(("get_vendor_detail_for_property", property_id, posted_by, user_id))
-
-        class DetailStub:
-            profile_photo_url = "http://example.com/old.jpg"
-
-        return DetailStub()
-
-    async def commit(self):
-        return None
-
-    async def rollback(self):
-        return None
-
-
-class FakeVendorImageFileService:
-    def __init__(self):
-        self.deleted_urls = []
-
-    async def upload_vendor_profile_image(self, file, user_id, field_name):
-        return {"file_url": "http://example.com/new.jpg"}
-
-    async def delete_files(self, urls):
-        self.deleted_urls.extend(urls)
-
-
-class PropertyStub:
-    def __init__(self, id, user_id, posted_by):
-        self.id = id
-        self.user_id = user_id
-        self.posted_by = posted_by
-
-
-@pytest.mark.asyncio
-async def test_update_vendor_profile_image_is_scoped_to_one_property():
-    prop = PropertyStub(id="PROP-1", user_id="EP1", posted_by="OWNER")
-    repo = FakeVendorProfileImageRepository(prop)
-    service = PropertyService(repo, file_service=FakeVendorImageFileService())
-
-    await service.update_vendor_profile_image(
-        user_id="EP1", property_id="PROP-1", image=object(), field_name="profilePhoto"
-    )
-
-    image_call = next(c for c in repo.calls if c[0] == "update_vendor_profile_image")
-    assert image_call[1:] == ("EP1", "profile_photo_url", "http://example.com/new.jpg", "PROP-1")
-
-    detail_call = next(c for c in repo.calls if c[0] == "update_vendor_detail")
-    assert detail_call[1:] == ("EP1", "OWNER", {"profile_photo_url": "http://example.com/new.jpg"}, "PROP-1")
-
-
-@pytest.mark.asyncio
-async def test_update_vendor_profile_image_rejects_someone_elses_property():
-    from app.schemas.property_error import PropertyPermissionError
-
-    prop = PropertyStub(id="PROP-1", user_id="OTHER_USER", posted_by="OWNER")
-    repo = FakeVendorProfileImageRepository(prop)
-    service = PropertyService(repo, file_service=FakeVendorImageFileService())
-
-    with pytest.raises(PropertyPermissionError):
-        await service.update_vendor_profile_image(
-            user_id="EP1", property_id="PROP-1", image=object(), field_name="profilePhoto"
-        )
-
-
-@pytest.mark.asyncio
-async def test_delete_vendor_profile_image_deletes_storage_and_clears_this_property_only():
-    prop = PropertyStub(id="PROP-1", user_id="EP1", posted_by="OWNER")
-    repo = FakeVendorProfileImageRepository(prop)
-    file_service = FakeVendorImageFileService()
-    service = PropertyService(repo, file_service=file_service)
-
-    await service.delete_vendor_profile_image(user_id="EP1", property_id="PROP-1", field_name="profilePhoto")
-
-    assert file_service.deleted_urls == ["http://example.com/old.jpg"]
-    image_call = next(c for c in repo.calls if c[0] == "update_vendor_profile_image")
-    assert image_call[1:] == ("EP1", "profile_photo_url", None, "PROP-1")
+# update_vendor_profile_image/delete_vendor_profile_image (and the raw
+# profile_photo_url/agency_logo_url/company_logo_url columns they wrote to)
+# are gone - the contact person's photo/logo is now contact_person_media,
+# created only through the property-posting form, with no standalone edit
+# endpoint. See tests/test_document_phase2.py's contact-person-media tests.
 
 
 class _FakeDocument:
@@ -348,40 +261,6 @@ class _FakeFileServiceForViewUrl:
 
 
 @pytest.mark.asyncio
-async def test_get_document_view_url_allows_owner():
-    doc = _FakeDocument(user_id="EP1")
-    service = PropertyService(_FakeDocumentRepository(doc), file_service=_FakeFileServiceForViewUrl())
-
-    url = await service.get_document_view_url(doc.id, {"user_id": "EP1", "role": "vendor"})
-
-    assert url.startswith("https://signed.example.com/")
-    assert service.file_service.private_storage.calls == [(doc.file_url, 600)]
-
-
-@pytest.mark.asyncio
-async def test_get_document_view_url_allows_admin_for_someone_elses_document():
-    doc = _FakeDocument(user_id="EP1")
-    service = PropertyService(_FakeDocumentRepository(doc), file_service=_FakeFileServiceForViewUrl())
-
-    url = await service.get_document_view_url(doc.id, {"user_id": "ADMIN1", "role": "admin"})
-
-    assert url.startswith("https://signed.example.com/")
-
-
-@pytest.mark.asyncio
-async def test_get_document_view_url_rejects_non_owner_non_admin():
-    from app.schemas.property_error import PropertyError
-
-    doc = _FakeDocument(user_id="EP1")
-    service = PropertyService(_FakeDocumentRepository(doc), file_service=_FakeFileServiceForViewUrl())
-
-    with pytest.raises(PropertyError) as exc_info:
-        await service.get_document_view_url(doc.id, {"user_id": "EP2", "role": "vendor"})
-    assert exc_info.value.status_code == 403
-    assert service.file_service.private_storage.calls == []
-
-
-@pytest.mark.asyncio
 async def test_get_document_view_url_404_for_missing_document():
     from app.schemas.property_error import PropertyError
 
@@ -390,6 +269,10 @@ async def test_get_document_view_url_404_for_missing_document():
     with pytest.raises(PropertyError) as exc_info:
         await service.get_document_view_url(999, {"user_id": "EP1", "role": "vendor"})
     assert exc_info.value.status_code == 404
+
+
+# The owner/admin/non-owner/is_public rules for property documents are covered
+# against a real database in tests/test_document_phase2.py (test_property_document_access_rules).
 
 
 def test_file_service_splits_public_and_private_storage_instances():

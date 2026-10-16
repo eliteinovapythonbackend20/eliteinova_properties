@@ -1,0 +1,16 @@
+<html>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
+        <h2 style="color: #00695C;">{{ heading }}</h2>
+        <p>Hello {{ user_name }},</p>
+        <p>{{ intro_text }}</p>
+        <p>
+            <a href="{{ action_url }}" style="display: inline-block; padding: 10px 20px; background-color: #00695C; color: white; text-decoration: none; border-radius: 5px;">
+                {{ button_text }}
+            </a>
+        </p>
+        <p>This link will expire in {{ expire_hours }} hours.</p>
+        <p>{{ footer_text }}</p>
+        <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 24px 0;">
+        <p style="color: #666; font-size: 12px;">This is an automated message, please do not reply.</p>
+    </body>
+</html>

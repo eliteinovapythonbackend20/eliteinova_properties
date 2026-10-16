@@ -90,7 +90,8 @@ const DuplexResidentialFilter = ({ activeTab = "Buy", onFilterChange, onClose })
 
   const handleApplyFilters = () => {
     const filters = {
-      propertyType: activePropertyType,
+      propertyType: "Duplex Residential Unit",
+      listingPurpose: activePropertyType === "Buy" ? "SELL" : activePropertyType.toUpperCase(),
       bedrooms,
       bathrooms,
       furnishingType,

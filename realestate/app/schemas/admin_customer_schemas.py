@@ -174,11 +174,6 @@ class AdminCustomerUpdate(BaseModel):
     kycAadhaarVerified: Optional[bool] = None
     kycPanVerified: Optional[bool] = None
     kycGstVerified: Optional[bool] = None
-    kycReraVerified: Optional[bool] = None
-    aadhaarDocUrl: Optional[str] = None
-    panDocUrl: Optional[str] = None
-    gstDocUrl: Optional[str] = None
-    reraDocUrl: Optional[str] = None
 
     @field_validator("customerType")
     @classmethod
@@ -215,7 +210,6 @@ class AdminCustomerKycUpdate(BaseModel):
     aadhaarVerified: Optional[bool] = None
     panVerified: Optional[bool] = None
     gstVerified: Optional[bool] = None
-    reraVerified: Optional[bool] = None
 
     @field_validator("kycStatus")
     @classmethod

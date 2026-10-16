@@ -41,11 +41,12 @@ const LuxuryApartmentPage = () => {
   } = useNavigation();
   
   // ✅ USE CENTRALIZED FILTER HOOK
-  const { 
-    filteredData, 
-    filterLoading, 
-    appliedFilters, 
-    handleFilterChange 
+  const {
+    filteredData,
+    filterLoading,
+    appliedFilters,
+    handleFilterChange,
+    resetFilters
   } = usePropertyFilter('apartment');
 
   // ─── Listing-purpose filter (Buy/Rent/Lease pill, combined with this
@@ -83,6 +84,12 @@ const LuxuryApartmentPage = () => {
   }, [listingPurpose, activeApartmentType]);
 
   // ─── Combine Data from All Sources ────────────────────────────────────
+  // A filter search that matched nothing still falls through to the normal
+  // browse list below (rather than showing a dead end) - `filterReturnedEmpty`
+  // is what drives the separate "nothing matched your filter" notice above it,
+  // so the user isn't left guessing why the list changed to something they
+  // didn't filter for.
+  const filterReturnedEmpty = Boolean(appliedFilters) && filteredData.length === 0;
   const properties = useMemo(() => {
     if (appliedFilters && filteredData.length > 0) {
       return filteredData;
@@ -899,6 +906,20 @@ const LuxuryApartmentPage = () => {
                   </div>
                 ) : (
                   <>
+                    {filterReturnedEmpty && paginatedProperties.length > 0 && (
+                      <div className="w-full bg-white rounded-2xl shadow-2xl border border-teal-100 p-6 text-center mb-5">
+                        <div className="text-5xl mb-3">💎</div>
+                        <h3 className="text-lg font-bold text-slate-800 mb-1">No Luxury Apartments Found From Your Filter</h3>
+                        <p className="text-xs text-slate-500 mb-3">No listings matched what you filtered for. You can view or look at the properties below instead.</p>
+                        <button
+                          type="button"
+                          onClick={resetFilters}
+                          className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-xs font-semibold hover:shadow-lg transition-all"
+                        >
+                          Browse All Luxury Apartments
+                        </button>
+                      </div>
+                    )}
                     <PropertyList
                       properties={paginatedProperties}
                       emptyMessage="No luxury apartments available at the moment."

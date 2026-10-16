@@ -87,6 +87,8 @@ class PropertyFilter(BaseModel):
     city: Optional[str] = None
     state: Optional[str] = None
     pincode: Optional[str] = None
+    landmark: Optional[str] = None
+    nearby_connectivity: Optional[str] = Field(None, alias="nearbyConnectivity")
 
     # ---- rooms ----
     bedrooms: Optional[List[str]] = None
@@ -94,11 +96,16 @@ class PropertyFilter(BaseModel):
     furnishing_status: Optional[str] = Field(None, alias="furnishingStatus")
     facing_direction: Optional[str] = Field(None, alias="facingDirection")
     parking: Optional[str] = None
+    floor_number: Optional[int] = Field(None, alias="floorNumber")
+    total_floors: Optional[int] = Field(None, alias="totalFloors")
 
     # ---- money (ranges) ----
     price: Optional[RangeFilter] = None                       # -> expected_price
     security_deposit: Optional[RangeFilter] = Field(None, alias="securityDeposit")
     maintenance: Optional[RangeFilter] = None                 # -> maintenance_amount
+    maintenance_included: Optional[str] = Field(None, alias="maintenanceIncluded")
+    price_negotiable: Optional[str] = Field(None, alias="priceNegotiable")
+    property_tax: Optional[str] = Field(None, alias="propertyTax")
 
     # ---- area (ranges) ----
     built_up_area: Optional[RangeFilter] = Field(None, alias="builtUpArea")
@@ -114,6 +121,7 @@ class PropertyFilter(BaseModel):
     room_type: Optional[List[str]] = Field(None, alias="roomType")
     sharing_type: Optional[List[str]] = Field(None, alias="sharingType")
     tenant_type: Optional[List[str]] = Field(None, alias="tenantType")
+    nearby_places: Optional[List[str]] = Field(None, alias="nearbyPlaces")
 
     # ---- yes / no flags ----
     pet_friendly: Optional[str] = Field(None, alias="petFriendly")
@@ -125,12 +133,21 @@ class PropertyFilter(BaseModel):
     kitchen_access: Optional[str] = Field(None, alias="kitchenAccess")
     utilities_included: Optional[str] = Field(None, alias="utilitiesIncluded")
     electricity_available: Optional[str] = Field(None, alias="electricityAvailable")
+    immediate_move_in: Optional[str] = Field(None, alias="immediateMoveIn")
+    dietary_preference: Optional[str] = Field(None, alias="dietaryPreference")
 
     # ---- sell / lease ----
     ownership_type: Optional[str] = Field(None, alias="ownershipType")
     property_age: Optional[int] = Field(None, alias="propertyAge")
     property_condition: Optional[str] = Field(None, alias="propertyCondition")
     loan_outstanding: Optional[str] = Field(None, alias="loanOutstanding")
+    ready_to_buy: Optional[str] = Field(None, alias="readyToMove")
+    under_construction: Optional[str] = Field(None, alias="underConstruction")
+    immediate_possession: Optional[str] = Field(None, alias="immediatePossession")
+    title_deed_verify: Optional[str] = Field(None, alias="titleDeedVerified")
+    loan_eligible: Optional[str] = Field(None, alias="loanEligible")
+    rera_approved: Optional[str] = Field(None, alias="reraApproved")
+    renewable_option: Optional[str] = Field(None, alias="leaseRenewalOption")
     available_from: Optional[str] = Field(None, alias="availableFrom")
     minimum_duration: Optional[str] = Field(None, alias="minimumDuration")
 
@@ -151,6 +168,7 @@ class PropertyFilter(BaseModel):
     land_shape: Optional[str] = Field(None, alias="landShape")
     soil_type: Optional[str] = Field(None, alias="soilType")
     water_source: Optional[str] = Field(None, alias="waterSource")
+    road_width: Optional[int] = Field(None, alias="roadWidth")
 
     # ---- pagination / sort ----
     page: int = 1
@@ -233,7 +251,7 @@ class PropertyFilter(BaseModel):
         # list-ish
         for key in ("bedrooms", "bathrooms", "postedBy", "amenities", "interiorFeatures",
                     "applianceIncluded", "selectedFeature", "roomType", "sharingType",
-                    "tenantType", "occupancyType", "occupancyDetails"):
+                    "tenantType", "occupancyType", "occupancyDetails", "nearbyPlaces"):
             if key in d:
                 d[key] = _as_list(d[key])
         if d.get("occupancyType") and not d.get("tenantType"):

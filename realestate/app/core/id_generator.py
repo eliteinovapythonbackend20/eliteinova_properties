@@ -14,6 +14,8 @@ class IDGenerator:
             UserRole.USER: "C",      # Customer
             UserRole.VENDOR: "V",    # Vendor
             UserRole.ADMIN: "A",     # Admin
+            UserRole.OFFICE: "O",    # Office
+            UserRole.SERVICE_VENDOR: "S"  # Service Vendor
         }
         return prefix_map.get(role, "C")
     

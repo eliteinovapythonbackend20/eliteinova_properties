@@ -51,11 +51,11 @@ def _canonicalize(v: Optional[str], allowed: set, field_name: str) -> Optional[s
 class CustomerProfileUpdate(BaseModel):
     """PATCH /customer/profile body - a strict subset of AdminCustomerUpdate.
     Deliberately excludes: status, kycStatus, kycAadhaarVerified/
-    panVerified/gstVerified/reraVerified, emailVerified, phoneVerified,
-    aadhaarDocUrl/panDocUrl/gstDocUrl/reraDocUrl - all of those are
-    admin/verification-controlled and never customer-writable directly
-    (doc URLs are set via the dedicated upload route, which does not flip
-    the verified flag itself)."""
+    kycPanVerified/kycGstVerified, emailVerified, phoneVerified - all of
+    those are admin/verification-controlled and never customer-writable
+    directly. The KYC documents themselves (aadhaar/pan/gst) are uploaded via
+    the dedicated POST /customer/profile/documents/{doc_type} route, not this
+    one - see CustomerService.upload_kyc_document."""
 
     fullName: Optional[str] = None
     phoneNumber: Optional[str] = None

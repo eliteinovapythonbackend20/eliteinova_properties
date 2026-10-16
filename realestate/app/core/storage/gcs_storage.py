@@ -159,7 +159,8 @@ class GCSStorage(StorageProvider):
         blob = self.bucket.blob(object_path)
         blob.delete()
 
-    async def generate_signed_url(self, file_path: str, expiration: int = 3600) -> str:
+    async def generate_signed_url(self, file_path: str, expiration: int = 3600, **claims) -> str:
+        # `claims` exist for the local provider's stream tokens; GCS signs the object URL itself.
         """
         Generate a v4 signed URL.
 

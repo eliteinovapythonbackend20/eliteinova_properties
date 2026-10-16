@@ -51,15 +51,19 @@ function clearSessionAndRedirect() {
   delete axiosInstance.defaults.headers.common.Authorization;
   window.dispatchEvent(new CustomEvent(AUTH_EVENTS.LOGGED_OUT));
 
-  // Avoid redirect loops if we're already on the login page
-  if (window.location.pathname !== '/login') {
-    window.location.href = '/login';
+  // There's no standalone customer/vendor login page to bounce to - those are
+  // modals opened from the header. Admin has its own page, so send an expired
+  // admin session back there; everyone else goes home, where they can reopen
+  // the login popup.
+  const target = window.location.pathname.startsWith('/admin') ? '/admin/login' : '/';
+  if (window.location.pathname !== target) {
+    window.location.href = target;
   }
 }
 
 // Endpoints where a 401 means "bad credentials", not "expired token" —
 // these should NEVER trigger a refresh attempt.
-const CREDENTIAL_ENDPOINTS = ['/auth/login', '/auth/register', '/auth/oauth'];
+const CREDENTIAL_ENDPOINTS = ['/auth/login', '/auth/register'];
 const REFRESH_ENDPOINT = '/auth/refresh';
 
 const isCredentialEndpoint = (url = '') =>

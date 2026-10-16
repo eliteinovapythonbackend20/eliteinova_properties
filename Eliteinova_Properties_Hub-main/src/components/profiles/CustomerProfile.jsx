@@ -30,7 +30,7 @@
 //    whatever requests exist once that button is wired up.
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   User, Mail, Phone, MapPin, Edit2, Save, X, Camera, Sparkles,
   ArrowLeft, CheckCircle, Calendar, Shield, LogOut, Heart, Bookmark,
@@ -41,6 +41,7 @@ import {
 import { useAuth } from '../../context/authContext';
 import { useToast } from '../../hooks/useToast';
 import Toast from '../common/Toast';
+import OtpCodeInput from '../common/OtpCodeInput';
 import * as authService from '../../services/authService';
 import customerService from '../../services/customerService';
 import PropertyCard from '../propertycard/propertyCard';
@@ -140,13 +141,19 @@ const PropertyCollection = ({ properties, onRemove, removeLabel, emptyIcon, empt
 
 const CustomerProfile = () => {
   const navigate = useNavigate();
-  const { user, token, isLoading, isAuthenticated, updateUser, logout, userRoleDisplay } = useAuth();
+  const { user, token, isLoading, isAuthenticated, updateUser, refreshUser, logout, userRoleDisplay } = useAuth();
   const { toast, showToast, hideToast } = useToast();
 
   const showSuccessToast = (message) => showToast(message, 'success');
   const showErrorToast = (message) => showToast(message, 'error');
 
   const [activeSection, setActiveSection] = useState('personal');
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const requestedSection = searchParams.get('section');
+    if (requestedSection) setActiveSection(requestedSection);
+  }, [searchParams]);
 
   // ---- Edit profile modal (wired to the real /user/profile endpoint) ----
   const [showEditModal, setShowEditModal] = useState(false);
@@ -300,6 +307,104 @@ const CustomerProfile = () => {
     navigate('/');
   };
 
+  // ---- Two-factor (TOTP): the toggle only mirrors the backend's totpEnabled ----
+  const twoFactorEnabled = Boolean(user?.totpEnabled);
+  const [twoFactorModal, setTwoFactorModal] = useState(null); // 'setup' | 'disable' | null
+  const [twoFactorSetup, setTwoFactorSetup] = useState(null); // { qr_code, secret }
+  const [twoFactorRecoveryCodes, setTwoFactorRecoveryCodes] = useState(null);
+  const [twoFactorDigits, setTwoFactorDigits] = useState(() => Array(6).fill(''));
+  const [twoFactorRecoveryMode, setTwoFactorRecoveryMode] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [twoFactorPassword, setTwoFactorPassword] = useState('');
+  const [isTwoFactorBusy, setIsTwoFactorBusy] = useState(false);
+
+  const twoFactorErrorMessage = (err, fallback) => (typeof err?.detail === 'string' ? err.detail : fallback);
+
+  const resetTwoFactorInputs = () => {
+    setTwoFactorDigits(Array(6).fill(''));
+    setTwoFactorRecoveryMode(false);
+    setTwoFactorCode('');
+  };
+
+  const closeTwoFactorModal = () => {
+    setTwoFactorModal(null);
+    setTwoFactorSetup(null);
+    setTwoFactorRecoveryCodes(null);
+    setTwoFactorPassword('');
+    resetTwoFactorInputs();
+  };
+
+  const handleTwoFactorToggle = async () => {
+    if (isTwoFactorBusy) return;
+    if (twoFactorEnabled) {
+      resetTwoFactorInputs();
+      setTwoFactorPassword('');
+      setTwoFactorModal('disable');
+      return;
+    }
+    setIsTwoFactorBusy(true);
+    try {
+      const data = await authService.twoFactorSetup(token);
+      setTwoFactorSetup(data);
+      resetTwoFactorInputs();
+      setTwoFactorModal('setup');
+    } catch (err) {
+      showErrorToast(twoFactorErrorMessage(err, 'Could not start two-factor setup'));
+    } finally {
+      setIsTwoFactorBusy(false);
+    }
+  };
+
+  const submitTwoFactorSetup = async (code) => {
+    if (isTwoFactorBusy) return;
+    if (!/^\d{6}$/.test(code)) {
+      showErrorToast('Enter the 6-digit code from your authenticator app');
+      return;
+    }
+    setIsTwoFactorBusy(true);
+    try {
+      const data = await authService.twoFactorVerifySetup(code, token);
+      setTwoFactorRecoveryCodes(data.recovery_codes || []);
+      setTwoFactorSetup(null);
+      await refreshUser();
+      showSuccessToast('Two-factor authentication enabled');
+    } catch (err) {
+      showErrorToast(twoFactorErrorMessage(err, 'Invalid authentication code'));
+      setTwoFactorDigits(Array(6).fill(''));
+    } finally {
+      setIsTwoFactorBusy(false);
+    }
+  };
+
+  const handleTwoFactorVerifySetup = (e) => {
+    e.preventDefault();
+    submitTwoFactorSetup(twoFactorDigits.join(''));
+  };
+
+  const handleTwoFactorDisable = async (e) => {
+    e.preventDefault();
+    const code = twoFactorRecoveryMode ? twoFactorCode.trim() : twoFactorDigits.join('');
+    if (!twoFactorPassword || !code) {
+      showErrorToast('Enter your password and your authenticator code');
+      return;
+    }
+    if (!twoFactorRecoveryMode && code.length !== 6) {
+      showErrorToast('Enter all 6 digits from your authenticator app');
+      return;
+    }
+    setIsTwoFactorBusy(true);
+    try {
+      await authService.twoFactorDisable({ password: twoFactorPassword, code }, token);
+      await refreshUser();
+      closeTwoFactorModal();
+      showSuccessToast('Two-factor authentication disabled');
+    } catch (err) {
+      showErrorToast(twoFactorErrorMessage(err, 'Could not turn off two-factor authentication'));
+    } finally {
+      setIsTwoFactorBusy(false);
+    }
+  };
+
   const formatDate = (value) => {
     if (!value) return null;
     const d = new Date(value);
@@ -431,6 +536,54 @@ const CustomerProfile = () => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+              <div className="flex items-center gap-3 p-3.5 sm:p-4 bg-white rounded-2xl border border-[#00695C]/10 shadow-sm">
+                <div className="p-2 sm:p-2.5 rounded-xl bg-gradient-to-br from-[#00695C] to-[#26A69A] shadow-lg flex-shrink-0">
+                  <Shield className="w-4 h-4 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs sm:text-sm font-bold text-gray-800">Two-Factor Authentication</p>
+                  <p className="text-[10px] sm:text-xs text-gray-500">
+                    {twoFactorEnabled ? 'ON · Required at sign-in' : 'OFF · Add an authenticator app for extra security'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={twoFactorEnabled}
+                  aria-label="Two-factor authentication"
+                  onClick={handleTwoFactorToggle}
+                  disabled={isTwoFactorBusy}
+                  className="relative flex h-8 w-24 flex-shrink-0 overflow-hidden rounded-full bg-gray-200 text-[11px] font-bold tracking-wide select-none disabled:opacity-60"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-y-0 left-0 w-1/2 rounded-full bg-[#00695C] shadow-md"
+                    style={{
+                      transform: twoFactorEnabled ? 'translateX(0)' : 'translateX(100%)',
+                      transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                    }}
+                  />
+
+                  <span
+                    className={`relative z-10 flex flex-1 items-center justify-center ${
+                      twoFactorEnabled ? 'text-white' : 'text-gray-500'
+                    }`}
+                    style={{ transition: 'color 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                  >
+                    ON
+                  </span>
+
+                  <span
+                    className={`relative z-10 flex flex-1 items-center justify-center ${
+                      twoFactorEnabled ? 'text-gray-500' : 'text-white'
+                    }`}
+                    style={{ transition: 'color 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                  >
+                    OFF
+                  </span>
+                </button>
+              </div>
+
               <button
                 onClick={() => setShowPasswordModal(true)}
                 className="group flex items-center gap-3 p-3.5 sm:p-4 bg-white rounded-2xl border border-[#00695C]/10 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-0.5 text-left"
@@ -592,6 +745,175 @@ const CustomerProfile = () => {
       )}
 
       {/* ============ CHANGE PASSWORD MODAL ============ */}
+      {twoFactorModal === 'setup' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fadeIn w-full p-2 sm:p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[95%] sm:max-w-[90%] md:max-w-md mx-auto overflow-hidden max-h-[85vh] flex flex-col animate-scaleIn">
+            <div className="bg-gradient-to-r from-[#00695C] to-[#26A69A] px-4 sm:px-6 py-3 sm:py-4 md:py-5 flex items-center justify-between flex-shrink-0">
+              <h2 className="text-white text-lg sm:text-xl font-bold flex items-center gap-2 sm:gap-3">
+                <div className="bg-white/20 p-1.5 sm:p-2 rounded-xl">
+                  <Shield className="w-4 h-4 sm:w-5 sm:h-5" />
+                </div>
+                Two-Factor Authentication
+              </h2>
+              <button
+                type="button"
+                onClick={closeTwoFactorModal}
+                className="text-white/80 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110"
+              >
+                <X className="w-5 h-5 sm:w-6 sm:h-6" />
+              </button>
+            </div>
+
+            <div className="px-4 sm:px-6 py-4 sm:py-6 space-y-3 sm:space-y-4 overflow-y-auto flex-1 w-full bg-gray-50">
+              {twoFactorRecoveryCodes ? (
+                <>
+                  <p className="text-xs sm:text-sm text-gray-700">
+                    Two-factor authentication is on. Save these recovery codes somewhere safe. Each one works once if you lose access to your authenticator app. They are shown only now.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {twoFactorRecoveryCodes.map((code) => (
+                      <span key={code} className="font-mono text-xs sm:text-sm text-center bg-white border border-[#00695C]/20 rounded-xl py-2 text-gray-800">
+                        {code}
+                      </span>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeTwoFactorModal}
+                    className="w-full py-2.5 sm:py-3 rounded-2xl text-white text-xs sm:text-sm font-bold bg-gradient-to-r from-[#00695C] to-[#26A69A] shadow-lg"
+                  >
+                    I have saved my recovery codes
+                  </button>
+                </>
+              ) : (
+                <form onSubmit={handleTwoFactorVerifySetup} className="space-y-3 sm:space-y-4">
+                  <p className="text-xs sm:text-sm text-gray-700">
+                    Scan this QR code with Google Authenticator or Microsoft Authenticator, then enter the 6-digit code it shows.
+                  </p>
+                  {twoFactorSetup?.qr_code && (
+                    <img src={twoFactorSetup.qr_code} alt="Two-factor QR code" className="mx-auto w-48 h-48 rounded-xl bg-white p-2 shadow" />
+                  )}
+                  {twoFactorSetup?.secret && (
+                    <p className="text-[10px] sm:text-xs text-gray-600 break-all">
+                      Can't scan? Enter this key manually: <span className="font-mono font-bold text-gray-800">{twoFactorSetup.secret}</span>
+                    </p>
+                  )}
+                  <div className="space-y-1 sm:space-y-1.5 w-full">
+                    <label className="block text-[10px] sm:text-xs font-bold text-gray-700 uppercase tracking-wider">
+                      6-digit code
+                    </label>
+                    <OtpCodeInput
+                      digits={twoFactorDigits}
+                      disabled={isTwoFactorBusy}
+                      onChange={setTwoFactorDigits}
+                      onComplete={submitTwoFactorSetup}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isTwoFactorBusy}
+                    className="w-full py-2.5 sm:py-3 rounded-2xl text-white text-xs sm:text-sm font-bold bg-gradient-to-r from-[#00695C] to-[#26A69A] shadow-lg disabled:opacity-60"
+                  >
+                    {isTwoFactorBusy ? 'Verifying...' : 'Verify and turn on'}
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {twoFactorModal === 'disable' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fadeIn w-full p-2 sm:p-4">
+          <form
+            onSubmit={handleTwoFactorDisable}
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-[95%] sm:max-w-[90%] md:max-w-md mx-auto overflow-hidden max-h-[85vh] flex flex-col animate-scaleIn"
+          >
+            <div className="bg-gradient-to-r from-[#00695C] to-[#26A69A] px-4 sm:px-6 py-3 sm:py-4 md:py-5 flex items-center justify-between flex-shrink-0">
+              <h2 className="text-white text-lg sm:text-xl font-bold flex items-center gap-2 sm:gap-3">
+                <div className="bg-white/20 p-1.5 sm:p-2 rounded-xl">
+                  <Shield className="w-4 h-4 sm:w-5 sm:h-5" />
+                </div>
+                Turn Off Two-Factor
+              </h2>
+              <button
+                type="button"
+                onClick={closeTwoFactorModal}
+                className="text-white/80 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110"
+              >
+                <X className="w-5 h-5 sm:w-6 sm:h-6" />
+              </button>
+            </div>
+
+            <div className="px-4 sm:px-6 py-4 sm:py-6 space-y-3 sm:space-y-4 overflow-y-auto flex-1 w-full bg-gray-50">
+              <div className="space-y-1 sm:space-y-1.5 w-full">
+                <label className="block text-[10px] sm:text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  Current Password
+                </label>
+                <input
+                  type="password"
+                  value={twoFactorPassword}
+                  onChange={(e) => setTwoFactorPassword(e.target.value)}
+                  className="w-full border-2 border-gray-200 focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 rounded-2xl px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-800 outline-none transition-all duration-300"
+                  placeholder="Current password"
+                />
+              </div>
+              <div className="space-y-1 sm:space-y-1.5 w-full">
+                <label className="block text-[10px] sm:text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  {twoFactorRecoveryMode ? 'Recovery Code' : 'Authenticator Code'}
+                </label>
+                {twoFactorRecoveryMode ? (
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    maxLength={9}
+                    value={twoFactorCode}
+                    onChange={(e) => setTwoFactorCode(e.target.value)}
+                    className="w-full border-2 border-gray-200 focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 rounded-2xl px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-800 outline-none transition-all duration-300 tracking-widest text-center uppercase"
+                    placeholder="XXXX-XXXX"
+                  />
+                ) : (
+                  <OtpCodeInput
+                    digits={twoFactorDigits}
+                    disabled={isTwoFactorBusy}
+                    onChange={setTwoFactorDigits}
+                  />
+                )}
+                <div className="text-center pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTwoFactorRecoveryMode((prev) => !prev);
+                      setTwoFactorCode('');
+                      setTwoFactorDigits(Array(6).fill(''));
+                    }}
+                    className="text-[10px] sm:text-xs font-semibold text-[#00695C] hover:underline"
+                  >
+                    {twoFactorRecoveryMode ? 'Use an authenticator code instead' : 'Use a recovery code instead'}
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={closeTwoFactorModal}
+                  className="flex-1 py-2.5 sm:py-3 rounded-2xl border-2 border-[#00695C]/20 text-xs sm:text-sm font-bold text-[#00695C]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isTwoFactorBusy}
+                  className="flex-1 py-2.5 sm:py-3 rounded-2xl text-white text-xs sm:text-sm font-bold bg-gradient-to-r from-red-500 to-rose-500 shadow-lg disabled:opacity-60"
+                >
+                  {isTwoFactorBusy ? 'Turning off...' : 'Turn off'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fadeIn w-full p-2 sm:p-4">
           <form

@@ -72,13 +72,20 @@ class CustomerService {
     return response.data;
   }
 
-  // doc_type: 'aadhaar' | 'pan' | 'gst' | 'rera'
+  // doc_type: 'aadhaar' | 'pan' | 'gst'
   async uploadMyKycDocument(docType, file) {
     const formData = new FormData();
     formData.append('document', file);
     const response = await axiosInstance.post(`/customer/profile/documents/${docType}`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
+    return response.data;
+  }
+
+  // Short-lived signed URL to view an already-uploaded KYC document - never
+  // read the raw file URL from the profile response itself.
+  async getMyKycDocumentViewUrl(docType) {
+    const response = await axiosInstance.get(`/customer/profile/documents/${docType}/view-url`);
     return response.data;
   }
 

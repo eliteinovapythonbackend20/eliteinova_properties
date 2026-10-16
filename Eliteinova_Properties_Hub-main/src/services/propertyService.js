@@ -89,6 +89,12 @@ export const createProperty = async (formData) => {
   try {
     const body = buildPropertyFormData(formData);
     const response = await axiosInstance.post('/properties/', body);
+    // Every posting form (Owner/Agent/Builder/Property Management, every
+    // category) funnels through here - broadcasting once here, rather than
+    // from each form, lets any mounted vendor profile page refresh its
+    // properties list live, with no browser reload, even though the posting
+    // form is a modal mounted on a completely different page.
+    window.dispatchEvent(new CustomEvent('eliteinova:property-created', { detail: response.data }));
     return response.data;
   } catch (error) {
     throw error.response?.data || error.message;
@@ -130,6 +136,30 @@ export const updateProperty = async (id, formData) => {
 export const deleteProperty = async (id) => {
   try {
     const response = await axiosInstance.delete(`/properties/${id}/`);
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error.message;
+  }
+};
+
+// Property documents are private - there's never a permanent URL to display.
+// Call this only when the user clicks "view", and use the URL immediately.
+export const getPropertyDocumentViewUrl = async (documentId) => {
+  try {
+    const response = await axiosInstance.get(`/properties/documents/${documentId}/view-url`);
+    return response.data?.data?.viewUrl;
+  } catch (error) {
+    throw error.response?.data || error.message;
+  }
+};
+
+// Links every one of the caller's current verified/legacy USER_DOCUMENT and
+// USER_MEDIA items to this property in one call - used right after creating a
+// property when the poster said the listing is for themselves, so fields that
+// were hidden (because a verified version already exists) still get attached.
+export const reuseVerifiedResources = async (propertyId) => {
+  try {
+    const response = await axiosInstance.post(`/properties/${propertyId}/reuse-verified`);
     return response.data;
   } catch (error) {
     throw error.response?.data || error.message;

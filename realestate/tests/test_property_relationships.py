@@ -8,10 +8,10 @@ class PropertyRelationshipTests(unittest.TestCase):
     def test_property_model_exposes_media_and_detail_relationships(self):
         self.assertTrue(hasattr(BaseProperty, "media"))
         self.assertTrue(hasattr(BaseProperty, "documents"))
-        self.assertTrue(hasattr(BaseProperty, "owner_details"))
-        self.assertTrue(hasattr(BaseProperty, "agent_details"))
-        self.assertTrue(hasattr(BaseProperty, "builder_details"))
-        self.assertTrue(hasattr(BaseProperty, "property_management_details"))
+        # owner_details/agent_details/builder_details/property_management_details
+        # (4 separate tables) were replaced by one property_contact_persons
+        # table, discriminated by vendor_type - see app.models.property_contact.
+        self.assertTrue(hasattr(BaseProperty, "contact_person"))
 
     def test_property_data_is_sanitized_before_model_creation(self):
         repo = PropertyRepository.__new__(PropertyRepository)

@@ -169,7 +169,6 @@ class AdminCustomerService {
     designation, annualIncome, preferredContactChannel, preferredContactTime,
     preferredLanguage, newsletterOptIn, emailVerified, phoneVerified,
     status, kycStatus, kycAadhaarVerified, kycPanVerified, kycGstVerified,
-    kycReraVerified, aadhaarDocUrl, panDocUrl, gstDocUrl, reraDocUrl,
   } = {}) {
     this._assertAdmin();
     const body = {};
@@ -204,11 +203,6 @@ class AdminCustomerService {
     if (kycAadhaarVerified !== undefined) body.kycAadhaarVerified = kycAadhaarVerified;
     if (kycPanVerified !== undefined) body.kycPanVerified = kycPanVerified;
     if (kycGstVerified !== undefined) body.kycGstVerified = kycGstVerified;
-    if (kycReraVerified !== undefined) body.kycReraVerified = kycReraVerified;
-    if (aadhaarDocUrl !== undefined) body.aadhaarDocUrl = aadhaarDocUrl;
-    if (panDocUrl !== undefined) body.panDocUrl = panDocUrl;
-    if (gstDocUrl !== undefined) body.gstDocUrl = gstDocUrl;
-    if (reraDocUrl !== undefined) body.reraDocUrl = reraDocUrl;
 
     try {
       const response = await axiosInstance.patch(`/admin/dashboard/customers/${customerId}`, body);
@@ -230,14 +224,13 @@ class AdminCustomerService {
     }
   }
 
-  async updateCustomerKyc(customerId, { kycStatus, aadhaarVerified, panVerified, gstVerified, reraVerified } = {}) {
+  async updateCustomerKyc(customerId, { kycStatus, aadhaarVerified, panVerified, gstVerified } = {}) {
     this._assertAdmin();
     const body = {};
     if (kycStatus !== undefined) body.kycStatus = kycStatus;
     if (aadhaarVerified !== undefined) body.aadhaarVerified = aadhaarVerified;
     if (panVerified !== undefined) body.panVerified = panVerified;
     if (gstVerified !== undefined) body.gstVerified = gstVerified;
-    if (reraVerified !== undefined) body.reraVerified = reraVerified;
 
     try {
       const response = await axiosInstance.patch(`/admin/dashboard/customers/${customerId}/kyc`, body);

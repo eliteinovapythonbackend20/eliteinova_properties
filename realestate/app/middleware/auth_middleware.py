@@ -16,8 +16,14 @@ PUBLIC_ROUTES = [
     r"^/api/v1/auth/forgot-password",
     r"^/api/v1/auth/reset-password",
     r"^/api/v1/auth/verify-email",
+    r"^/api/v1/auth/seed-admin",
     r"^/api/v1/auth/resend-verification",
+    r"^/api/v1/auth/2fa/verify/?$",
     r"^/api/v1/auth/test-email-config",
+    r"^/api/v1/admin/login",
+    r"^/api/v1/admin/2fa/verify/?$",
+    r"^/api/v1/office/login",
+    r"^/api/v1/office/2fa/verify/?$",
     r"^/docs",
     r"^/redoc",
     r"^/openapi.json",
@@ -54,6 +60,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 if method == "GET":
                     return True
                 if path.startswith("/api/v1/auth/"):
+                    return True
+                if path.startswith("/api/v1/admin/login") or path.startswith("/api/v1/admin/2fa/verify"):
+                    return True
+                if path.startswith("/api/v1/office/login") or path.startswith("/api/v1/office/2fa/verify"):
                     return True
                 if path.startswith("/api/v1/filters/"):
                     return True

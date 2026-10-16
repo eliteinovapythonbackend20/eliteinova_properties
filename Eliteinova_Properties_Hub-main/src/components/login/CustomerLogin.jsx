@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/authContext';
 import { useToast } from '../../hooks/useToast';
 import Toast from '../common/Toast';
+import TwoFactorLoginModal from './TwoFactorLoginModal';
+import ForgotPasswordModal from './ForgotPasswordModal';
 const CustomerLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
 
   const {login} = useAuth();
@@ -15,6 +17,8 @@ const CustomerLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [pendingTwoFactorToken, setPendingTwoFactorToken] = useState(null);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const navigate = useNavigate();
   const { toast, showToast } = useToast();
 
@@ -33,7 +37,11 @@ const CustomerLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
     setError('');
 
     try {
-      const res = await login(formData);
+      const res = await login(formData, ['user']);
+      if (res?.requires2fa) {
+        setPendingTwoFactorToken(res.pendingToken);
+        return;
+      }
       if (!res?.success) {
         const message = res?.error?.message || 'Invalid email or password. Please try again.';
         setError(message);
@@ -213,6 +221,7 @@ const CustomerLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
               </label>
               <button
                 type="button"
+                onClick={() => setShowForgotPassword(true)}
                 className="text-sm text-[#26A69A] hover:text-[#00695C] font-medium transition-colors"
               >
                 Forgot password?
@@ -287,6 +296,18 @@ const CustomerLogin = ({ isOpen, onClose, onSwitchToRegister }) => {
           animation: fade 0.25s ease-out forwards;
         }
       `}</style>
+      <TwoFactorLoginModal
+        pendingToken={pendingTwoFactorToken}
+        allowedRoles={['user']}
+        onCancel={() => setPendingTwoFactorToken(null)}
+        onVerified={() => {
+          setPendingTwoFactorToken(null);
+          showToast('Login successful!', 'success');
+          onClose();
+          navigate('/');
+        }}
+      />
+      <ForgotPasswordModal isOpen={showForgotPassword} onClose={() => setShowForgotPassword(false)} />
       <Toast toast={toast} />
     </div>
   );

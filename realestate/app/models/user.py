@@ -1,6 +1,6 @@
-from sqlalchemy import Column, String, Boolean, DateTime, Enum, CheckConstraint
+from sqlalchemy import Column, String, Boolean, DateTime, Enum, CheckConstraint, BigInteger, Text, Integer
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, false
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
@@ -9,6 +9,8 @@ class UserRole(str, enum.Enum):
     ADMIN = "admin"
     USER = "user"
     VENDOR = "vendor"
+    OFFICE = "office"
+    SERVICE_VENDOR = "service_vendor"
 
 class UserStatus(str, enum.Enum):
     ACTIVE = "active"
@@ -31,7 +33,7 @@ class User(Base):
     role = Column(String(20), default=UserRole.USER.value, nullable=False)
     
     email = Column(String(255), unique=True, index=True, nullable=False)
-    password_hash = Column(String(255), nullable=True)  # Nullable for OAuth users
+    password_hash = Column(String(255), nullable=True)
     
     
     status = Column(String(20), default=UserStatus.PENDING.value, nullable=False)
@@ -45,16 +47,29 @@ class User(Base):
     last_login = Column(DateTime(timezone=True), nullable=True)
     password_changed_at = Column(DateTime(timezone=True), nullable=True)
     
+    # Reused for both steps of the forgot-password flow: first holds a hash of
+    # the emailed OTP, then (once that OTP is verified) is overwritten with a
+    # hash of a fresh short-lived ticket that authorizes the actual password
+    # change - see AuthService.verify_password_reset_otp/reset_password.
     reset_token = Column(String(255), nullable=True)
     reset_token_expires = Column(DateTime(timezone=True), nullable=True)
-    
+    # When the current OTP was sent (for the resend cooldown) and how many
+    # wrong guesses it's had (to lock it out before someone can brute-force a
+    # 6-digit code). Both reset whenever a fresh OTP is sent.
+    reset_otp_sent_at = Column(DateTime(timezone=True), nullable=True)
+    reset_otp_attempts = Column(Integer, default=0, server_default="0", nullable=False)
+
     verification_token = Column(String(255), nullable=True)
     verification_token_expires = Column(DateTime(timezone=True), nullable=True)
-    
 
-    oauth_provider = Column(String(50), nullable=True)  # google, facebook, etc.
-    oauth_provider_id = Column(String(255), nullable=True)
-    
+    # TOTP two-factor auth. totp_secret is Fernet-encrypted; recovery codes are
+    # stored only as SHA-256 hashes. Never serialize these into user DTOs.
+    totp_enabled = Column(Boolean, default=False, server_default=false(), nullable=False)
+    totp_secret = Column(Text, nullable=True)
+    totp_verified_at = Column(DateTime(timezone=True), nullable=True)
+    totp_last_counter = Column(BigInteger, nullable=True)
+    totp_recovery_code_hashes = Column(JSONB, nullable=True)
+
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -77,8 +92,12 @@ class User(Base):
     property_views = relationship("CustomerPropertyView", back_populates="user", passive_deletes=True)
     
     __table_args__ = (
+        # O = office (IDGenerator.get_role_prefix). Service-vendor ("S") accounts
+        # aren't created anywhere yet, so that letter isn't allowed here either -
+        # add it the same way (model + a migration against the live constraint)
+        # once that role actually gets a creation path.
         CheckConstraint(
-            "id ~ '^EP[0-9]{6}[CVA][0-9]{5}$'",
+            "id ~ '^EP[0-9]{6}[CVAO][0-9]{5}$'",
             name="check_user_id_format"
         ),
     )

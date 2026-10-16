@@ -18,6 +18,17 @@ from app.schemas.property_response import PropertyResponse
 from app.schemas.property_enums import PostedBy
 from app.models.property_document import PropertyDocument
 from app.models.property_media import PropertyMedia
+from app.repositories.document_repository import (
+    FileAssetRepository,
+    UserDocumentRepository,
+    has_live_vendor_document,
+    record_vendor_document,
+    release_vendor_document,
+)
+from app.services.property_document_service import PropertyDocumentService
+from app.services import user_media_service
+from app.services.user_media_service import current_user_media
+from app.models.user_media import USER_MEDIA_TYPES
 
 class PropertyService:
     def __init__(
@@ -333,7 +344,7 @@ class PropertyService:
         if is_primary:
             await self.repository.unset_primary_images(property_id)
 
-        media_obj = await self.repository.create_property_media({
+        media_obj = await self._create_property_media({
             'property_id': property_id,
             'media_type': 'image',
             'file_name': result.get('stored_filename') or result.get('file_name') or file.filename,
@@ -367,7 +378,7 @@ class PropertyService:
         existing video first (matches the vendor upload route's prior
         behavior exactly; not fixing that gap as part of this refactor)."""
         result = await self.file_service.upload_video(file=file, user_id=user_id, property_id=property_id)
-        media_obj = await self.repository.create_property_media({
+        media_obj = await self._create_property_media({
             'property_id': property_id,
             'media_type': 'video',
             'file_name': result.get('stored_filename') or result.get('file_name') or file.filename,
@@ -417,7 +428,26 @@ class PropertyService:
     # ============================================
     # PRIVATE METHODS
     # ============================================
-    
+
+    async def _create_property_media(self, media_data: Dict[str, Any]) -> PropertyMedia:
+        """Single entry point for every PropertyMedia insert. Gives the row its
+        own file_asset (phase 2 foundation), the same way documents already get
+        one - but property media is never reused across properties, so this
+        always creates/dedupes a fresh asset for this row's own file_url, never
+        a reference to another property's or the user's media."""
+        file_url = media_data.get('file_url')
+        file_asset_id = None
+        if file_url:
+            asset = await FileAssetRepository(self.repository.db).get_or_create(
+                file_url=file_url,
+                original_name=media_data.get('file_name'),
+                mime_type=media_data.get('mime_type'),
+                size_bytes=(media_data.get('file_size_kb') or 0) * 1024 or None,
+                visibility="public",
+            )
+            file_asset_id = asset.id
+        return await self.repository.create_property_media({**media_data, 'file_asset_id': file_asset_id})
+
     async def _process_all_files(
         self,
         separated_files: Dict[str, Any],
@@ -467,14 +497,14 @@ class PropertyService:
             await self._process_vendor_documents(
                 vendor_documents,
                 user_id,
+                property_id,
                 file_metadata
             )
         
         # Process property documents
         property_documents = separated_files.get('property_documents', [])
         if property_documents:
-            if is_update:
-                await self.repository.delete_property_documents(property_id)
+            # Versioned: an update adds pending versions. Live documents are never deleted here.
             await self._process_property_documents(
                 property_documents,
                 user_id,
@@ -489,28 +519,28 @@ class PropertyService:
         posted_by: str,
         property_id: str
     ):
-        """Process vendor profile images"""
-        from app.core.file_mappings import VENDOR_PROFILE_IMAGE_TO_DB_COLUMN
-        
-        vendor_image_urls = {}
+        """The listing's contact person's photo/logo - a fresh upload for this
+        property, never the uploader's own reusable USER_MEDIA (that only
+        happens through profile_service, never through a property form).
+        Public media, linked to property_id through contact_person_media - a
+        second upload for the same field supersedes the first, never deletes it."""
+        from app.services import contact_person_media_service
+
         for field_name, file_obj in vendor_profile_images.items():
-            db_column = VENDOR_PROFILE_IMAGE_TO_DB_COLUMN.get(field_name)
-            if not db_column:
+            media_type = self.file_service.CONTACT_PERSON_MEDIA_TYPE_BY_FIELD.get(field_name)
+            if not media_type:
                 continue
-            
-            result = await self.file_service.upload_vendor_profile_image(
+
+            result = await self.file_service.upload_contact_person_media(
                 file=file_obj,
-                user_id=user_id,
-                field_name=field_name
-            )
-            vendor_image_urls[db_column] = result['file_url']
-        
-        if vendor_image_urls:
-            await self.repository.update_vendor_detail(
-                user_id=user_id,
-                posted_by=posted_by,
                 property_id=property_id,
-                update_data=vendor_image_urls
+                field_name=field_name,
+            )
+            await contact_person_media_service.record_upload(
+                self.repository.db,
+                property_id=property_id,
+                media_type=media_type,
+                upload_result=result,
             )
     
     async def _process_property_images(
@@ -530,7 +560,7 @@ class PropertyService:
                 order=idx
             )
             
-            await self.repository.create_property_media({
+            await self._create_property_media({
                 'property_id': property_id,
                 'media_type': 'image',
                 'file_name': result['file_name'],
@@ -559,7 +589,7 @@ class PropertyService:
             property_id=property_id
         )
         
-        await self.repository.create_property_media({
+        await self._create_property_media({
             'property_id': property_id,
             'media_type': 'video',
             'file_name': result['file_name'],
@@ -576,34 +606,37 @@ class PropertyService:
         self,
         vendor_documents: List[UploadFile],
         user_id: str,
+        property_id: str,
         file_metadata: Optional[Dict[str, Any]] = None
     ):
-        """Process vendor documents"""
+        """Process documents submitted with a property.
+
+        Identity documents (Aadhaar, PAN, ID, address proof) on a property form belong to
+        the contact person for this property, not to the uploader. They are stored as
+        PROPERTY_DOCUMENT with subject_type CONTACT_PERSON, under the property's contact
+        path, and never touch the uploader's user_documents or profile.
+        """
         for idx, doc in enumerate(vendor_documents):
             doc_type = self._get_document_type_from_metadata(file_metadata, idx, 'vendor_document')
             if not doc_type:
                 doc_type = 'other_supporting_document'
-            
+
+            # Every user-level document submitted with a property is stored for this
+            # property, per submission. None is written to the uploader's user_documents.
             result = await self.file_service.upload_vendor_document(
                 file=doc,
                 user_id=user_id,
-                document_type=doc_type
-            )
-            
-            doc_data = {
-                'file_name': result.get('file_name'),
-                'mime_type': result.get('mime_type'),
-                'file_url': result.get('file_url'),
-                'file_size_kb': result.get('file_size_kb'),
-                'is_public': result.get('is_public', False)
-            }
-            
-            await self.repository.upsert_vendor_document(
-                user_id=user_id,
                 document_type=doc_type,
-                doc_data=doc_data
+                property_id=property_id,
             )
-    
+            await PropertyDocumentService(self.repository.db).record_upload(
+                property_id=property_id,
+                uploader_id=user_id,
+                legacy_document_type=doc_type,
+                upload_result=result,
+                subject_type="CONTACT_PERSON",
+            )
+
     async def _process_property_documents(
         self,
         property_documents: List[UploadFile],
@@ -623,19 +656,13 @@ class PropertyService:
                 property_id=property_id,
                 document_type=doc_type
             )
-            
-            doc_data = {
-                'property_id': property_id,
-                'user_id': user_id,
-                'document_type': doc_type,
-                'file_name': result.get('file_name'),
-                'mime_type': result.get('mime_type'),
-                'file_url': result.get('file_url'),
-                'file_size_kb': result.get('file_size_kb'),
-                'is_public': result.get('is_public', False)
-            }
-            
-            await self.repository.create_property_document(doc_data)
+
+            await PropertyDocumentService(self.repository.db).record_upload(
+                property_id=property_id,
+                uploader_id=user_id,
+                legacy_document_type=doc_type,
+                upload_result=result,
+            )
     
     def _get_document_type_from_metadata(
         self,
@@ -746,29 +773,10 @@ class PropertyService:
     def _public_vendor_block(property_obj) -> Dict[str, Any]:
         """Listed-by info safe for anonymous listing/card responses - NO contact details."""
         role = (property_obj.posted_by or '').upper()
-        detail = None
-        display_name = None
-        org_name = None
-        photo = None
-        if role == 'OWNER' and property_obj.owner_details:
-            detail = property_obj.owner_details
-            display_name = detail.owner_name
-            photo = detail.profile_photo_url
-        elif role == 'AGENT' and property_obj.agent_details:
-            detail = property_obj.agent_details
-            display_name = detail.agent_name
-            org_name = detail.agency_name
-            photo = detail.profile_photo_url
-        elif role == 'BUILDER' and property_obj.builder_details:
-            detail = property_obj.builder_details
-            display_name = detail.name
-            org_name = detail.company_name
-            photo = detail.profile_photo_url
-        elif role == 'PROPERTY_MANAGEMENT' and property_obj.property_management_details:
-            detail = property_obj.property_management_details
-            display_name = detail.name
-            org_name = detail.company_name
-            photo = detail.profile_photo_url
+        cp = property_obj.contact_person
+        display_name = cp.name if cp else None
+        org_name = (cp.role_details or {}).get('companyName') if cp and role in ('AGENT', 'BUILDER', 'PROPERTY_MANAGEMENT') else None
+        photo = PropertyFormatter._contact_person_media_url(property_obj, 'profile_photo')
 
         return {
             'role': role or None,
@@ -942,51 +950,69 @@ class PropertyService:
         return strip_none_values(response)
 
     async def get_document_view_url(self, document_id: int, current_user: Dict[str, Any]) -> str:
-        """Mint a fresh, short-lived signed GET URL for a private document -
-        called only when the user clicks "View", never in advance, never
-        cached/persisted. Authorized for: admin, or the document's own
-        uploader/owner. (Sharing a property's documents with a third,
-        explicitly-approved user is not implemented yet - only admin/owner
-        for now.) Ownership is always resolved from the DB row - the caller's
-        JWT identity, never anything the client claims about who owns it.
+        """Mint a fresh, short-lived signed GET URL for a private property document.
+
+        Authorized for: admin, the document's uploader, or the user who owns the
+        property. is_public never grants access. Every issue is audited.
         """
+        from app.services.document_access_service import DocumentAccessService
+
         doc = await self.repository.get_document_by_id(document_id)
         if not doc:
             raise PropertyError(f"Document {document_id} not found", status_code=404)
 
-        user_id = current_user.get("user_id")
-        role = current_user.get("role")
+        property_owner_id = None
+        if doc.property_id:
+            prop = await self.repository.get_property_by_id(doc.property_id)
+            property_owner_id = prop.user_id if prop else None
 
-        authorized = role == "admin" or doc.user_id == user_id
-
-        if not authorized:
-            raise PropertyPermissionError("Not authorized to view this document")
-
+        access = DocumentAccessService(self.repository.db)
         if not doc.file_url:
             raise PropertyError(f"Document {document_id} has no stored file", status_code=404)
+        try:
+            return await access.issue_property_document_url(
+                requester=current_user, document=doc, property_owner_id=property_owner_id
+            )
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_403_FORBIDDEN:
+                raise PropertyPermissionError("Not authorized to view this document")
+            raise
 
-        return await self.file_service.private_storage.generate_signed_url(
-            doc.file_url, expiration=settings.PRIVATE_DOCUMENT_SIGNED_URL_EXPIRE_SECONDS
+    async def list_property_documents(self, property_id: str, current_user: Dict[str, Any]) -> List[PropertyDocument]:
+        """Documents attached to one property. Admin or the property's owner only."""
+        prop = await self.repository.get_property_by_id(property_id)
+        if not prop:
+            raise PropertyError(f"Property {property_id} not found", status_code=404)
+        if current_user.get("role") != "admin" and prop.user_id != current_user.get("user_id"):
+            raise PropertyPermissionError("Not authorized to view this property's documents")
+        return await self._list_property_rows(property_id, subject_type="PROPERTY")
+
+    async def list_contact_documents(self, property_id: str, current_user: Dict[str, Any]) -> List[PropertyDocument]:
+        """Contact-person documents submitted with a property. Same access rule as the property's documents."""
+        prop = await self.repository.get_property_by_id(property_id)
+        if not prop:
+            raise PropertyError(f"Property {property_id} not found", status_code=404)
+        if current_user.get("role") != "admin" and prop.user_id != current_user.get("user_id"):
+            raise PropertyPermissionError("Not authorized to view this property's documents")
+        return await self._list_property_rows(property_id, subject_type="CONTACT_PERSON")
+
+    async def _list_property_rows(self, property_id: str, subject_type: str) -> List[PropertyDocument]:
+        from sqlalchemy import select
+        # Superseded, rejected and removed versions are history, not the listing.
+        result = await self.repository.db.execute(
+            select(PropertyDocument).where(
+                PropertyDocument.property_id == property_id,
+                PropertyDocument.subject_type == subject_type,
+                PropertyDocument.status.notin_(["superseded", "rejected", "deleted"]),
+            ).order_by(PropertyDocument.id)
         )
+        return list(result.scalars().all())
 
     def _format_media(self, media_list):
         return self.formatter.format_media(media_list)
     
     def _format_documents(self, document_list):
         return self.formatter.format_documents(document_list)
-    
-    def _format_owner_details(self, property_obj):
-        return self.formatter.format_owner_details(property_obj)
-    
-    def _format_agent_details(self, property_obj):
-        return self.formatter.format_agent_details(property_obj)
-    
-    def _format_builder_details(self, property_obj):
-        return self.formatter.format_builder_details(property_obj)
-    
-    def _format_property_management_details(self, property_obj):
-        return self.formatter.format_property_management_details(property_obj)
-
 
     # ============================================
     # PROPERTY MEDIA MANAGEMENT METHODS
@@ -1023,7 +1049,7 @@ class PropertyService:
                     order=order
                 )
             
-                media = await self.repository.create_property_media({
+                media = await self._create_property_media({
                     'property_id': property_id,
                     'media_type': 'image',
                     'file_name': result['file_name'],
@@ -1168,7 +1194,7 @@ class PropertyService:
                 property_id=property_id
             )
         
-            media = await self.repository.create_property_media({
+            media = await self._create_property_media({
                 'property_id': property_id,
                 'media_type': 'video',
                 'file_name': result['file_name'],
@@ -1262,19 +1288,13 @@ class PropertyService:
                     property_id=property_id,
                     document_type=doc_type
                 )
-            
-                doc_data = {
-                    'property_id': property_id,
-                    'user_id': user_id,
-                    'document_type': doc_type,
-                    'file_name': result.get('file_name'),
-                    'mime_type': result.get('mime_type'),
-                    'file_url': result.get('file_url'),
-                    'file_size_kb': result.get('file_size_kb'),
-                    'is_public': result.get('is_public', False)
-                }
-            
-                doc_obj = await self.repository.create_property_document(doc_data)
+
+                doc_obj = await PropertyDocumentService(self.repository.db).record_upload(
+                    property_id=property_id,
+                    uploader_id=user_id,
+                    legacy_document_type=doc_type,
+                    upload_result=result,
+                )
                 uploaded_docs.append(doc_obj)
         
             await self.repository.commit()
@@ -1308,8 +1328,11 @@ class PropertyService:
                     message=f"Document with ID {document_id} not found",
                     errors={"document_id": "Document not found"}
                 )
-        
-            await self.repository.delete_property_document_by_id(document_id)
+
+            # Versioned removal: the row and its object are kept for history.
+            await PropertyDocumentService(self.repository.db).remove(
+                actor={"user_id": user_id, "role": "user"}, row=document
+            )
             await self.repository.commit()
 
         except HTTPException:
@@ -1318,113 +1341,151 @@ class PropertyService:
             await self.repository.rollback()
             raise PropertyFileUploadError(f"Failed to delete document: {str(e)}")
 
-        if document.file_url:
-            try:
-                await self.file_service.delete_files([document.file_url])
-            except HTTPException:
-                raise
-            except Exception as e:
-                print(f"Failed to delete old property document from storage: {e}")
-
-    # ============================================
-    # VENDOR PROFILE IMAGE MANAGEMENT
-    # ============================================
-
-    async def update_vendor_profile_image(
+    async def replace_property_document(
         self,
-        user_id: str,
         property_id: str,
-        image: UploadFile,
-        field_name: str
-    ) -> Dict[str, Any]:
-        """Update the poster-photo for one specific listing. Scoped by
-        property_id - a vendor with multiple listings can have a different
-        photo per listing (e.g. a PM company's different on-site managers)."""
+        document_id: int,
+        user_id: str,
+        file: UploadFile,
+    ) -> PropertyDocument:
+        """Upload a new version into one document's slot. The live version stays live until verified."""
         property_obj = await self.repository.get_property_by_id(property_id)
         if not property_obj:
             raise PropertyNotFoundError(property_id)
         if property_obj.user_id != user_id:
             raise PropertyPermissionError()
 
-        try:
-            result = await self.file_service.upload_vendor_profile_image(
-                file=image,
-                user_id=user_id,
-                field_name=field_name
+        document = await self.repository.get_property_document_by_id(document_id)
+        if not document or document.property_id != property_id or document.status == "deleted":
+            raise PropertyValidationError(
+                message=f"Document with ID {document_id} not found",
+                errors={"document_id": "Document not found"}
             )
 
-            from app.core.file_mappings import VENDOR_PROFILE_IMAGE_TO_DB_COLUMN
-            db_column = VENDOR_PROFILE_IMAGE_TO_DB_COLUMN.get(field_name)
-
-            if db_column:
-                await self.repository.update_vendor_profile_image(
+        is_contact = document.subject_type == "CONTACT_PERSON"
+        try:
+            if is_contact:
+                result = await self.file_service.upload_vendor_document(
+                    file=file,
                     user_id=user_id,
-                    db_column=db_column,
-                    image_url=result['file_url'],
+                    document_type=document.document_type,
                     property_id=property_id,
                 )
-                await self.repository.update_vendor_detail(
+            else:
+                result = await self.file_service.upload_property_document(
+                    file=file,
                     user_id=user_id,
-                    posted_by=property_obj.posted_by,
                     property_id=property_id,
-                    update_data={db_column: result['file_url']}
+                    document_type=document.document_type
                 )
-
+            row = await PropertyDocumentService(self.repository.db).record_upload(
+                property_id=property_id,
+                uploader_id=user_id,
+                legacy_document_type=document.document_type,
+                upload_result=result,
+                slot_key=document.slot_key or document.document_key,
+                subject_type=document.subject_type,
+            )
             await self.repository.commit()
-            return result
-
+            return row
         except HTTPException:
             raise
         except Exception as e:
             await self.repository.rollback()
-            raise PropertyFileUploadError(f"Failed to update profile image: {str(e)}")
+            raise PropertyFileUploadError(f"Failed to replace document: {str(e)}")
 
-    async def delete_vendor_profile_image(
+    async def reuse_user_document(
         self,
-        user_id: str,
         property_id: str,
-        field_name: str
-    ) -> None:
-        """Delete this one listing's poster-photo - see update_vendor_profile_image."""
+        user_id: str,
+        user_document_id: int,
+        subject_type: str,
+    ) -> PropertyDocument:
+        """The user chose to attach their own verified document to this property. No new upload."""
+        property_obj = await self.repository.get_property_by_id(property_id)
+        if not property_obj:
+            raise PropertyNotFoundError(property_id)
+        if property_obj.user_id != user_id:
+            raise PropertyPermissionError()
+        try:
+            row = await PropertyDocumentService(self.repository.db).link_existing_user_document(
+                property_id=property_id,
+                uploader_id=user_id,
+                user_document_id=user_document_id,
+                subject_type=subject_type,
+            )
+            await self.repository.commit()
+            return row
+        except HTTPException:
+            await self.repository.rollback()
+            raise
+        except Exception as e:
+            await self.repository.rollback()
+            raise PropertyFileUploadError(f"Failed to reuse document: {str(e)}")
+
+    async def link_all_verified_user_resources(self, property_id: str, user_id: str) -> Dict[str, Any]:
+        """The "this listing is mine" shortcut: link every one of the caller's
+        own current verified (or legacy) USER_DOCUMENT and USER_MEDIA items to
+        this property in one call, instead of one reuse call per item.
+
+        Still a reference only for each item - nothing is uploaded, nothing is
+        copied, and the original USER_DOCUMENT/USER_MEDIA is never touched.
+        One item failing (e.g. still pending) does not block the others; it is
+        reported back instead."""
         property_obj = await self.repository.get_property_by_id(property_id)
         if not property_obj:
             raise PropertyNotFoundError(property_id)
         if property_obj.user_id != user_id:
             raise PropertyPermissionError()
 
-        try:
-            from app.core.file_mappings import VENDOR_PROFILE_IMAGE_TO_DB_COLUMN
-            db_column = VENDOR_PROFILE_IMAGE_TO_DB_COLUMN.get(field_name)
-
-            if db_column:
-                vendor_detail = await self.repository.get_vendor_detail_for_property(
-                    property_id, property_obj.posted_by, user_id
+        linked_documents, skipped_documents = [], []
+        documents = await UserDocumentRepository(self.repository.db).list_current(user_id)
+        for doc in documents:
+            if doc.status not in ("verified", "legacy"):
+                skipped_documents.append({"documentKey": doc.document_key, "reason": f"status is {doc.status}"})
+                continue
+            try:
+                row = await PropertyDocumentService(self.repository.db).link_existing_user_document(
+                    property_id=property_id, uploader_id=user_id,
+                    user_document_id=doc.id, subject_type="CONTACT_PERSON",
                 )
-                current_url = getattr(vendor_detail, db_column, None) if vendor_detail else None
+                linked_documents.append({"id": row.id, "documentKey": row.document_key})
+            except HTTPException as e:
+                skipped_documents.append({"documentKey": doc.document_key, "reason": e.detail})
 
-                if current_url:
-                    await self.file_service.delete_files([current_url])
+        linked_media, skipped_media = [], []
+        for media_type in USER_MEDIA_TYPES:
+            media = await current_user_media(self.repository.db, user_id, media_type)
+            if media is None:
+                continue
+            if media.status not in ("verified", "legacy"):
+                skipped_media.append({"mediaType": media_type, "reason": f"status is {media.status}"})
+                continue
+            try:
+                ref = await user_media_service.reference_for_property(
+                    self.repository.db, property_id=property_id, actor_id=user_id,
+                    user_media_id=media.id, purpose=media_type,
+                )
+                linked_media.append({"referenceId": ref.id, "mediaType": media_type})
+            except HTTPException as e:
+                skipped_media.append({"mediaType": media_type, "reason": e.detail})
 
-                    await self.repository.update_vendor_profile_image(
-                        user_id=user_id,
-                        db_column=db_column,
-                        image_url=None,
-                        property_id=property_id,
-                    )
-                    await self.repository.update_vendor_detail(
-                        user_id=user_id,
-                        posted_by=property_obj.posted_by,
-                        property_id=property_id,
-                        update_data={db_column: None}
-                    )
-
-                    await self.repository.commit()
-
-        except HTTPException:
-            raise
+        try:
+            await self.repository.commit()
         except Exception as e:
             await self.repository.rollback()
-            raise PropertyFileUploadError(f"Failed to delete profile image: {str(e)}")
+            raise PropertyFileUploadError(f"Failed to link verified resources: {str(e)}")
+
+        return {
+            "linkedDocuments": linked_documents, "skippedDocuments": skipped_documents,
+            "linkedMedia": linked_media, "skippedMedia": skipped_media,
+        }
+
+    # Vendor poster-photo/logo has no standalone edit/delete service method - it
+    # is only created through the property-posting form
+    # (_process_vendor_profile_images / contact_person_media_service), which is
+    # also how it is replaced (a new upload supersedes the current one, kept,
+    # never deleted).
 
     # ============================================
     # VENDOR DOCUMENT MANAGEMENT
@@ -1451,13 +1512,46 @@ class PropertyService:
                 'file_size_kb': result.get('file_size_kb'),
                 'is_public': result.get('is_public', False)
             }
-        
-            doc_obj = await self.repository.upsert_vendor_document(
-                user_id=user_id,
-                document_type=document_type,
-                doc_data=doc_data
+
+            # A live (verified) version is never overwritten here. The new file is
+            # recorded as a pending version; the profile row is updated only when
+            # an admin verifies it (see sync_legacy_vendor_row).
+            live = await has_live_vendor_document(
+                self.repository.db, user_id=user_id, legacy_document_type=document_type
             )
-        
+            if live:
+                doc_obj = await self.repository.get_vendor_document(user_id, document_type)
+                if doc_obj is None:
+                    doc_obj = await self.repository.upsert_vendor_document(
+                        user_id=user_id, document_type=document_type, doc_data=doc_data
+                    )
+            else:
+                doc_obj = await self.repository.upsert_vendor_document(
+                    user_id=user_id,
+                    document_type=document_type,
+                    doc_data=doc_data
+                )
+
+            # Phase 1: also record the version in user_documents, and link the
+            # legacy row to its file asset and canonical key.
+            record = await record_vendor_document(
+                self.repository.db,
+                user_id=user_id,
+                legacy_document_type=document_type,
+                file_url=result.get('file_url'),
+                file_name=result.get('file_name'),
+                mime_type=result.get('mime_type'),
+                file_size_kb=result.get('file_size_kb'),
+                legacy_source='property_documents',
+                legacy_ref=str(doc_obj.id),
+            )
+            if record and not live:
+                doc_obj.file_asset_id = record.file_asset_id
+                doc_obj.document_key = record.document_key
+                doc_obj.version = record.version
+                doc_obj.status = 'pending'
+                doc_obj.is_current = True
+
             await self.repository.commit()
             return doc_obj
         
@@ -1481,11 +1575,16 @@ class PropertyService:
                     errors={"document_type": "Document not found"}
                 )
         
-            if document.file_url:
-                await self.file_service.delete_files([document.file_url])
-        
+            file_url = document.file_url
+            await release_vendor_document(self.repository.db, user_id=user_id, legacy_document_type=document_type)
             await self.repository.delete_vendor_document(user_id, document_type)
             await self.repository.commit()
+
+            # The object stays while any user_documents version still points at it.
+            if file_url and not await FileAssetRepository(self.repository.db).is_referenced(file_url):
+                await self.file_service.delete_files([file_url])
+                await FileAssetRepository(self.repository.db).mark_deleted(file_url)
+                await self.repository.commit()
         
         except HTTPException:
             raise
@@ -1499,76 +1598,5 @@ class PropertyService:
     ) -> List[PropertyDocument]:
         """Get all vendor documents"""
         return await self.repository.get_vendor_documents(user_id)
-
-    async def get_latest_vendor_detail_raw(self, user_id: str, posted_by: PostedBy):
-        return await self.repository.get_latest_vendor_detail(user_id, posted_by)
-
-    async def attach_uploaded_file_raw(
-        self,
-        property_id: str,
-        user_id: str,
-        field: str,
-        category: str,
-        is_primary: bool,
-        upload_result: Dict[str, Any],
-        file: UploadFile,
-    ) -> Dict[str, Any]:
-        """Faithful move of the DB-write half of the deleted
-        ProfileService.upload_single_file (the property_id-present branch) -
-        creates PropertyMedia for images/video or PropertyDocument for
-        documents from an already-uploaded file's metadata."""
-        if category in ('images', 'video'):
-            media_type = 'image' if category == 'images' else 'video'
-            media_obj = await self.repository.create_property_media({
-                'property_id': property_id,
-                'media_type': media_type,
-                'file_name': upload_result.get('stored_filename') or upload_result.get('file_name') or file.filename,
-                'mime_type': upload_result.get('mime_type') or file.content_type,
-                'filename_mapper': upload_result.get('filename_mapper'),
-                'format': upload_result.get('format') or 'webp',
-                'file_url': upload_result.get('file_url'),
-                'thumbnail_url': upload_result.get('thumbnail_url'),
-                'file_size_kb': upload_result.get('file_size_kb') or 0,
-                'width': upload_result.get('width'),
-                'height': upload_result.get('height'),
-                'is_primary': is_primary,
-                'order': 0
-            })
-            await self.repository.commit()
-            return {
-                'id': media_obj.id,
-                'file_url': media_obj.file_url,
-                'thumbnail_url': media_obj.thumbnail_url,
-                'file_name': media_obj.file_name,
-                'file_size_kb': media_obj.file_size_kb,
-                'is_primary': media_obj.is_primary,
-                'media_type': media_obj.media_type,
-                'field': field,
-                'width': upload_result.get('width'),
-                'height': upload_result.get('height'),
-            }
-
-        if category == 'documents':
-            doc_type = getattr(file, 'doc_type', 'other_supporting_document')
-            doc_obj = await self.repository.create_property_document({
-                'property_id': property_id,
-                'user_id': user_id,
-                'document_type': doc_type,
-                'file_name': upload_result.get('stored_filename') or upload_result.get('file_name') or file.filename,
-                'mime_type': upload_result.get('mime_type') or file.content_type,
-                'file_url': upload_result.get('file_url'),
-                'file_size_kb': upload_result.get('file_size_kb') or 0,
-                'is_public': False
-            })
-            await self.repository.commit()
-            return {
-                'id': doc_obj.id,
-                'file_url': doc_obj.file_url,
-                'file_name': doc_obj.file_name,
-                'document_type': doc_obj.document_type,
-                'file_size_kb': doc_obj.file_size_kb,
-                'field': field,
-                'is_public': doc_obj.is_public
-            }
 
         raise ValueError(f"Unsupported category: {category}")

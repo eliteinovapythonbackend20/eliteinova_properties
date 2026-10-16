@@ -7,6 +7,7 @@ from app.core.security import Security
 from app.core.id_generator import IDGenerator
 from app.models.customer import Customer
 from app.models.vendor_profile import VendorProfile
+from app.schemas.auth import REGISTRATION_VENDOR_TYPE_TO_POSTED_BY
 
 class UserRepository:
     def __init__(self, db: AsyncSession):
@@ -17,7 +18,12 @@ class UserRepository:
         try:
             role = user_data.get('role', UserRole.USER)
             user_id = await IDGenerator.generate_user_id(self.db, role)
-            
+
+            # Registration vendor_type is stored in the existing vendor_types list
+            # (same column property creation appends to). Missing -> [] (legacy).
+            vendor_type = user_data.get('vendor_type')
+            vendor_types = [REGISTRATION_VENDOR_TYPE_TO_POSTED_BY[vendor_type]] if vendor_type else []
+
             # Create user
             user = User(
                 id=user_id,
@@ -25,6 +31,7 @@ class UserRepository:
                 password_hash=Security.hash_password(user_data.get('password')),
                 role=role,
                 status=UserStatus.PENDING.value,
+                vendor_types=vendor_types,
             )
             
             self.db.add(user)
@@ -106,6 +113,36 @@ class UserRepository:
             await self.db.rollback()
             raise e
     
+    async def create_office(self, office_data: Dict[str, Any]) -> User:
+        try:
+            user_id = await IDGenerator.generate_user_id(self.db, UserRole.OFFICE)
+
+            office_user = User(
+                id=user_id,
+                email=office_data.get('email'),
+                password_hash=Security.hash_password(office_data.get('password')),
+                role=UserRole.OFFICE,
+                status=UserStatus.ACTIVE.value,
+            )
+
+            self.db.add(office_user)
+            await self.db.flush()
+            await self.db.commit()
+            await self.db.refresh(office_user)
+
+            # `name`/`phoneNumber` aren't real columns on User - same pattern as
+            # create_user/create_admin, so _user_to_dict can read them without
+            # a second query.
+            office_user.name = office_data.get('full_name')
+            office_user.phoneNumber = office_data.get('phone_number')
+
+            return office_user
+
+        except Exception as e:
+            print(f"Error in create_office: {e}")
+            await self.db.rollback()
+            raise e
+
     async def get_user_by_id(self, user_id: str) -> Optional[User]:
         result = await self.db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
@@ -158,6 +195,34 @@ class UserRepository:
             )
         )
         await self.db.commit()
+
+    async def save_reset_otp(self, user_id: str, otp_hash: str, expires_at: datetime, sent_at: datetime) -> None:
+        """Save a freshly-sent password reset OTP. Resets the attempt counter -
+        a new OTP means a clean slate of guesses against it."""
+        await self.db.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(
+                reset_token=otp_hash,
+                reset_token_expires=expires_at,
+                reset_otp_sent_at=sent_at,
+                reset_otp_attempts=0,
+                updated_at=datetime.utcnow()
+            )
+        )
+        await self.db.commit()
+
+    async def increment_reset_otp_attempts(self, user_id: str) -> int:
+        """Record one more wrong OTP guess and return the new count."""
+        user = await self.get_user_by_id(user_id)
+        if not user:
+            return 0
+        new_count = (user.reset_otp_attempts or 0) + 1
+        await self.db.execute(
+            update(User).where(User.id == user_id).values(reset_otp_attempts=new_count)
+        )
+        await self.db.commit()
+        return new_count
 
     async def get_by_reset_token(self, token_hash: str) -> Optional[User]:
         """Get user by reset token"""
@@ -227,46 +292,6 @@ class UserRepository:
         await self.db.commit()
 
     # ============================================
-    # NEW METHODS FOR OAUTH
-    # ============================================
-
-    async def create_oauth_user(
-        self, 
-        email: str, 
-        full_name: str, 
-        provider: str, 
-        provider_id: str
-    ) -> User:
-        """Create user from OAuth login"""
-        user_id = await IDGenerator.generate_user_id(self.db, UserRole.USER)
-        
-        user = User(
-            id=user_id,
-            email=email,
-            full_name=full_name,
-            role=UserRole.USER,
-            status=UserStatus.ACTIVE,
-            is_verified=True,  # OAuth users are automatically verified
-            oauth_provider=provider,
-            oauth_provider_id=provider_id,
-            preferences={}
-        )
-        self.db.add(user)
-        await self.db.commit()
-        await self.db.refresh(user)
-        return user
-
-    async def get_by_oauth_provider(self, provider: str, provider_id: str) -> Optional[User]:
-        """Get user by OAuth provider"""
-        result = await self.db.execute(
-            select(User).where(
-                User.oauth_provider == provider,
-                User.oauth_provider_id == provider_id
-            )
-        )
-        return result.scalar_one_or_none()
-
-    # ============================================
     # NEW METHOD FOR UPDATING USER PROFILE
     # ============================================
 
@@ -286,6 +311,18 @@ class UserRepository:
         await self.db.refresh(user)
         return user
 
+
+    # ============================================
+    # TWO-FACTOR (TOTP) FIELDS
+    # ============================================
+
+    async def update_totp_fields(self, user_id: str, values: Dict[str, Any]) -> None:
+        await self.db.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(**values, updated_at=datetime.utcnow())
+        )
+        await self.db.commit()
 
     async def get_customer_by_user_id(self, user_id:str)-> Optional[Customer]:
         result = await self.db.execute(select(Customer).where(Customer.user_id == user_id))

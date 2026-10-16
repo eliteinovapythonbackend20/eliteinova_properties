@@ -25,6 +25,7 @@ from fastapi import HTTPException, status
 
 from app.core.response_utils import strip_none_values
 from app.repositories.admin_customer_repository import AdminCustomerRepository
+from app.services.customer_service import build_kyc_documents
 
 # camelCase (as sent by the frontend / dumped from the request schemas) ->
 # the Customer model's actual column name. `status` is deliberately absent -
@@ -60,11 +61,6 @@ CUSTOMER_FIELD_MAP = {
     "kycAadhaarVerified": "kyc_aadhaar_verified",
     "kycPanVerified": "kyc_pan_verified",
     "kycGstVerified": "kyc_gst_verified",
-    "kycReraVerified": "kyc_rera_verified",
-    "aadhaarDocUrl": "aadhaar_doc_url",
-    "panDocUrl": "pan_doc_url",
-    "gstDocUrl": "gst_doc_url",
-    "reraDocUrl": "rera_doc_url",
 }
 
 KYC_FIELD_MAP = {
@@ -72,7 +68,6 @@ KYC_FIELD_MAP = {
     "aadhaarVerified": "kyc_aadhaar_verified",
     "panVerified": "kyc_pan_verified",
     "gstVerified": "kyc_gst_verified",
-    "reraVerified": "kyc_rera_verified",
 }
 
 # CustomerRequirement's field set is deliberately minimal - it backs a
@@ -113,8 +108,9 @@ class AdminCustomerService:
         first_image = next((m for m in media_list if m.media_type == "image"), None)
         return first_image.file_url if first_image else None
 
-    def _to_card(self, customer) -> Dict[str, Any]:
+    async def _to_card(self, customer) -> Dict[str, Any]:
         user = getattr(customer, "user", None)
+        documents = await build_kyc_documents(self.repository.db, customer.user_id)
         return strip_none_values({
             "userId": customer.user_id,
             "fullName": customer.full_name,
@@ -135,11 +131,7 @@ class AdminCustomerService:
             "kycAadhaarVerified": bool(customer.kyc_aadhaar_verified),
             "kycPanVerified": bool(customer.kyc_pan_verified),
             "kycGstVerified": bool(customer.kyc_gst_verified),
-            "kycReraVerified": bool(customer.kyc_rera_verified),
-            "aadhaarDocUrl": customer.aadhaar_doc_url,
-            "panDocUrl": customer.pan_doc_url,
-            "gstDocUrl": customer.gst_doc_url,
-            "reraDocUrl": customer.rera_doc_url,
+            "documents": documents,
             "emailVerified": bool(customer.email_verified),
             "phoneVerified": bool(customer.phone_verified),
             "occupation": customer.occupation,
@@ -277,7 +269,7 @@ class AdminCustomerService:
             kyc_status=kyc_status, search=search, city=city, state=state,
         )
         return {
-            "data": [self._to_card(c) for c in customers],
+            "data": [await self._to_card(c) for c in customers],
             "pagination": self._paginate(total, page, limit),
         }
 
@@ -295,7 +287,7 @@ class AdminCustomerService:
         customer = await self.repository.get_customer_by_user_id(user_id)
         if not customer:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
-        return self._to_card(customer)
+        return await self._to_card(customer)
 
     async def create_customer(self, data: Dict[str, Any]) -> Dict[str, Any]:
         existing = await self.repository.get_user_by_email(data["email"])
@@ -316,7 +308,7 @@ class AdminCustomerService:
             email=data["email"], password=password, status=create_status, customer_fields=customer_fields,
         )
         await self.repository.commit()
-        return self._to_card(customer)
+        return await self._to_card(customer)
 
     async def update_customer(self, user_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
         if not fields:
@@ -340,7 +332,7 @@ class AdminCustomerService:
         full_customer = await self.repository.get_customer_by_user_id(user_id)
         if not full_customer:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
-        return self._to_card(full_customer)
+        return await self._to_card(full_customer)
 
     async def update_status(self, user_id: str, new_status: str) -> Dict[str, Any]:
         updated = await self.repository.update_user_status(user_id, new_status)
@@ -348,7 +340,7 @@ class AdminCustomerService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
         await self.repository.commit()
         full_customer = await self.repository.get_customer_by_user_id(user_id)
-        return self._to_card(full_customer)
+        return await self._to_card(full_customer)
 
     async def update_kyc(self, user_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
         mapped = {KYC_FIELD_MAP[k]: v for k, v in fields.items() if k in KYC_FIELD_MAP}
@@ -359,7 +351,7 @@ class AdminCustomerService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
         await self.repository.commit()
         full_customer = await self.repository.get_customer_by_user_id(user_id)
-        return self._to_card(full_customer)
+        return await self._to_card(full_customer)
 
     async def delete_customer(self, user_id: str) -> Dict[str, Any]:
         deleted = await self.repository.delete_customer(user_id)

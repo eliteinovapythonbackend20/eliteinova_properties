@@ -1,4 +1,5 @@
 from jose import jwt
+from jose.exceptions import ExpiredSignatureError, JWTError
 import bcrypt
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
@@ -45,9 +46,9 @@ class Security:
         """Decode and validate a JWT token"""
         try:
             return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        except jwt.ExpiredSignatureError:
+        except ExpiredSignatureError:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired")
-        except jwt.InvalidTokenError:
+        except JWTError:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     
     @staticmethod

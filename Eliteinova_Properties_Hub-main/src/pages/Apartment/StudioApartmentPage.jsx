@@ -82,6 +82,12 @@ const StudioApartmentPage = () => {
   }, [listingPurpose, activeApartmentType]);
 
   // ─── Combine Data from All Sources ────────────────────────────────────
+  // A filter search that matched nothing still falls through to the normal
+  // browse list below (rather than showing a dead end) - `filterReturnedEmpty`
+  // is what drives the separate "nothing matched your filter" notice above it,
+  // so the user isn't left guessing why the list changed to something they
+  // didn't filter for.
+  const filterReturnedEmpty = Boolean(appliedFilters) && filteredData.length === 0;
   const properties = useMemo(() => {
     if (appliedFilters && filteredData.length > 0) {
       return filteredData;
@@ -791,6 +797,13 @@ const StudioApartmentPage = () => {
                   </div>
                 ) : (
                   <>
+                    {filterReturnedEmpty && paginatedProperties.length > 0 && (
+                      <div className="w-full bg-white rounded-2xl shadow-2xl border border-teal-100 p-6 text-center mb-5">
+                        <div className="text-5xl mb-3">🏢</div>
+                        <h3 className="text-lg font-bold text-slate-800 mb-1">No Studio Apartments Found From Your Filter</h3>
+                        <p className="text-xs text-slate-500">No listings matched what you filtered for. You can view or look at the properties below instead.</p>
+                      </div>
+                    )}
                     <PropertyList
                       properties={paginatedProperties}
                       emptyMessage="No studio apartments available at the moment."

@@ -15,7 +15,7 @@ import {
   Menu, MoreHorizontal, Copy, ExternalLink, Link,
   Bookmark, Flag, Bell, Settings, Power,
   Zap as ZapIcon, Rocket, Crown, Diamond,
-  Search, Filter, Grid as GridIcon, List,
+  Search, Filter, Grid as GridIcon, List, RefreshCw,
   Eye as ViewIcon, Bed, Bath, Trees, Wifi, Shield as ShieldIcon,
   Dumbbell, Waves, ParkingCircle, Sprout, Leaf, ChevronLeft, ChevronRight,
   File, FolderOpen, FileImage, FileSpreadsheet, FileArchive, ImagePlus,
@@ -1339,6 +1339,18 @@ const AgentProfile = () => {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('personal');
   const [showEditModal, setShowEditModal] = useState(false);
+  // Mirrors showEditModal but readable synchronously (no re-render lag) -
+  // a photo/logo upload mid-edit calls fetchAgentProfileData() to refresh
+  // the properties/documents lists, and without this guard that call's
+  // setEditForm(...) would stomp over whatever the vendor had typed but not
+  // yet saved. Set it alongside every setShowEditModal call, never on its own.
+  const isEditingRef = useRef(false);
+  // Only suppress the editForm overwrite once it has real data in it at
+  // least once - otherwise clicking "Edit" before the very first fetch
+  // resolves (e.g. right after the manual refresh button) would permanently
+  // skip the only fetch that was ever going to populate the form, leaving
+  // every required field blank and Save unusable.
+  const hasLoadedProfileRef = useRef(false);
   const { toast, showToast, hideToast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteItem, setDeleteItem] = useState(null);
@@ -1346,6 +1358,7 @@ const AgentProfile = () => {
   const [showAgencyLogoDeleteConfirm, setShowAgencyLogoDeleteConfirm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [showPdfViewer, setShowPdfViewer] = useState(false);
   const [pdfToView, setPdfToView] = useState(null);
@@ -1372,6 +1385,7 @@ const AgentProfile = () => {
   // ============ STATE - EDIT FORM ============
   const [editForm, setEditForm] = useState({
     // Personal Details
+    userId: '',
     fullName: '',
     phoneNumber: '',
     emailAddress: '',
@@ -1424,7 +1438,7 @@ const AgentProfile = () => {
     panCard: null,
     
     // Business Documents
-    reraCertificate: null,
+    // reraCertificate: null,
     gstCertificate: null,
     businessRegistrationCertificate: null,
     
@@ -1462,8 +1476,15 @@ const AgentProfile = () => {
       const propertiesData = response?.properties?.data || [];
       
       // ============ 1. SET EDIT FORM (Agent Profile Data) ============
-      setEditForm({
+      // Skipped only while the edit modal is open AND the form already has
+      // real data in it - a photo/logo upload mid-edit re-fetches to refresh
+      // properties/documents below, and overwriting editForm in that case
+      // would wipe out anything the vendor had typed but not yet saved (see
+      // isEditingRef/hasLoadedProfileRef above). The very first load always
+      // goes through, even if "Edit" was clicked before it resolved.
+      if (!isEditingRef.current || !hasLoadedProfileRef.current) setEditForm({
         // Personal Details
+        userId: profileData.userId || '',
         fullName: profileData.fullName || profileData.agentName || '',
         phoneNumber: profileData.phoneNumber || profileData.mobile || '',
         emailAddress: profileData.emailAddress || profileData.emailId || '',
@@ -1506,7 +1527,8 @@ const AgentProfile = () => {
         linkedIn: profileData.linkedIn || profileData.linkedin || '',
         youtubeChannel: profileData.youtubeChannel || profileData.youtube || '',
       });
-      
+      hasLoadedProfileRef.current = true;
+
       // ============ 2. SET PROPERTIES ============
       const formattedProperties = propertiesData.map(mapPropertyToFrontend);
       setProperties(formattedProperties);
@@ -1614,6 +1636,28 @@ const AgentProfile = () => {
     fetchAgentProfileData();
   }, []);
 
+  // Manual refresh (the icon next to the search bar) - re-fetches profile +
+  // properties without a full browser reload.
+  const handleRefreshProperties = async () => {
+    setIsRefreshing(true);
+    try {
+      await fetchAgentProfileData();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Posting a new property from anywhere in the app dispatches this event
+  // (see propertyService.createProperty) - auto-refresh this profile's own
+  // property list if it's mounted when that happens.
+  useEffect(() => {
+    const handlePropertyCreated = () => {
+      fetchAgentProfileData();
+    };
+    window.addEventListener('eliteinova:property-created', handlePropertyCreated);
+    return () => window.removeEventListener('eliteinova:property-created', handlePropertyCreated);
+  }, []);
+
   // ============ NAVIGATION ============
   const handleNavigateBack = () => {
     if (window.history.length > 2) {
@@ -1646,7 +1690,7 @@ const AgentProfile = () => {
 
   // ============ HANDLE SAVE ============
   const handleSave = async () => {
-    const requiredFields = ['fullName', 'phoneNumber', 'emailAddress', 'agencyName', 'aadhaarNumber', 'panNumber'];
+    const requiredFields = ['fullName', 'phoneNumber', 'agencyName', 'aadhaarNumber', 'panNumber'];
     const missingFields = requiredFields.filter(field => !editForm[field]);
 
     if (missingFields.length > 0) {
@@ -1659,7 +1703,7 @@ const AgentProfile = () => {
       const profileData = {
         fullName: editForm.fullName,
         phoneNumber: editForm.phoneNumber,
-        emailAddress: editForm.emailAddress,
+        // emailAddress intentionally not sent - it's the login email, read-only here.
         dateOfBirth: editForm.dateOfBirth,
         gender: editForm.gender,
         agencyName: editForm.agencyName,
@@ -1689,6 +1733,7 @@ const AgentProfile = () => {
       };
       
       await updateMyProfile('agent', profileData);
+      isEditingRef.current = false;
       setShowEditModal(false);
       showSuccessToast('Profile updated successfully!');
       await fetchAgentProfileData();
@@ -2496,7 +2541,7 @@ const AgentProfile = () => {
           documents.aadhaarCard,
           documents.panCard,
           documents.businessRegistrationCertificate,
-          documents.reraCertificate
+          // documents.reraCertificate
         ];
         const filledCount = identityFields.filter(Boolean).length;
 
@@ -2577,7 +2622,7 @@ const AgentProfile = () => {
                     <span className="text-[10px] sm:text-xs text-gray-400 font-medium italic">Not uploaded</span>
                   )}
                 </AnimatedCard>
-                <AnimatedCard label="RERA Certificate" icon={<FileCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.4}>
+                {/* <AnimatedCard label="RERA Certificate" icon={<FileCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />} delay={0.4}>
                   {documents.reraCertificate ? (
                     <div className="flex items-center gap-2">
                       <button
@@ -2597,7 +2642,7 @@ const AgentProfile = () => {
                   ) : (
                     <span className="text-[10px] sm:text-xs text-gray-400 font-medium italic">Not uploaded</span>
                   )}
-                </AnimatedCard>
+                </AnimatedCard> */}
               </div>
             </div>
           </div>
@@ -2610,7 +2655,7 @@ const AgentProfile = () => {
           'agencyLogo',
           'aadhaarCard',
           'panCard',
-          'reraCertificate',
+          // 'reraCertificate',
           'gstCertificate',
           'businessRegistrationCertificate'
         ];
@@ -2634,7 +2679,7 @@ const AgentProfile = () => {
                 { field: 'agencyLogo', label: 'Agency Logo', icon: <Image className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
                 { field: 'aadhaarCard', label: 'Aadhaar Card', icon: <IdCard className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
                 { field: 'panCard', label: 'PAN Card', icon: <CreditCard className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
-                { field: 'reraCertificate', label: 'RERA Certificate', icon: <BadgeCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
+                // { field: 'reraCertificate', label: 'RERA Certificate', icon: <BadgeCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
                 { field: 'gstCertificate', label: 'GST Certificate', icon: <Hash className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
                 { field: 'businessRegistrationCertificate', label: 'Business Registration', icon: <FileCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
               ].map((doc) => {
@@ -2964,6 +3009,16 @@ const AgentProfile = () => {
           </div>
           
           <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto flex-wrap">
+            <button
+              onClick={handleRefreshProperties}
+              disabled={isRefreshing}
+              className="p-1.5 sm:p-2 rounded-lg border-2 border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-[#00695C] hover:text-[#00695C] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Refresh properties"
+              title="Refresh properties"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </button>
+
             <div className="relative flex-1 sm:flex-initial min-w-[100px] sm:min-w-[120px]">
               <input
                 type="text"
@@ -3432,8 +3487,8 @@ const AgentProfile = () => {
                 </div>
                 Edit Agent Profile
               </h2>
-              <button 
-                onClick={() => setShowEditModal(false)} 
+              <button
+                onClick={() => { isEditingRef.current = false; setShowEditModal(false); }}
                 className="text-white/80 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110"
               >
                 <X className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -3450,17 +3505,47 @@ const AgentProfile = () => {
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 w-full">
                   {[
-                    { name: 'fullName', label: 'Full Name *', emoji: '👤' },
-                    { name: 'phoneNumber', label: 'Mobile Number *', emoji: '📱' },
-                    { name: 'emailAddress', label: 'Email Address *', emoji: '✉️' },
+                    { name: 'fullName', label: 'Full Name *', emoji: '👤', type:'text' },
+                    { name: 'phoneNumber', label: 'Mobile Number *', emoji: '📱', type:'text' },
+                    { name: 'emailAddress', label: 'Email Address', emoji: '✉️', type:'email' },
                     { name: 'dateOfBirth', label: 'Date of Birth', type: 'date', emoji: '🎂' },
-                    { name: 'gender', label: 'Gender', emoji: '⚥' },
+                    { name: 'gender', label: 'Gender', emoji: '⚥', type:'text' },
                   ].map((field) => (
                     <div key={field.name} className="space-y-1 sm:space-y-1.5 w-full">
                       <label className="block text-[10px] sm:text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5 sm:gap-2">
                         <span className="text-sm sm:text-base">{field.emoji}</span> {field.label}
                       </label>
-                      {field.name === 'dateOfBirth' ? (
+                      {editForm[field.name].length > 0 ? (
+                        <input
+                          type={field.type}
+                          name={field.name}
+                          value={editForm[field.name]}
+                          disabled
+                          readOnly
+                          title="Contact support to change your login email"
+                          className="w-full border-2 border-gray-200 bg-gray-100 rounded-2xl px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-500 cursor-not-allowed"
+                        />
+                      ): <input
+                        type={field.type}
+                        name={field.name}
+                        value={editForm[field.name]}
+                        onChange={handleEditChange}
+                        className="w-full border-2 border-gray-200 focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 rounded-2xl px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-800 outline-none transition-all duration-300"
+                      />
+                      }
+                      {/* {field.name === 'emailAddress' ? (
+                        // Login email - not editable from here (it lives on the
+                        // account, not this vendor profile). Shown for reference only.
+                        <input
+                          type="email"
+                          name={field.name}
+                          value={editForm.emailAddress}
+                          disabled
+                          readOnly
+                          title="Contact support to change your login email"
+                          className="w-full border-2 border-gray-200 bg-gray-100 rounded-2xl px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-500 cursor-not-allowed"
+                        />
+                      ) : field.name === 'dateOfBirth' ? (
                         <input
                           type="date"
                           name={field.name}
@@ -3487,7 +3572,7 @@ const AgentProfile = () => {
                           onChange={handleEditChange}
                           className="w-full border-2 border-gray-200 focus:border-[#00695C] focus:ring-4 focus:ring-[#00695C]/20 rounded-2xl px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-800 outline-none transition-all duration-300"
                         />
-                      )}
+                      )} */}
                     </div>
                   ))}
                   <div className="space-y-1 sm:space-y-1.5 w-full">
@@ -3719,6 +3804,38 @@ const AgentProfile = () => {
                   </div>
                   <div className="space-y-1 sm:space-y-1.5 w-full">
                     <label className="block text-[10px] sm:text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5 sm:gap-2">
+                      <span className="text-sm sm:text-base">📎</span> Upload GST Certificate
+                    </label>
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <button
+                        onClick={() => fileInputRefs.current['gstCertificate']?.click()}
+                        className="px-2 sm:px-3 py-1 sm:py-1.5 bg-[#00695C] text-white rounded-lg text-[10px] sm:text-xs font-bold hover:bg-[#005A4F] transition-all duration-300"
+                      >
+                        Upload
+                      </button>
+                      {documents.gstCertificate && (
+                        <button
+                          onClick={() => handlePdfDelete('gstCertificate')}
+                          className="px-2 sm:px-3 py-1 sm:py-1.5 bg-red-500 text-white rounded-lg text-[10px] sm:text-xs font-bold hover:bg-red-600 transition-all duration-300"
+                        >
+                          Delete
+                        </button>
+                      )}
+                      <input
+                        ref={el => fileInputRefs.current['gstCertificate'] = el}
+                        type="file"
+                        className="hidden"
+                        accept=".pdf"
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (file) handlePdfUpload('gstCertificate', file);
+                          e.target.value = '';
+                        }}
+                      />
+                    </div>
+                  </div>
+                  {/* <div className="space-y-1 sm:space-y-1.5 w-full">
+                    <label className="block text-[10px] sm:text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5 sm:gap-2">
                       <span className="text-sm sm:text-base">📎</span> Upload RERA Certificate
                     </label>
                     <div className="flex items-center gap-2 sm:gap-3">
@@ -3748,7 +3865,7 @@ const AgentProfile = () => {
                         }}
                       />
                     </div>
-                  </div>
+                  </div> */}
                 </div>
               </div>
 
@@ -3894,8 +4011,8 @@ const AgentProfile = () => {
               </div> */}
             </div>
             <div className="px-4 sm:px-6 md:px-8 py-3 sm:py-4 md:py-5 bg-white border-t-2 border-gray-100 flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 flex-shrink-0">
-              <button 
-                onClick={() => setShowEditModal(false)} 
+              <button
+                onClick={() => { isEditingRef.current = false; setShowEditModal(false); }}
                 className="px-4 sm:px-6 md:px-8 py-2 sm:py-3 rounded-2xl border-2 border-gray-300 text-gray-700 text-xs sm:text-sm font-bold hover:bg-gray-100 transition-all duration-300 hover:scale-105 w-full sm:w-auto"
               >
                 Cancel
@@ -4002,7 +4119,7 @@ const AgentProfile = () => {
               </div>
             </div>
             <button
-              onClick={() => setShowEditModal(true)}
+              onClick={() => { isEditingRef.current = true; setShowEditModal(true); }}
               className="relative flex items-center gap-1.5 sm:gap-2 px-4 sm:px-5 md:px-6 py-2 sm:py-2.5 md:py-3 bg-gradient-to-r from-[#00695C] to-[#26A69A] hover:from-[#005A4F] hover:to-[#1B9E8E] text-white rounded-xl sm:rounded-2xl font-bold transition-all duration-300 shadow-lg hover:shadow-2xl w-full sm:w-auto justify-center transform hover:scale-105 hover:-translate-y-1 group text-xs sm:text-sm overflow-hidden"
             >
               <span className="absolute top-0 left-[-100%] w-full h-full bg-gradient-to-r from-transparent via-white/25 to-transparent group-hover:left-full transition-all duration-700 ease-out" />
@@ -4079,7 +4196,7 @@ const AgentProfile = () => {
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-1.5 sm:gap-2 mb-1 sm:mb-1.5">
                 <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-gray-800">{editForm.fullName}</h2>
                 <span className="text-[10px] sm:text-xs text-[#00695C] font-medium bg-gray-100 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full border border-gray-200">
-                  Agent ID: #AGT-{editForm.phoneNumber?.slice(-4) || '0000'}
+                  {editForm.userId}
                 </span>
                 <span className="relative overflow-hidden bg-gradient-to-r from-[#00695C] to-[#26A69A] text-white px-2 sm:px-3 py-0.5 rounded-full text-[8px] sm:text-[10px] font-bold">
                   Verified Agent

@@ -4,13 +4,17 @@ import json
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, UploadFile, status, Request
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
+from app.schemas.vendor_profile_request import VendorProfileUpdate
+from app.schemas.vendor_own_profile import VendorOwnProfile, VendorProfileWithProperties, VendorDocumentMeta, ProfileFilesForRole
+from app.schemas.vendor_property_card import VendorPropertyCard, VendorPropertyListResponse, VendorMediaUploadResult
+from app.schemas.common_response import SuccessResponse, DeletedResult, FileUrlResult, ViewUrlResult
 from app.services.profile_service import ProfileService, VENDOR_TYPE_MAP
 from app.services.property_service import PropertyService
 from app.schemas.property_error import PropertyError
 from app.core.response_utils import strip_none_values
-from app.core.file_mappings import DOC_TYPE_MAPPING, FILE_MAPPINGS, PRIMARY_IMAGE_FIELDS
 from app.api.dependencies import require_authenticated, require_vendor, get_property_service, get_profile_service
 from app.models.property import PropertyStatus
 from app.services.field_mapping_service import FieldMappingService
@@ -25,10 +29,37 @@ class VendorType(str, Enum):
     PROPERTY_MANAGEMENT = "property-management"
 
 
-@router.get("/{vendor_type}")
-async def get_vendor_profile(
+def _allowed_posted_by(current_user: Dict[str, Any]) -> Optional[set]:
+    """Set of PostedBy values this user may access, or None for unrestricted.
+
+    Admins are unrestricted. A vendor with no stored vendor_types (legacy
+    accounts created before vendor_type existed) is also unrestricted so
+    existing vendors keep working.
+    """
+    if current_user.get("role") == "admin":
+        return None
+    stored = {str(t).upper() for t in (current_user.get("vendor_types") or []) if t}
+    return stored or None
+
+
+async def require_vendor_type_access(
     vendor_type: VendorType,
     current_user: Dict[str, Any] = Depends(require_vendor),
+) -> Dict[str, Any]:
+    allowed = _allowed_posted_by(current_user)
+    posted_by = VENDOR_TYPE_MAP[vendor_type.value].value
+    if allowed is not None and posted_by not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this vendor profile",
+        )
+    return current_user
+
+
+@router.get("/{vendor_type}", response_model=VendorProfileWithProperties, response_model_exclude_none=True)
+async def get_vendor_profile(
+    vendor_type: VendorType,
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
     property_service: PropertyService = Depends(get_property_service),
 ):
@@ -43,29 +74,34 @@ async def get_vendor_profile(
         user_id=user_id, posted_by=posted_by
     )
     properties_payload = service.format_property_list(properties, total_count, skip=0, limit=20)
-    return strip_none_values({"success": True, "profile": profile, "properties": properties_payload})
+    return VendorProfileWithProperties(
+        profile=VendorOwnProfile.model_validate(profile),
+        properties=VendorPropertyListResponse.model_validate(properties_payload),
+    )
 
 
-@router.put("/{vendor_type}")
+@router.put("/{vendor_type}", response_model=SuccessResponse[VendorOwnProfile], response_model_exclude_none=True)
 async def update_vendor_profile(
     vendor_type: VendorType,
-    update_data: Dict[str, Any] = Body(...),
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    body: VendorProfileUpdate,
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
 ):
     data = await service.update_vendor_profile(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
-        update_data=update_data,
+        update_data=body.model_dump(by_alias=True, exclude_unset=True),
     )
-    return strip_none_values({"success": True, "data": data, "message": "Profile updated successfully"})
+    return SuccessResponse[VendorOwnProfile](
+        data=VendorOwnProfile.model_validate(data), message="Profile updated successfully",
+    )
 
 
-@router.post("/{vendor_type}/photo")
+@router.post("/{vendor_type}/photo", response_model=SuccessResponse[FileUrlResult], response_model_exclude_none=True)
 async def upload_vendor_profile_photo(
     vendor_type: VendorType,
     request: Request,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
 ):
     file = await _get_single_file_from_form(request)
@@ -74,27 +110,29 @@ async def upload_vendor_profile_photo(
         vendor_type=vendor_type.value,
         file=file,
     )
-    return strip_none_values({"success": True, "data": data, "message": "Profile photo uploaded successfully"})
+    return SuccessResponse[FileUrlResult](
+        data=FileUrlResult.model_validate(data), message="Profile photo uploaded successfully",
+    )
 
 
-@router.delete("/{vendor_type}/photo")
+@router.delete("/{vendor_type}/photo", response_model=SuccessResponse[DeletedResult], response_model_exclude_none=True)
 async def delete_vendor_profile_photo(
     vendor_type: VendorType,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
 ):
     data = await service.delete_vendor_profile_photo(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
     )
-    return strip_none_values({"success": True, "data": data, "message": "Profile photo deleted"})
+    return SuccessResponse[DeletedResult](data=DeletedResult.model_validate(data), message="Profile photo deleted")
 
 
-@router.post("/{vendor_type}/logo")
+@router.post("/{vendor_type}/logo", response_model=SuccessResponse[FileUrlResult], response_model_exclude_none=True)
 async def upload_vendor_logo(
     vendor_type: VendorType,
     request: Request,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
 ):
     file = await _get_single_file_from_form(request)
@@ -103,30 +141,32 @@ async def upload_vendor_logo(
         vendor_type=vendor_type.value,
         file=file,
     )
-    return strip_none_values({"success": True, "data": data, "message": "Logo uploaded successfully"})
+    return SuccessResponse[FileUrlResult](
+        data=FileUrlResult.model_validate(data), message="Logo uploaded successfully",
+    )
 
 
-@router.delete("/{vendor_type}/logo")
+@router.delete("/{vendor_type}/logo", response_model=SuccessResponse[DeletedResult], response_model_exclude_none=True)
 async def delete_vendor_logo(
     vendor_type: VendorType,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
 ):
     data = await service.delete_vendor_logo(
         user_id=current_user.get("user_id"),
         vendor_type=vendor_type.value,
     )
-    return strip_none_values({"success": True, "data": data, "message": "Logo deleted"})
+    return SuccessResponse[DeletedResult](data=DeletedResult.model_validate(data), message="Logo deleted")
 
 
 
-@router.get("/{vendor_type}/properties")
+@router.get("/{vendor_type}/properties", response_model=VendorPropertyListResponse, response_model_exclude_none=True)
 async def get_vendor_properties(
     vendor_type: VendorType,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     status_filter: Optional[str] = Query(None, alias="status"),
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
     property_service: PropertyService = Depends(get_property_service),
 ):
@@ -136,16 +176,16 @@ async def get_vendor_properties(
         user_id=current_user.get("user_id"), posted_by=posted_by, skip=skip, limit=limit, status=status_filter
     )
     data = service.format_property_list(properties, total_count, skip=skip, limit=limit)
-    return strip_none_values(data)
+    return VendorPropertyListResponse.model_validate(data)
 
 
-@router.get("/{vendor_type}/properties/search")
+@router.get("/{vendor_type}/properties/search", response_model=VendorPropertyListResponse, response_model_exclude_none=True)
 async def search_vendor_properties(
     vendor_type: VendorType,
     q: Optional[str] = Query(None, description="Keyword to search title/city/area/address"),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
     property_service: PropertyService = Depends(get_property_service),
 ):
@@ -155,14 +195,14 @@ async def search_vendor_properties(
         user_id=current_user.get("user_id"), posted_by=posted_by, keyword=q, skip=skip, limit=limit
     )
     data = service.format_property_list(properties, total_count, skip=skip, limit=limit)
-    return strip_none_values(data)
+    return VendorPropertyListResponse.model_validate(data)
 
 
-@router.get("/{vendor_type}/properties/{property_id}")
+@router.get("/{vendor_type}/properties/{property_id}", response_model=SuccessResponse[VendorPropertyCard], response_model_exclude_none=True)
 async def get_vendor_property_detail(
     vendor_type: VendorType,
     property_id: str,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
     property_service: PropertyService = Depends(get_property_service),
 ):
@@ -171,7 +211,7 @@ async def get_vendor_property_detail(
     service.assert_owns_property(prop, current_user.get("user_id"), posted_by)
     full_prop = await property_service.get_property_with_relations_raw(property_id)
     data = service.to_response(full_prop)
-    return strip_none_values({"success": True, "data": data})
+    return SuccessResponse[VendorPropertyCard](data=VendorPropertyCard.model_validate(data))
 
 
 # @router.put("/{vendor_type}/properties/{property_id}")
@@ -192,12 +232,12 @@ async def get_vendor_property_detail(
 
 
 
-@router.put("/{vendor_type}/properties/{property_id}")
+@router.put("/{vendor_type}/properties/{property_id}", response_model=SuccessResponse[VendorPropertyCard], response_model_exclude_none=True)
 async def update_vendor_property(
     vendor_type: VendorType,
     property_id: str,
     request: Request,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
     property_service: PropertyService = Depends(get_property_service),
 ):
@@ -279,14 +319,16 @@ async def update_vendor_property(
 
     updated_property = await property_service.get_property_with_relations_raw(property_id)
     result = service.to_response(updated_property)
-    return strip_none_values({"success": True, "data": result, "message": "Property updated successfully"})
+    return SuccessResponse[VendorPropertyCard](
+        data=VendorPropertyCard.model_validate(result), message="Property updated successfully",
+    )
 
 
-@router.delete("/{vendor_type}/properties/{property_id}")
+@router.delete("/{vendor_type}/properties/{property_id}", response_model=SuccessResponse[DeletedResult], response_model_exclude_none=True)
 async def delete_vendor_property(
     vendor_type: VendorType,
     property_id: str,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
     property_service: PropertyService = Depends(get_property_service),
 ):
@@ -299,15 +341,21 @@ async def delete_vendor_property(
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
-    return strip_none_values({"success": True, "data": {"deleted": True}, "message": "Property deleted successfully"})
+    return SuccessResponse[DeletedResult](data=DeletedResult(), message="Property deleted successfully")
 
 
-@router.patch("/{vendor_type}/properties/{property_id}/status")
+class PropertyStatusResult(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    id: str
+    property_status: str = Field(alias="propertyStatus")
+
+
+@router.patch("/{vendor_type}/properties/{property_id}/status", response_model=SuccessResponse[PropertyStatusResult], response_model_exclude_none=True)
 async def update_vendor_property_status(
     vendor_type: VendorType,
     property_id: str,
     new_status: str = Body(..., embed=True, alias="status"),
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
     property_service: PropertyService = Depends(get_property_service),
 ):
@@ -326,16 +374,18 @@ async def update_vendor_property_status(
 
     updated = await property_service.update_property_status(property_id, canonical_status)
     data = {"id": updated.id, "propertyStatus": updated.status}
-    return strip_none_values({"success": True, "data": data, "message": "Status updated successfully"})
+    return SuccessResponse[PropertyStatusResult](
+        data=PropertyStatusResult.model_validate(data), message="Status updated successfully",
+    )
 
-@router.post("/{vendor_type}/properties/{property_id}/images")
+@router.post("/{vendor_type}/properties/{property_id}/images", response_model=SuccessResponse[VendorMediaUploadResult], response_model_exclude_none=True)
 async def upload_vendor_property_image(
     vendor_type: VendorType,
     property_id: str,
     request: Request,
     order: int = Query(0, ge=0),
     is_cover: bool = Query(False),
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
     property_service: PropertyService = Depends(get_property_service),
 ):
@@ -355,15 +405,17 @@ async def upload_vendor_property_image(
         )
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
-    return strip_none_values({"success": True, "data": data, "message": "Image uploaded successfully"})
+    return SuccessResponse[VendorMediaUploadResult](
+        data=VendorMediaUploadResult.model_validate(data), message="Image uploaded successfully",
+    )
 
 
-@router.delete("/{vendor_type}/properties/{property_id}/images/{image_index}")
+@router.delete("/{vendor_type}/properties/{property_id}/images/{image_index}", response_model=SuccessResponse[DeletedResult], response_model_exclude_none=True)
 async def delete_vendor_property_image(
     vendor_type: VendorType,
     property_id: str,
     image_index: int,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
     property_service: PropertyService = Depends(get_property_service),
 ):
@@ -374,15 +426,15 @@ async def delete_vendor_property_image(
     deleted = await property_service.delete_property_image_by_order(property_id, image_index)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found at that index")
-    return strip_none_values({"success": True, "data": {"deleted": True}, "message": "Image deleted successfully"})
+    return SuccessResponse[DeletedResult](data=DeletedResult(), message="Image deleted successfully")
 
 
-@router.post("/{vendor_type}/properties/{property_id}/cover")
+@router.post("/{vendor_type}/properties/{property_id}/cover", response_model=SuccessResponse[VendorMediaUploadResult], response_model_exclude_none=True)
 async def set_vendor_property_cover(
     vendor_type: VendorType,
     property_id: str,
     media_id: int = Body(..., embed=True),
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
     property_service: PropertyService = Depends(get_property_service),
 ):
@@ -394,15 +446,17 @@ async def set_vendor_property_cover(
     if not media:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found on this property")
     data = {"id": media.id, "file_url": media.file_url, "is_primary": media.is_primary}
-    return strip_none_values({"success": True, "data": data, "message": "Cover image updated"})
+    return SuccessResponse[VendorMediaUploadResult](
+        data=VendorMediaUploadResult.model_validate(data), message="Cover image updated",
+    )
 
 
-@router.post("/{vendor_type}/properties/{property_id}/video")
+@router.post("/{vendor_type}/properties/{property_id}/video", response_model=SuccessResponse[VendorMediaUploadResult], response_model_exclude_none=True)
 async def upload_vendor_property_video(
     vendor_type: VendorType,
     property_id: str,
     request: Request,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
     property_service: PropertyService = Depends(get_property_service),
 ):
@@ -414,14 +468,16 @@ async def upload_vendor_property_video(
     data = await property_service.add_property_video_raw(
         property_id=property_id, file=file, user_id=current_user.get("user_id")
     )
-    return strip_none_values({"success": True, "data": data, "message": "Video uploaded successfully"})
+    return SuccessResponse[VendorMediaUploadResult](
+        data=VendorMediaUploadResult.model_validate(data), message="Video uploaded successfully",
+    )
 
 
-@router.delete("/{vendor_type}/properties/{property_id}/video")
+@router.delete("/{vendor_type}/properties/{property_id}/video", response_model=SuccessResponse[DeletedResult], response_model_exclude_none=True)
 async def delete_vendor_property_video(
     vendor_type: VendorType,
     property_id: str,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
     property_service: PropertyService = Depends(get_property_service),
 ):
@@ -430,71 +486,75 @@ async def delete_vendor_property_video(
     service.assert_owns_property(prop, current_user.get("user_id"), posted_by)
 
     await property_service.delete_property_video_raw(property_id)
-    return strip_none_values({"success": True, "data": {"deleted": True}, "message": "Video deleted successfully"})
+    return SuccessResponse[DeletedResult](data=DeletedResult(), message="Video deleted successfully")
 
 
-@router.post("/{vendor_type}/documents/{doc_type}")
+@router.post("/{vendor_type}/documents/{doc_type}", response_model=SuccessResponse[VendorDocumentMeta], response_model_exclude_none=True)
 async def upload_vendor_document(
     vendor_type: VendorType,
     doc_type: str,
     request: Request,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
 ):
     file = await _get_single_file_from_form(request)
     data = await service.upload_vendor_document(
         user_id=current_user.get("user_id"), vendor_type=vendor_type.value, doc_type=doc_type, file=file
     )
-    return strip_none_values({"success": True, "data": data, "message": f"{doc_type} uploaded successfully"})
+    return SuccessResponse[VendorDocumentMeta](
+        data=VendorDocumentMeta.model_validate(data), message=f"{doc_type} uploaded successfully",
+    )
 
 
-@router.get("/{vendor_type}/documents")
+@router.get("/{vendor_type}/documents", response_model=SuccessResponse[Dict[str, VendorDocumentMeta]], response_model_exclude_none=True)
 async def get_vendor_documents(
     vendor_type: VendorType,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
 ):
     data = await service.get_vendor_documents(user_id=current_user.get("user_id"), vendor_type=vendor_type.value)
-    return strip_none_values({"success": True, "data": data})
+    return SuccessResponse[Dict[str, VendorDocumentMeta]](
+        data={k: VendorDocumentMeta.model_validate(v) for k, v in data.items()},
+    )
 
 
-@router.get("/{vendor_type}/documents/{doc_type}")
+@router.get("/{vendor_type}/documents/{doc_type}", response_model=SuccessResponse[VendorDocumentMeta], response_model_exclude_none=True)
 async def get_vendor_document(
     vendor_type: VendorType,
     doc_type: str,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
 ):
     data = await service.get_vendor_document(user_id=current_user.get("user_id"), vendor_type=vendor_type.value, doc_type=doc_type)
     if not data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No '{doc_type}' document found")
-    return strip_none_values({"success": True, "data": data})
+    return SuccessResponse[VendorDocumentMeta](data=VendorDocumentMeta.model_validate(data))
 
 
-@router.get("/{vendor_type}/documents/{doc_type}/view-url")
+@router.get("/{vendor_type}/documents/{doc_type}/view-url", response_model=SuccessResponse[ViewUrlResult], response_model_exclude_none=True)
 async def get_vendor_document_view_url(
     vendor_type: VendorType,
     doc_type: str,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
 ):
     view_url = await service.get_vendor_document_view_url(
         user_id=current_user.get("user_id"), vendor_type=vendor_type.value, doc_type=doc_type
     )
-    return strip_none_values({"success": True, "data": {"viewUrl": view_url}})
+    return SuccessResponse[ViewUrlResult](data=ViewUrlResult(view_url=view_url))
 
 
-@router.delete("/{vendor_type}/documents/{doc_type}")
+@router.delete("/{vendor_type}/documents/{doc_type}", response_model=SuccessResponse[DeletedResult], response_model_exclude_none=True)
 async def delete_vendor_document(
     vendor_type: VendorType,
     doc_type: str,
-    current_user: Dict[str, Any] = Depends(require_vendor),
+    current_user: Dict[str, Any] = Depends(require_vendor_type_access),
     service: ProfileService = Depends(get_profile_service),
 ):
     deleted = await service.delete_vendor_document(user_id=current_user.get("user_id"), vendor_type=vendor_type.value, doc_type=doc_type)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No '{doc_type}' document found")
-    return strip_none_values({"success": True, "data": {"deleted": deleted}, "message": f"{doc_type} deleted successfully"})
+    return SuccessResponse[DeletedResult](data=DeletedResult(), message=f"{doc_type} deleted successfully")
 
 
 async def _get_single_file_from_form(request: Request) -> UploadFile:
@@ -511,173 +571,26 @@ async def _get_single_file_from_form(request: Request) -> UploadFile:
     )
 
 
-@router.post("/upload-profile-file")
-async def upload_profile_file(
-    request: Request,
-    current_user: Dict[str, Any] = Depends(require_vendor),
-    service: ProfileService = Depends(get_profile_service)
-):
-    form = await request.form()
-
-    field = None
-    file = None
-
-    for key, value in form.multi_items():
-        if isinstance(value, UploadFile):
-            field = key
-            file = value
-
-    if not field or not file:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid request. Expected { fieldName: File }"
-        )
-
-    profile_fields = [
-        'profilePhoto', 'agencyLogo', 'companyLogo', 'passportPhoto'
-    ]
-
-    if field not in profile_fields:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid profile field '{field}'. Must be one of: {', '.join(profile_fields)}"
-        )
-
-    if field not in FILE_MAPPINGS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Field '{field}' not found in mappings"
-        )
-
-    config = FILE_MAPPINGS[field]
-    category = config['category']
-    is_document = config['is_document']
-
-    if is_document:
-        doc_type = DOC_TYPE_MAPPING.get(field, 'other_supporting_document')
-        setattr(file, 'doc_type', doc_type)
-    else:
-        setattr(file, 'field_name', field)
-
-    setattr(file, 'field', field)
-    setattr(file, 'category', category)
-    setattr(file, 'is_document', is_document)
-
-    try:
-        result = await service.upload_and_get_file_metadata(
-            file=file, field=field, category=category, user_id=current_user.get("user_id")
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload file: {str(e)}"
-        )
-
-    return strip_none_values({
-        'success': True,
-        'data': result,
-        'message': f'{field} uploaded successfully'
-    })
-
-
-@router.post("/upload/file")
-async def upload_file(
-    request: Request,
-    current_user: Dict[str, Any] = Depends(require_vendor),
-    service: ProfileService = Depends(get_profile_service),
-    property_service: PropertyService = Depends(get_property_service),
-):
-    form = await request.form()
-
-    field = None
-    file = None
-    property_id = form.get("propertyId")
-
-    for key, value in form.multi_items():
-        if isinstance(value, UploadFile):
-            field = key
-            file = value
-
-    if not field or not file:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid request. Expected { fieldName: File }"
-        )
-    if field not in FILE_MAPPINGS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Field '{field}' not found in mappings"
-        )
-
-    config = FILE_MAPPINGS[field]
-    category = config['category']
-    is_document = config['is_document']
-
-    if is_document:
-        doc_type = DOC_TYPE_MAPPING.get(field, 'other_supporting_document')
-        setattr(file, 'doc_type', doc_type)
-    else:
-        setattr(file, 'field_name', field)
-
-    setattr(file, 'field', field)
-    setattr(file, 'category', category)
-    setattr(file, 'is_document', is_document)
-
-    is_primary = field in PRIMARY_IMAGE_FIELDS
-
-    try:
-        upload_result = await service.upload_and_get_file_metadata(
-            file=file, field=field, category=category, user_id=current_user.get("user_id")
-        )
-        if property_id and upload_result:
-            result = await property_service.attach_uploaded_file_raw(
-                property_id=property_id,
-                user_id=current_user.get("user_id"),
-                field=field,
-                category=category,
-                is_primary=is_primary,
-                upload_result=upload_result,
-                file=file,
-            )
-        else:
-            result = upload_result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload file: {str(e)}"
-        )
-
-    return strip_none_values({
-        'success': True,
-        'data': result,
-        'message': f'{field} uploaded successfully'
-    })
-
-
-@router.get("/profile-files")
+@router.get("/profile-files", response_model=SuccessResponse[Dict[str, ProfileFilesForRole]], response_model_exclude_none=True)
 async def get_profile_files(
     current_user: Dict[str, Any] = Depends(require_vendor),
     service: ProfileService = Depends(get_profile_service),
-    property_service: PropertyService = Depends(get_property_service),
 ):
     user_id = current_user.get("user_id")
     files: Dict[str, Any] = {}
+    allowed = _allowed_posted_by(current_user)
     for role_key, posted_by in VENDOR_TYPE_MAP.items():
-        detail_obj = await property_service.get_latest_vendor_detail_raw(user_id, posted_by)
-        formatted = service.format_profile_files_for_role(posted_by, detail_obj)
+        if allowed is not None and posted_by.value not in allowed:
+            continue
+        formatted = await service.get_profile_files_for_role(user_id, posted_by)
         if formatted:
             files[role_key] = formatted
-    return strip_none_values({
-        'success': True,
-        'data': files
-    })
+    return SuccessResponse[Dict[str, ProfileFilesForRole]](
+        data={k: ProfileFilesForRole.model_validate(v) for k, v in files.items()},
+    )
 
 
-@router.delete("/profile-file/{file_path:path}")
+@router.delete("/profile-file/{file_path:path}", response_model=SuccessResponse[DeletedResult], response_model_exclude_none=True)
 async def delete_profile_file(
     file_path: str,
     current_user: Dict[str, Any] = Depends(require_vendor),
@@ -685,14 +598,13 @@ async def delete_profile_file(
     property_service: PropertyService = Depends(get_property_service),
 ):
     vendor_documents = await property_service.get_vendor_documents(current_user.get("user_id"))
-    await service.delete_profile_file(
+    result = await service.delete_profile_file(
         file_path=file_path,
         user_id=current_user.get("user_id"),
         vendor_documents=vendor_documents,
     )
-    return strip_none_values({
-        'success': True,
-        'message': 'File deleted successfully'
-    })
+    return SuccessResponse[DeletedResult](
+        data=DeletedResult.model_validate(result), message="File deleted successfully",
+    )
 
 

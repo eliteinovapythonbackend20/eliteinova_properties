@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # Two-factor authentication (TOTP)
+    TOTP_ISSUER: str = "Eliteinova Properties"
+    # Fernet key used to encrypt TOTP secrets at rest. Set explicitly in
+    # production; when empty, a key is derived from SECRET_KEY.
+    TOTP_ENCRYPTION_KEY: str = ""
+    TOTP_VALID_WINDOW: int = 1
+    TWO_FACTOR_PENDING_TOKEN_EXPIRE_MINUTES: int = 5
+
     #Email
     SMTP_USERNAME: str="eliteinovapythonbackend20@gmail.com"
     SMTP_PASSWORD: str="nrfoszsdctajdnje"
@@ -44,6 +52,11 @@ class Settings(BaseSettings):
 
     RESET_TOKEN_EXPIRE_HOURS: int = 1
     VERIFICATION_TOKEN_EXPIRE_HOURS: int = 1
+
+    # Forgot-password OTP (email)
+    PASSWORD_RESET_OTP_EXPIRE_MINUTES: int = 10
+    PASSWORD_RESET_OTP_RESEND_SECONDS: int = 30
+    PASSWORD_RESET_OTP_MAX_ATTEMPTS: int = 5
 
 
     RAZORPAY_KEY_ID: str

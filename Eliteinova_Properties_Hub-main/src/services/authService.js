@@ -23,16 +23,6 @@ export const register = async (userData) => {
 };
 
 
-export const oauthLogin = async (provider, code) => {
-  try {
-    const response = await axiosInstance.post(`/auth/oauth/${provider}`, { code });
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || error.message;
-  }
-};
-
-
 export const validateToken = async (token) => {
   try {
     const response = await axiosInstance.get('/auth/validate', {
@@ -105,9 +95,61 @@ export const changePassword = async (passwordData, token) => {
 };
 
 
+export const verifyTwoFactorLogin = async (pendingToken, code) => {
+  try {
+    const response = await axiosInstance.post('/auth/2fa/verify', { pending_token: pendingToken, code });
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error.message;
+  }
+};
+
+export const twoFactorSetup = async (token) => {
+  try {
+    const response = await axiosInstance.post('/auth/2fa/setup', {}, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error.message;
+  }
+};
+
+export const twoFactorVerifySetup = async (code, token) => {
+  try {
+    const response = await axiosInstance.post('/auth/2fa/verify-setup', { code }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error.message;
+  }
+};
+
+export const twoFactorDisable = async ({ password, code }, token) => {
+  try {
+    const response = await axiosInstance.post('/auth/2fa/disable', { password, code }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error.message;
+  }
+};
+
 export const requestPasswordReset = async (email) => {
   try {
     const response = await axiosInstance.post('/auth/forgot-password', { email });
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error.message;
+  }
+};
+
+
+export const verifyResetOtp = async (email, otp) => {
+  try {
+    const response = await axiosInstance.post('/auth/verify-reset-otp', { email, otp });
     return response.data;
   } catch (error) {
     throw error.response?.data || error.message;

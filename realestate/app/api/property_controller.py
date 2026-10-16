@@ -1,9 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Path, Request
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
+
+from pydantic import BaseModel, Field
 import json
 
 from app.schemas.property_request import PropertyCreateMultipart, PropertyUpdateMultipart
 from app.schemas.property_response import PropertyResponse, PropertyListResponse, PropertyMediaResponse, PropertyDocumentResponse
+from app.schemas.property_document_meta import PropertyDocumentMeta, ReusedDocumentResult, LinkVerifiedResourcesResult
+from app.schemas.common_response import SuccessResponse
 from app.schemas.property_error import PropertyError
 from app.services.property_service import PropertyService
 from app.services.field_mapping_service import FieldMappingService
@@ -109,7 +113,7 @@ async def get_document_view_url(
 # MAIN PROPERTY CRUD ENDPOINTS
 # ============================================
 
-@router.post("/", status_code=status.HTTP_201_CREATED, response_model=PropertyResponse)
+@router.post("/", status_code=status.HTTP_201_CREATED, response_model=PropertyResponse, response_model_exclude_none=True)
 async def create_property(
     property_data: str = Form(...),
     images: Optional[List[UploadFile]] = File(None),
@@ -146,9 +150,9 @@ async def create_property(
         data['documents'] = documents
     if document_types:
         data['document_types'] = [t.strip() for t in document_types.split(',') if t.strip()]
-    # Lister photo / logos: each maps to its own column on the role detail table
-    # (profile_photo_url / company_logo_url / agency_logo_url) via the existing
-    # vendor-profile-image handling - they are neither property images nor documents.
+    # Lister photo / logos: the contact person's media for this listing - never
+    # the uploader's own reusable USER_MEDIA. Stored via contact_person_media_service,
+    # keyed by property_id - they are neither property images nor documents.
     if profile_photo:
         data['profilePhoto'] = profile_photo
     if company_logo:
@@ -178,7 +182,7 @@ async def create_property(
             file_metadata=file_metadata,
             user_id=current_user.get("user_id")
         )
-        return strip_none_values(result)
+        return PropertyResponse.model_validate(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except HTTPException:
@@ -189,7 +193,7 @@ async def create_property(
             detail=f"Failed to create property: {str(e)}"
         )
 
-@router.get("/{property_id}", response_model=PropertyResponse)
+@router.get("/{property_id}", response_model=PropertyResponse, response_model_exclude_none=True)
 async def get_property(
     property_id: str,
     current_user: Optional[Dict[str, Any]] = Depends(get_current_user_optional),
@@ -198,7 +202,7 @@ async def get_property(
     """Get a single property by ID with all relations"""
     try:
         result = await service.get_property_by_id(property_id)
-        return strip_none_values(result)
+        return PropertyResponse.model_validate(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except HTTPException:
@@ -209,7 +213,7 @@ async def get_property(
             detail=f"Failed to fetch property: {str(e)}"
         )
 
-@router.put("/{property_id}", response_model=PropertyResponse)
+@router.put("/{property_id}", response_model=PropertyResponse, response_model_exclude_none=True)
 async def update_property(
     property_id: str,
     property_data: str = Form(...),
@@ -241,9 +245,9 @@ async def update_property(
         data['documents'] = documents
     if document_types:
         data['document_types'] = [t.strip() for t in document_types.split(',') if t.strip()]
-    # Lister photo / logos: each maps to its own column on the role detail table
-    # (profile_photo_url / company_logo_url / agency_logo_url) via the existing
-    # vendor-profile-image handling - they are neither property images nor documents.
+    # Lister photo / logos: the contact person's media for this listing - never
+    # the uploader's own reusable USER_MEDIA. Stored via contact_person_media_service,
+    # keyed by property_id - they are neither property images nor documents.
     if profile_photo:
         data['profilePhoto'] = profile_photo
     if company_logo:
@@ -268,7 +272,7 @@ async def update_property(
             file_metadata=file_metadata,
             user_id=current_user.get("user_id")
         )
-        return strip_none_values(result)
+        return PropertyResponse.model_validate(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except HTTPException:
@@ -301,7 +305,7 @@ async def delete_property(
             detail=f"Failed to delete property: {str(e)}"
         )
 
-@router.get("/", response_model=PropertyListResponse)
+@router.get("/", response_model=PropertyListResponse, response_model_exclude_none=True)
 async def get_all_properties(
     page: int = 1,
     limit: int = 20,
@@ -323,7 +327,7 @@ async def get_all_properties(
     skip = (page - 1) * limit
     try:
         result = await service.get_all_properties(skip=skip, limit=limit)
-        return strip_none_values(result)
+        return PropertyListResponse.model_validate(result)
     except HTTPException:
         raise
     except Exception as e:
@@ -336,7 +340,7 @@ async def get_all_properties(
 # PROPERTY MEDIA MANAGEMENT ENDPOINTS
 # ============================================
 
-@router.post("/{property_id}/images", response_model=List[PropertyMediaResponse])
+@router.post("/{property_id}/images", response_model=List[PropertyMediaResponse], response_model_exclude_none=True)
 async def add_property_images(
     property_id: str,
     images: List[UploadFile] = File(...),
@@ -355,7 +359,7 @@ async def add_property_images(
             images=images,
             user_id=current_user.get("user_id")
         )
-        return strip_none_values(result)
+        return [PropertyMediaResponse.model_validate(item) for item in result]
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except HTTPException:
@@ -396,7 +400,7 @@ async def delete_property_image_by_index(
             detail=f"Failed to delete image: {str(e)}"
         )
 
-@router.post("/{property_id}/images/{image_id}/set-cover", response_model=PropertyMediaResponse)
+@router.post("/{property_id}/images/{image_id}/set-cover", response_model=PropertyMediaResponse, response_model_exclude_none=True)
 async def set_cover_image(
     property_id: str,
     image_id: int = Path(..., description="The ID of the image to set as cover"),
@@ -416,7 +420,7 @@ async def set_cover_image(
             media_id=image_id,
             user_id=current_user.get("user_id")
         )
-        return strip_none_values(result)
+        return PropertyMediaResponse.model_validate(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except HTTPException:
@@ -427,7 +431,7 @@ async def set_cover_image(
             detail=f"Failed to set cover image: {str(e)}"
         )
 
-@router.post("/{property_id}/video", response_model=PropertyMediaResponse)
+@router.post("/{property_id}/video", response_model=PropertyMediaResponse, response_model_exclude_none=True)
 async def add_property_video(
     property_id: str,
     video: UploadFile = File(...),
@@ -446,7 +450,7 @@ async def add_property_video(
             video=video,
             user_id=current_user.get("user_id")
         )
-        return strip_none_values(result)
+        return PropertyMediaResponse.model_validate(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except HTTPException:
@@ -483,7 +487,114 @@ async def delete_property_video(
 # PROPERTY DOCUMENT MANAGEMENT ENDPOINTS
 # ============================================
 
-@router.post("/{property_id}/documents", response_model=List[PropertyDocumentResponse])
+@router.get("/{property_id}/documents", response_model=SuccessResponse[List[PropertyDocumentMeta]], response_model_exclude_none=True)
+async def list_property_documents(
+    property_id: str,
+    current_user: Dict[str, Any] = Depends(require_authenticated),
+    service: PropertyService = Depends(get_property_service),
+):
+    """Documents attached to a property. Admin or the property's owner only.
+    Lists metadata only; use the view-url route for a signed link."""
+    docs = await service.list_property_documents(property_id, current_user)
+    return SuccessResponse[List[PropertyDocumentMeta]](
+        data=[
+            PropertyDocumentMeta(
+                id=d.id, document_type=d.document_type, document_key=d.document_key,
+                file_name=d.file_name, mime_type=d.mime_type, status=d.status,
+                version=d.version, is_current=d.is_current,
+            )
+            for d in docs
+        ],
+    )
+
+
+class ReuseDocumentRequest(BaseModel):
+    user_document_id: int = Field(..., description="The id of your own verified document to attach")
+    subject_type: Literal["PROPERTY", "CONTACT_PERSON"] = Field(..., description="Whose document this is for the property")
+
+
+@router.post(
+    "/{property_id}/documents/reuse",
+    status_code=status.HTTP_201_CREATED,
+    response_model=SuccessResponse[ReusedDocumentResult],
+    response_model_exclude_none=True,
+)
+async def reuse_user_document(
+    property_id: str,
+    body: ReuseDocumentRequest,
+    current_user: Dict[str, Any] = Depends(require_authenticated),
+    service: PropertyService = Depends(get_property_service),
+):
+    """Attach one of your own verified documents to this property by reference. The user
+    chooses each document explicitly; nothing is uploaded and no file is copied."""
+    try:
+        row = await service.reuse_user_document(
+            property_id=property_id,
+            user_id=current_user.get("user_id"),
+            user_document_id=body.user_document_id,
+            subject_type=body.subject_type,
+        )
+    except PropertyError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    return SuccessResponse[ReusedDocumentResult](
+        data=ReusedDocumentResult(
+            id=row.id, document_key=row.document_key, subject_type=row.subject_type,
+            status=row.status, is_current=row.is_current, version=row.version,
+            file_name=row.file_name, reused=True,
+        ),
+    )
+
+
+@router.post(
+    "/{property_id}/reuse-verified",
+    status_code=status.HTTP_200_OK,
+    response_model=SuccessResponse[LinkVerifiedResourcesResult],
+    response_model_exclude_none=True,
+)
+async def link_all_verified_user_resources(
+    property_id: str,
+    current_user: Dict[str, Any] = Depends(require_authenticated),
+    service: PropertyService = Depends(get_property_service),
+):
+    """The "this listing is mine" shortcut: link every one of your own current
+    verified documents and media (Aadhaar, PAN, profile photo, logo, ...) to
+    this property in one call, instead of one reuse call per item. Only for
+    your own property, only your own verified/legacy items - never a guess,
+    never a new upload. Anything not eligible (still pending, etc.) is
+    reported back rather than silently skipped."""
+    try:
+        result = await service.link_all_verified_user_resources(
+            property_id=property_id, user_id=current_user.get("user_id"),
+        )
+    except PropertyError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    return SuccessResponse[LinkVerifiedResourcesResult](data=LinkVerifiedResourcesResult.model_validate(result))
+
+
+@router.get("/{property_id}/contact-documents", response_model=SuccessResponse[List[PropertyDocumentMeta]], response_model_exclude_none=True)
+async def list_property_contact_documents(
+    property_id: str,
+    current_user: Dict[str, Any] = Depends(require_authenticated),
+    service: PropertyService = Depends(get_property_service),
+):
+    """Identity documents of the contact person for this property. Admin or the property's owner only."""
+    try:
+        docs = await service.list_contact_documents(property_id, current_user)
+    except PropertyError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    return SuccessResponse[List[PropertyDocumentMeta]](
+        data=[
+            PropertyDocumentMeta(
+                id=d.id, document_type=d.document_type, document_key=d.document_key,
+                version=d.version, status=d.status, is_current=d.is_current,
+                file_name=d.file_name, uploaded_by=d.user_id,
+            )
+            for d in docs
+        ],
+    )
+
+
+@router.post("/{property_id}/documents", response_model=List[PropertyDocumentResponse], response_model_exclude_none=True)
 async def add_property_documents(
     property_id: str,
     documents: List[UploadFile] = File(...),
@@ -510,7 +621,7 @@ async def add_property_documents(
             document_types=doc_types,
             user_id=current_user.get("user_id")
         )
-        return strip_none_values(result)
+        return [PropertyDocumentResponse.model_validate(item) for item in result]
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except HTTPException:
@@ -520,6 +631,28 @@ async def add_property_documents(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to add documents: {str(e)}"
         )
+
+@router.post("/{property_id}/documents/{document_id}/versions", response_model=PropertyDocumentResponse, response_model_exclude_none=True)
+async def replace_property_document(
+    property_id: str,
+    document_id: int = Path(..., description="The document whose slot receives the new version"),
+    document: UploadFile = File(...),
+    current_user: Dict[str, Any] = Depends(require_authenticated),
+    service: PropertyService = Depends(get_property_service)
+):
+    """Upload a replacement for one document. It is pending until an admin verifies it;
+    the current version stays live meanwhile, and other documents are not affected."""
+    try:
+        result = await service.replace_property_document(
+            property_id=property_id,
+            document_id=document_id,
+            user_id=current_user.get("user_id"),
+            file=document,
+        )
+        return PropertyDocumentResponse.model_validate(result)
+    except PropertyError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+
 
 @router.delete("/{property_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_property_document(
@@ -549,79 +682,16 @@ async def delete_property_document(
             detail=f"Failed to delete document: {str(e)}"
         )
 
-# ============================================
-# VENDOR PROFILE IMAGE MANAGEMENT
-# ============================================
-
-@router.post("/vendor/profile-image", response_model=Dict[str, Any])
-async def update_vendor_profile_image(
-    property_id: str = Form(...),
-    image: UploadFile = File(...),
-    field_name: str = Form("profilePhoto"),
-    current_user: Dict[str, Any] = Depends(require_authenticated),
-    service: PropertyService = Depends(get_property_service)
-):
-    """
-    Update this listing's poster-photo
-
-    - **property_id**: Which listing this photo is for (a vendor with
-      multiple listings can have a different photo per listing)
-    - **image**: Profile image file
-    - **field_name**: Type of image (profilePhoto, agencyLogo, companyLogo)
-    - Updates the vendor's profile image on this property's details row
-    """
-    try:
-        result = await service.update_vendor_profile_image(
-            user_id=current_user.get("user_id"),
-            property_id=property_id,
-            image=image,
-            field_name=field_name
-        )
-        return strip_none_values(result)
-    except PropertyError as e:
-        raise HTTPException(status_code=e.status_code, detail=e.message)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update profile image: {str(e)}"
-        )
-
-@router.delete("/vendor/profile-image", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_vendor_profile_image(
-    property_id: str = Form(...),
-    field_name: str = Form("profilePhoto"),
-    current_user: Dict[str, Any] = Depends(require_authenticated),
-    service: PropertyService = Depends(get_property_service)
-):
-    """
-    Delete this listing's poster-photo
-
-    - **property_id**: Which listing this photo is for
-    - **field_name**: Type of image to delete (profilePhoto, agencyLogo, companyLogo)
-    """
-    try:
-        await service.delete_vendor_profile_image(
-            user_id=current_user.get("user_id"),
-            property_id=property_id,
-            field_name=field_name
-        )
-    except PropertyError as e:
-        raise HTTPException(status_code=e.status_code, detail=e.message)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete profile image: {str(e)}"
-        )
+# Vendor poster-photo/logo has no standalone edit/delete endpoint - it is only
+# created through the property-posting form (contact_person_media_service),
+# which is also how it is replaced (a new upload supersedes the current one).
+# See app/api/contact_person_media_controller.py for fetch/view-url.
 
 # ============================================
 # VENDOR DOCUMENT MANAGEMENT
 # ============================================
 
-@router.post("/vendor/documents", response_model=PropertyDocumentResponse)
+@router.post("/vendor/documents", response_model=PropertyDocumentResponse, response_model_exclude_none=True)
 async def upload_vendor_document(
     document: UploadFile = File(...),
     document_type: str = Form(...),
@@ -641,7 +711,7 @@ async def upload_vendor_document(
             document=document,
             document_type=document_type
         )
-        return strip_none_values(result)
+        return PropertyDocumentResponse.model_validate(result)
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except HTTPException:
@@ -679,7 +749,7 @@ async def delete_vendor_document(
             detail=f"Failed to delete vendor document: {str(e)}"
         )
 
-@router.get("/vendor/documents", response_model=List[PropertyDocumentResponse])
+@router.get("/vendor/documents", response_model=List[PropertyDocumentResponse], response_model_exclude_none=True)
 async def get_vendor_documents(
     current_user: Dict[str, Any] = Depends(require_authenticated),
     service: PropertyService = Depends(get_property_service)
@@ -689,7 +759,7 @@ async def get_vendor_documents(
         result = await service.get_vendor_documents(
             user_id=current_user.get("user_id")
         )
-        return strip_none_values(result)
+        return [PropertyDocumentResponse.model_validate(item) for item in result]
     except PropertyError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except HTTPException:

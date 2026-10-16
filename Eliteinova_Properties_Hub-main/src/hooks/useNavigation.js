@@ -8,7 +8,12 @@ import { searchByCategory, searchByPropertyType, searchBySubCategory, searchByPu
 const houseTypes = [
   { name: "Independent House", path: "/individual/independent-house" },
   { name: "Independent Villa", path: "/individual/independent-villa" },
-  { name: "Duplex Unit", path: "/individual/duplex-residential-unit" },
+  // Must match the posting forms' Property Type value exactly ("Duplex
+  // Residential Unit" - see e.g. Forms/Owner/Individual/IndSellForm.jsx) -
+  // searchByPropertyType below sends this name straight through as an ILIKE
+  // substring match against property_type, so a shorter/different display
+  // name here would silently return zero results.
+  { name: "Duplex Residential Unit", path: "/individual/duplex-residential-unit" },
 ];
 
 // ============================================
@@ -26,6 +31,20 @@ const apartmentTypes = [
   { name: "Condominium (Condo)", path: "/apartment/condominium" },
   { name: "Penthouse Apartment", path: "/apartment/penthouse-apartment" }
 ];
+
+// The posting forms' actual Property Type radio stores "Gated Community Studio"
+// and "Condo Apartment" - not the fuller display names above. The backend
+// matches property_type with an ILIKE substring check, so searching by the
+// full display name here would never find anything; these two need the
+// substring that's actually present in the stored value instead. Everything
+// else in apartmentTypes is now an exact match (see the posting forms'
+// propertyTypeOptions list), so only these two need translating. Used only
+// for the actual backend query below - activeApartmentType (the display name
+// shown in the UI) is set separately, further down, and is untouched by this.
+export const APARTMENT_TYPE_SEARCH_TERM = {
+  'Gated Community Apartment': 'Gated Community',
+  'Condominium (Condo)': 'Condo',
+};
 
 // ============================================
 // COMMERCIAL TYPES
@@ -236,7 +255,7 @@ function useNavigation() {
       // Check apartment types
       if (apartmentPathMap.has(currentPath)) {
         const typeName = apartmentPathMap.get(currentPath);
-        const response = await searchByPropertyType(typeName);
+        const response = await searchByPropertyType(APARTMENT_TYPE_SEARCH_TERM[typeName] || typeName);
         const filteredData = response?.data?.data || response?.data || [];
         setData(filteredData);
         console.log(`Apartment - ${typeName} Response:`, response);

@@ -54,14 +54,13 @@ class Customer(Base):
     kyc_aadhaar_verified = Column(Boolean, default=False, nullable=False)
     kyc_pan_verified = Column(Boolean, default=False, nullable=False)
     kyc_gst_verified = Column(Boolean, default=False, nullable=False)
-    kyc_rera_verified = Column(Boolean, default=False, nullable=False)
 
-    # URL of the doc a customer has already uploaded (upload flow itself is
-    # customer-side, a later phase) - admin KYC review just reads these.
-    aadhaar_doc_url = Column(String(500), nullable=True)
-    pan_doc_url = Column(String(500), nullable=True)
-    gst_doc_url = Column(String(500), nullable=True)
-    rera_doc_url = Column(String(500), nullable=True)
+    # The actual files for these are in user_documents (document_key
+    # aadhaar_card/pan_card/gst_certificate), referencing file_assets - never
+    # a URL column here. See app.services.customer_service.build_kyc_documents.
+    # There is no kyc_rera_verified/rera document: RERA registration has no
+    # personal meaning for a buyer/tenant (it is a property/project-level
+    # certificate), so it was dropped rather than fixed.
 
     preferred_contact_channel = Column(String(20), nullable=True)
     preferred_contact_time = Column(String(20), nullable=True)

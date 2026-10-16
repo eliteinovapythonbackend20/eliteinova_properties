@@ -2,8 +2,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  User, Mail, Phone, Calendar, MapPin, Building, 
-  CreditCard, Banknote, Upload, Camera, FileText,
+  User, Mail, Phone, Calendar, MapPin, Building,
+  CreditCard, Banknote, Upload, Camera, FileText, IdCard,
   CheckCircle, AlertCircle, ChevronDown, ChevronUp,
   Save, X, Shield, Clock, Globe, MessageCircle,
   Image, Video, Home, Briefcase, Landmark,
@@ -15,7 +15,7 @@ import {
   Menu, MoreHorizontal, Copy, ExternalLink, Link,
   Bookmark, Flag, Bell, Settings, Power,
   Zap as ZapIcon, Rocket, Crown, Diamond,
-  Search, Filter, Grid as GridIcon, List,
+  Search, Filter, Grid as GridIcon, List, RefreshCw,
   Eye as ViewIcon, Bed, Bath, Trees, Wifi, Shield as ShieldIcon, 
   Dumbbell, Waves, ParkingCircle, Sprout, Leaf, ChevronLeft, ChevronRight,
   File, FolderOpen, FileImage, FileSpreadsheet, FileArchive, ImagePlus
@@ -43,6 +43,7 @@ import {
   mapPropertyToFrontend,
   mapPropertyToBackend,
 } from '../../services/profileService';
+import { getPropertyDocumentViewUrl } from '../../services/propertyService';
 import { useToast } from '../../hooks/useToast';
 import Toast from '../common/Toast';
 
@@ -945,10 +946,29 @@ const PropertyDetailsModal = ({ property, onClose, onAddImages, onRemoveImage, o
   if (!property) return null;
 
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [viewingDocId, setViewingDocId] = useState(null);
   const detailImageInputRef = useRef(null);
   const rawImages = property.images || [];
   const hasImages = rawImages.length > 0;
   const images = hasImages ? rawImages : [NO_IMAGE_PLACEHOLDER];
+  const { toast, showToast } = useToast();
+
+  // Documents never carry a permanent URL from the list/detail response (they
+  // live in the private bucket) - each view mints a fresh, short-lived signed
+  // URL only after the backend re-checks that this user may see this document.
+  const handleViewDocument = async (doc) => {
+    if (viewingDocId) return;
+    setViewingDocId(doc.id);
+    try {
+      const viewUrl = await getPropertyDocumentViewUrl(doc.id);
+      if (!viewUrl) throw new Error('No view URL returned');
+      window.open(viewUrl, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      showToast(error?.message || 'Failed to open document. Please try again.', 'error');
+    } finally {
+      setViewingDocId(null);
+    }
+  };
 
   useEffect(() => {
     if (currentImageIndex >= images.length) {
@@ -1243,19 +1263,48 @@ const PropertyDetailsModal = ({ property, onClose, onAddImages, onRemoveImage, o
           {property.documents && property.documents.length > 0 && (
             <div>
               <h3 className="text-[10px] sm:text-[11px] font-bold text-gray-700 mb-1 sm:mb-1.5">Documents</h3>
-              <div className="flex flex-wrap gap-1 sm:gap-1.5">
-                {property.documents.map((doc, index) => (
-                  <a
-                    key={doc.id || index}
-                    href={doc.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 bg-[#00695C]/10 text-[#00695C] rounded-lg text-[9px] sm:text-[10px] font-bold hover:bg-[#00695C]/20 transition-colors"
-                  >
-                    <FileText className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                    {doc.name}
-                  </a>
-                ))}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2">
+                {property.documents.map((doc, index) => {
+                  const isLoading = viewingDocId === doc.id;
+                  return (
+                    <div
+                      key={doc.id || index}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleViewDocument(doc)}
+                      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleViewDocument(doc)}
+                      className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="p-1 sm:p-1.5 bg-[#00695C]/10 rounded-lg flex-shrink-0">
+                        <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#00695C]" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider truncate">
+                          {doc.type || 'Document'}
+                        </p>
+                        <p className="text-[10px] sm:text-xs font-bold text-gray-800 truncate">
+                          {doc.name || 'Document'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewDocument(doc);
+                        }}
+                        disabled={isLoading}
+                        title="View document"
+                        className="p-1 sm:p-1.5 bg-white rounded-lg text-[#00695C] hover:bg-[#00695C]/10 transition-colors flex-shrink-0 disabled:opacity-50"
+                      >
+                        {isLoading ? (
+                          <div className="w-3 h-3 sm:w-3.5 sm:h-3.5 border-2 border-[#00695C]/30 border-t-[#00695C] rounded-full animate-spin" />
+                        ) : (
+                          <Eye className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1329,6 +1378,7 @@ const PropertyDetailsModal = ({ property, onClose, onAddImages, onRemoveImage, o
           </button>
         </div>
       </div>
+      <Toast toast={toast} />
     </div>
   );
 };
@@ -1373,12 +1423,25 @@ const OwnerProfile = () => {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('personal');
   const [showEditModal, setShowEditModal] = useState(false);
+  // Mirrors showEditModal but readable synchronously (no re-render lag) -
+  // a photo upload mid-edit calls fetchProfileData() to refresh the
+  // properties/documents lists, and without this guard that call's
+  // setEditForm(...) would stomp over whatever the vendor had typed but not
+  // yet saved. Set it alongside every setShowEditModal call, never on its own.
+  const isEditingRef = useRef(false);
+  // Only suppress the editForm overwrite once it has real data in it at
+  // least once - otherwise clicking "Edit" before the very first fetch
+  // resolves (e.g. right after the manual refresh button) would permanently
+  // skip the only fetch that was ever going to populate the form, leaving
+  // every required field blank and Save unusable.
+  const hasLoadedProfileRef = useRef(false);
   const { toast, showToast, hideToast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteItem, setDeleteItem] = useState(null);
   const [showProfilePhotoDeleteConfirm, setShowProfilePhotoDeleteConfirm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [selectedProperty, setSelectedProperty] = useState(null);
   const [showPropertyDetails, setShowPropertyDetails] = useState(false);
@@ -1416,7 +1479,7 @@ const OwnerProfile = () => {
   });
 
   const [documents, setDocuments] = useState({
-    aadhaarCard: null, panCard: null, passportPhoto: null,
+    aadhaarCard: null, panCard: null, passportPhoto: null,gstCertificate: null,
     coverImage: null, propertyPhotos: [], propertyVideo: null, floorPlan: null,
     saleDeed: null, floorPlanOptional: null, pattaChitta: null,
     encumbranceCertificate: null, propertyTaxReceipt: null,
@@ -1437,8 +1500,14 @@ const OwnerProfile = () => {
       
       const profileData = response?.profile || {};
       const propertiesData = response?.properties?.data || [];
-      
-      setEditForm({
+
+      // Skipped only while the edit modal is open AND the form already has
+      // real data in it - a photo upload mid-edit re-fetches to refresh
+      // properties/documents below, and overwriting editForm in that case
+      // would wipe out anything the vendor had typed but not yet saved (see
+      // isEditingRef/hasLoadedProfileRef above). The very first load always
+      // goes through, even if "Edit" was clicked before it resolved.
+      if (!isEditingRef.current || !hasLoadedProfileRef.current) setEditForm({
         fullName: profileData.fullName || profileData.ownerName || '',
         userId: profileData.userId,
         mobileNumber: profileData.phoneNumber || profileData.mobile || '',
@@ -1463,6 +1532,7 @@ const OwnerProfile = () => {
         additionalNotes: profileData.additionalNotes || profileData.additionalNote || '',
         companyName: profileData.companyName || '',
       });
+      hasLoadedProfileRef.current = true;
       
       const formattedProperties = propertiesData.map(mapPropertyToFrontend);
       setProperties(formattedProperties);
@@ -1502,7 +1572,7 @@ const OwnerProfile = () => {
       }
 
       setDocuments({
-        aadhaarCard: null, panCard: null, passportPhoto: profilePhotoUrl,
+        aadhaarCard: null, panCard: null, passportPhoto: profilePhotoUrl,gstCertificate: null,
         coverImage: allImages.length > 0 ? allImages[0] : null,
         propertyPhotos: allImages.slice(0, 3),
         propertyVideo: videoUrl, floorPlan: floorPlanUrl,
@@ -1523,6 +1593,29 @@ const OwnerProfile = () => {
 
   useEffect(() => {
     fetchProfileData();
+  }, []);
+
+  // Manual refresh (the icon next to the search bar) - re-fetches profile +
+  // properties without a full browser reload.
+  const handleRefreshProperties = async () => {
+    setIsRefreshing(true);
+    try {
+      await fetchProfileData();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Auto-refresh: every posting form funnels through propertyService.createProperty,
+  // which dispatches this event on success - listening here means a newly posted
+  // property shows up in the list as soon as it's created, with no browser refresh,
+  // even though the posting form is a modal mounted on a completely different page.
+  useEffect(() => {
+    const handlePropertyCreated = () => {
+      fetchProfileData();
+    };
+    window.addEventListener('eliteinova:property-created', handlePropertyCreated);
+    return () => window.removeEventListener('eliteinova:property-created', handlePropertyCreated);
   }, []);
 
   // ============ PDF HANDLERS ============
@@ -1792,7 +1885,7 @@ const handleToggleStatus = async (property) => {
 
 
   const handleSave = async () => {
-    const requiredFields = ['fullName', 'mobileNumber', 'emailAddress', 'aadhaarNumber'];
+    const requiredFields = ['fullName', 'mobileNumber', 'aadhaarNumber'];
     const missingFields = requiredFields.filter(field => !editForm[field]);
     if (missingFields.length > 0) {
       alert(`Please fill in all required fields: ${missingFields.join(', ')}`);
@@ -1803,7 +1896,7 @@ const handleToggleStatus = async (property) => {
       const profileData = {
         fullName: editForm.fullName,
         phoneNumber: editForm.mobileNumber,
-        emailAddress: editForm.emailAddress,
+        // emailAddress intentionally not sent - it's the login email, read-only here.
         dateOfBirth: editForm.dateOfBirth,
         gender: editForm.gender,
         aadhaarNumber: editForm.aadhaarNumber,
@@ -1825,6 +1918,7 @@ const handleToggleStatus = async (property) => {
         companyName: editForm.companyName,
       };
       await updateMyProfile('owner', profileData);
+      isEditingRef.current = false;
       setShowEditModal(false);
       showSuccessToast('Profile updated successfully!');
       await fetchProfileData();
@@ -2591,38 +2685,37 @@ const handleToggleStatus = async (property) => {
       }
 
       case 'legal': {
-        const legalDocFields = ['saleDeed', 'floorPlanOptional', 'pattaChitta', 'encumbranceCertificate', 'propertyTaxReceipt', 'buildingApprovalPlan', 'completionCertificate', 'occupancyCertificate', 'rentalAgreement', 'otherDocuments'];
-        const filledCount = legalDocFields.filter(f => {
-          const v = documents[f];
-          return Array.isArray(v) ? v.length > 0 : v !== null;
-        }).length;
+        // Owner has no business-level reusable documents the way Agent/Builder/PM
+        // do (no GST/RERA/business registration) - only these three genuinely
+        // belong to the owner rather than to one specific property. Sale deed,
+        // patta/chitta, encumbrance certificate etc. are PROPERTY_DOCUMENT-level
+        // (see app/core/document_catalog.py) and stay on each property's own
+        // page, where they're already captured correctly by the posting form.
+        const identityDocFields = ['passportPhoto', 'aadhaarCard', 'panCard','gstCertificate'];
+        const filledCount = identityDocFields.filter(f => documents[f] !== null && documents[f] !== undefined).length;
 
         return (
           <div className="w-full animate-slideUp">
             <SectionHeader
               title="Legal Documents"
-              subtitle="All legal documents for property verification"
+              subtitle="All legal documents for profile verification"
               filled={filledCount}
-              total={legalDocFields.length}
+              total={identityDocFields.length}
             />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 sm:gap-3 w-full">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 w-full">
               {[
-                { field: 'saleDeed', label: 'Sale Deed', icon: <FileCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
-                { field: 'floorPlanOptional', label: 'Floor Plan', icon: <FileCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
-                { field: 'pattaChitta', label: 'Patta / Chitta', icon: <FileCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
-                { field: 'encumbranceCertificate', label: 'Encumbrance Certificate', icon: <FileCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
-                { field: 'propertyTaxReceipt', label: 'Property Tax Receipt', icon: <FileCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
-                { field: 'buildingApprovalPlan', label: 'Building Approval Plan', icon: <FileCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
-                { field: 'completionCertificate', label: 'Completion Certificate', icon: <FileCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
-                { field: 'occupancyCertificate', label: 'Occupancy Certificate', icon: <FileCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
-                { field: 'rentalAgreement', label: 'Rental Agreement', icon: <FileCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
+                { field: 'passportPhoto', label: 'Profile Photo', icon: <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
+                { field: 'aadhaarCard', label: 'Aadhaar Card', icon: <IdCard className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
+                { field: 'panCard', label: 'PAN Card', icon: <CreditCard className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
+                { field: 'gstCertificate', label:'GST Certificate', icon:<FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />},
               ].map((doc) => {
                 const file = documents[doc.field];
                 const hasFile = file !== null && file !== undefined;
+                const isPhoto = doc.field === 'passportPhoto';
 
                 return (
-                  <div 
+                  <div
                     key={doc.field}
                     className="group relative overflow-hidden rounded-xl bg-white shadow-sm hover:shadow-lg transition-all duration-300 w-full border border-[#00695C]/10 hover:border-[#00695C]/30"
                   >
@@ -2646,15 +2739,25 @@ const handleToggleStatus = async (property) => {
 
                       {hasFile ? (
                         <div className="flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-[#00695C]/5 to-[#26A69A]/5 rounded-lg p-1 sm:p-1.5 border border-[#00695C]/20 group-hover:border-[#00695C]/40 transition-all duration-300">
+                          {isPhoto ? (
+                            <button
+                              onClick={() => window.open(file, '_blank')}
+                              className="flex-1 text-[9px] sm:text-[10px] text-[#00695C] font-medium hover:underline truncate text-left flex items-center gap-0.5 sm:gap-1"
+                            >
+                              <Image className="w-2.5 h-2.5 sm:w-3 sm:h-3 flex-shrink-0" />
+                              <span className="truncate">Photo</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handlePdfView(doc.field)}
+                              className="flex-1 text-[9px] sm:text-[10px] text-[#00695C] font-medium hover:underline truncate text-left flex items-center gap-0.5 sm:gap-1"
+                            >
+                              <FileText className="w-2.5 h-2.5 sm:w-3 sm:h-3 flex-shrink-0" />
+                              <span className="truncate">{typeof file === 'string' ? file.split('/').pop() : (file.fileName || file.name)}</span>
+                            </button>
+                          )}
                           <button
-                            onClick={() => handlePdfView(doc.field)}
-                            className="flex-1 text-[9px] sm:text-[10px] text-[#00695C] font-medium hover:underline truncate text-left flex items-center gap-0.5 sm:gap-1"
-                          >
-                            <FileText className="w-2.5 h-2.5 sm:w-3 sm:h-3 flex-shrink-0" />
-                            <span className="truncate">{typeof file === 'string' ? file.split('/').pop() : (file.fileName || file.name)}</span>
-                          </button>
-                          <button
-                            onClick={() => handlePdfDelete(doc.field)}
+                            onClick={() => isPhoto ? handleProfilePhotoDelete() : handlePdfDelete(doc.field)}
                             className="p-0.5 sm:p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors duration-300 flex-shrink-0"
                             title="Delete"
                           >
@@ -2669,20 +2772,24 @@ const handleToggleStatus = async (property) => {
                                 <Upload className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-gray-400 group-hover/upload:text-[#00695C] transition-colors duration-300" />
                               </div>
                               <span className="text-[9px] sm:text-[10px] font-medium text-gray-500 group-hover/upload:text-[#00695C] transition-colors duration-300">
-                                Upload PDF
+                                Upload
                               </span>
                             </div>
-                            <input 
-                              type="file" 
-                              className="hidden" 
-                              accept=".pdf"
+                            <input
+                              type="file"
+                              className="hidden"
+                              accept={isPhoto ? 'image/*' : 'image/*,.pdf'}
                               onChange={(e) => {
+                                if (isPhoto) {
+                                  handleProfilePhotoUpload(e);
+                                  return;
+                                }
                                 const file = e.target.files[0];
                                 if (file) {
                                   handlePdfUpload(doc.field, file);
                                 }
                                 e.target.value = '';
-                              }} 
+                              }}
                             />
                           </label>
                         </div>
@@ -2694,87 +2801,6 @@ const handleToggleStatus = async (property) => {
                   </div>
                 );
               })}
-
-              <div className="group relative overflow-hidden rounded-xl bg-white shadow-sm hover:shadow-lg transition-all duration-300 w-full border border-[#00695C]/10 hover:border-[#00695C]/30">
-                <div className="absolute inset-0 bg-gradient-to-br from-[#00695C]/5 to-[#26A69A]/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                <div className="relative p-2.5 sm:p-3">
-                  <div className="flex items-center justify-between mb-1.5 sm:mb-2">
-                    <div className="flex items-center gap-1.5 sm:gap-2">
-                      <div className="p-1 sm:p-1.5 rounded-lg bg-gradient-to-br from-[#00695C] to-[#26A69A] shadow-lg transform group-hover:scale-110 transition-all duration-300">
-                        <div className="text-white">
-                          <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                        </div>
-                      </div>
-                      <span className="text-[10px] sm:text-xs font-bold text-gray-700">Other Documents</span>
-                    </div>
-                    {documents.otherDocuments.length > 0 && (
-                      <span className="text-[9px] sm:text-[10px] text-[#00695C] font-bold bg-[#00695C]/10 px-1.5 sm:px-2 py-0.5 rounded-full animate-fadeIn">
-                        {documents.otherDocuments.length}
-                      </span>
-                    )}
-                  </div>
-
-                  {documents.otherDocuments.length > 0 ? (
-                    <div className="space-y-1 max-h-32 overflow-y-auto">
-                      {documents.otherDocuments.map((file, index) => (
-                        <div key={index} className="flex items-center justify-between bg-gradient-to-r from-[#00695C]/5 to-[#26A69A]/5 rounded-lg p-1 sm:p-1.5 border border-[#00695C]/20 group-hover:border-[#00695C]/40 transition-all duration-300">
-                          <button
-                            onClick={() => {
-                              setPdfToView(file);
-                              setShowPdfViewer(true);
-                            }}
-                            className="flex-1 text-[9px] sm:text-[10px] text-[#00695C] font-medium hover:underline truncate text-left flex items-center gap-0.5 sm:gap-1"
-                          >
-                            <FileText className="w-2.5 h-2.5 sm:w-3 sm:h-3 flex-shrink-0" />
-                            <span className="truncate">{file.name}</span>
-                          </button>
-                          <button
-                            onClick={() => removeFile('otherDocuments', index)}
-                            className="p-0.5 sm:p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors duration-300 flex-shrink-0"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="border-2 border-dashed border-gray-200 rounded-lg p-1.5 sm:p-2 text-center hover:border-[#00695C] hover:bg-[#00695C]/5 transition-all duration-300 group/upload">
-                      <label className="block cursor-pointer">
-                        <div className="flex items-center justify-center gap-1.5 sm:gap-2">
-                          <div className="p-0.5 sm:p-1 bg-gray-100 rounded-lg group-hover/upload:bg-[#00695C]/10 transition-colors duration-300">
-                            <Upload className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-gray-400 group-hover/upload:text-[#00695C] transition-colors duration-300" />
-                          </div>
-                          <span className="text-[9px] sm:text-[10px] font-medium text-gray-500 group-hover/upload:text-[#00695C] transition-colors duration-300">
-                            Upload Multiple
-                          </span>
-                        </div>
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept=".pdf"
-                          multiple
-                          onChange={(e) => {
-                            const files = e.target.files;
-                            if (files && files.length > 0) {
-                              const fileArray = Array.from(files);
-                              setDocuments(prev => ({
-                                ...prev,
-                                otherDocuments: [...prev.otherDocuments, ...fileArray]
-                              }));
-                              showSuccessToast('Documents uploaded successfully!');
-                            }
-                            e.target.value = '';
-                          }} 
-                        />
-                      </label>
-                    </div>
-                  )}
-                </div>
-                <div className="h-[2px] w-full bg-gray-100 overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-[#00695C] to-[#26A69A] w-0 group-hover:w-full transition-all duration-700 ease-out" />
-                </div>
-              </div>
             </div>
           </div>
         );
@@ -3014,8 +3040,8 @@ const handleToggleStatus = async (property) => {
                 </div>
                 Edit Profile
               </h2>
-              <button 
-                onClick={() => setShowEditModal(false)} 
+              <button
+                onClick={() => { isEditingRef.current = false; setShowEditModal(false); }}
                 className="text-white/80 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110"
               >
                 <X className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -3042,7 +3068,19 @@ const handleToggleStatus = async (property) => {
                       <label className="block text-[10px] sm:text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5 sm:gap-2">
                         <span className="text-sm sm:text-base">{field.emoji}</span> {field.label}
                       </label>
-                      {field.name === 'dateOfBirth' ? (
+                      {field.name === 'emailAddress' ? (
+                        // Login email - not editable from here (it lives on the
+                        // account, not this vendor profile). Shown for reference only.
+                        <input
+                          type="email"
+                          name={field.name}
+                          value={editForm.emailAddress}
+                          disabled
+                          readOnly
+                          title="Contact support to change your login email"
+                          className="w-full border-2 border-gray-200 bg-gray-100 rounded-2xl px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-500 cursor-not-allowed"
+                        />
+                      ) : field.name === 'dateOfBirth' ? (
                         <input
                           type="date"
                           name={field.name}
@@ -3121,140 +3159,6 @@ const handleToggleStatus = async (property) => {
                 </div>
               </div>
 
-              {/* Legal Documents - PDF Upload in Edit Profile */}
-              <div className="space-y-3 sm:space-y-4 w-full bg-gradient-to-br from-[#00695C]/[0.05] to-[#26A69A]/[0.05] rounded-2xl p-4 sm:p-5 md:p-6 shadow-sm border border-[#00695C]/10">
-                <h3 className="text-xs sm:text-sm font-bold text-[#00695C] uppercase tracking-wider flex items-center gap-2 sm:gap-3">
-                  <div className="bg-gradient-to-r from-[#00695C] to-[#26A69A] p-1.5 sm:p-2 rounded-xl">
-                    <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-                  </div>
-                  Legal Documents
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 w-full">
-                  {[
-                    { field: 'saleDeed', label: 'Sale Deed' },
-                    { field: 'floorPlanOptional', label: 'Floor Plan' },
-                    { field: 'pattaChitta', label: 'Patta / Chitta' },
-                    { field: 'encumbranceCertificate', label: 'Encumbrance Certificate' },
-                    { field: 'propertyTaxReceipt', label: 'Property Tax Receipt' },
-                    { field: 'buildingApprovalPlan', label: 'Building Approval Plan' },
-                    { field: 'completionCertificate', label: 'Completion Certificate' },
-                    { field: 'occupancyCertificate', label: 'Occupancy Certificate' },
-                    { field: 'rentalAgreement', label: 'Rental Agreement' },
-                  ].map((doc) => {
-                    const file = documents[doc.field];
-                    const hasFile = file !== null && file !== undefined;
-
-                    return (
-                      <div key={doc.field} className="border-2 border-gray-200 rounded-xl p-2 sm:p-3 hover:border-[#00695C] transition-all duration-300 hover:shadow-md bg-white">
-                        <div className="flex items-center justify-between mb-1 sm:mb-2">
-                          <label className="text-[10px] sm:text-xs font-bold text-gray-700">{doc.label}</label>
-                          {hasFile && (
-                            <span className="text-[9px] sm:text-[10px] text-[#00695C] font-bold bg-[#00695C]/10 px-1.5 sm:px-2 py-0.5 rounded-full">✓</span>
-                          )}
-                        </div>
-                        {hasFile ? (
-                          <div className="flex items-center gap-1 sm:gap-2">
-                            <button
-                              onClick={() => handlePdfView(doc.field)}
-                              className="text-[10px] sm:text-xs text-[#00695C] font-medium hover:underline flex items-center gap-0.5 sm:gap-1"
-                            >
-                              <FileText className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                              {typeof file === 'string' ? file.split('/').pop() : file.name}
-                            </button>
-                            <button
-                              onClick={() => handlePdfDelete(doc.field)}
-                              className="text-red-400 hover:text-red-600 transition-colors"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                            </button>
-                          </div>
-                        ) : (
-                          <label className="block cursor-pointer">
-                            <div className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-gray-500 hover:text-[#00695C] transition-colors">
-                              <Upload className="w-3 h-3 sm:w-4 sm:h-4" />
-                              <span>Upload PDF</span>
-                            </div>
-                            <input 
-                              type="file" 
-                              className="hidden" 
-                              accept=".pdf"
-                              onChange={(e) => {
-                                const file = e.target.files[0];
-                                if (file) {
-                                  handlePdfUpload(doc.field, file);
-                                }
-                                e.target.value = '';
-                              }} 
-                            />
-                          </label>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="border-2 border-gray-200 rounded-xl p-2 sm:p-3 hover:border-[#00695C] transition-all duration-300 hover:shadow-md bg-white">
-                  <div className="flex items-center justify-between mb-1 sm:mb-2">
-                    <label className="text-[10px] sm:text-xs font-bold text-gray-700">Other Documents</label>
-                    {documents.otherDocuments.length > 0 && (
-                      <span className="text-[9px] sm:text-[10px] text-[#00695C] font-bold bg-[#00695C]/10 px-1.5 sm:px-2 py-0.5 rounded-full">
-                        {documents.otherDocuments.length}
-                      </span>
-                    )}
-                  </div>
-                  {documents.otherDocuments.length > 0 ? (
-                    <div className="space-y-1 max-h-32 overflow-y-auto">
-                      {documents.otherDocuments.map((file, index) => (
-                        <div key={index} className="flex items-center justify-between bg-gray-50 rounded-lg p-1.5 sm:p-2">
-                          <button
-                            onClick={() => {
-                              setPdfToView(file);
-                              setShowPdfViewer(true);
-                            }}
-                            className="text-[10px] sm:text-xs text-[#00695C] font-medium hover:underline flex items-center gap-0.5 sm:gap-1 truncate max-w-[100px] sm:max-w-[150px]"
-                          >
-                            <FileText className="w-2.5 h-2.5 sm:w-3 sm:h-3 flex-shrink-0" />
-                            <span className="truncate">{file.name}</span>
-                          </button>
-                          <button
-                            onClick={() => removeFile('otherDocuments', index)}
-                            className="text-red-400 hover:text-red-600 transition-colors flex-shrink-0"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <label className="block cursor-pointer">
-                      <div className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-gray-500 hover:text-[#00695C] transition-colors">
-                        <Upload className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span>Upload Multiple PDFs</span>
-                      </div>
-                      <input
-                        type="file"
-                        className="hidden"
-                        accept=".pdf"
-                        multiple
-                        onChange={(e) => {
-                          const files = e.target.files;
-                          if (files && files.length > 0) {
-                            const fileArray = Array.from(files);
-                            setDocuments(prev => ({
-                              ...prev,
-                              otherDocuments: [...prev.otherDocuments, ...fileArray]
-                            }));
-                            showSuccessToast('Documents uploaded successfully!');
-                          }
-                          e.target.value = '';
-                        }} 
-                      />
-                    </label>
-                  )}
-                </div>
-              </div>
-
               {/* Bank Details */}
               <div className="space-y-3 sm:space-y-4 w-full bg-gradient-to-br from-[#00695C]/[0.05] to-[#26A69A]/[0.05] rounded-2xl p-4 sm:p-5 md:p-6 shadow-sm border border-[#00695C]/10">
                 <h3 className="text-xs sm:text-sm font-bold text-[#00695C] uppercase tracking-wider flex items-center gap-2 sm:gap-3">
@@ -3322,23 +3226,33 @@ const handleToggleStatus = async (property) => {
                             <Upload className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                           </div>
                           <span className="text-[10px] sm:text-xs font-bold">Aadhaar Card</span>
-                          <input 
-                            type="file" 
-                            className="hidden" 
+                          <input
+                            type="file"
+                            className="hidden"
                             accept="image/*,.pdf"
                             onChange={(e) => {
                               const file = e.target.files[0];
                               if (file) {
-                                setDocuments(prev => ({ ...prev, aadhaarCard: file }));
-                                showSuccessToast('Aadhaar Card uploaded successfully!');
+                                handlePdfUpload('aadhaarCard', file);
                               }
-                            }} 
+                              e.target.value = '';
+                            }}
                           />
                         </label>
                         {documents.aadhaarCard && (
-                          <span className="text-[9px] sm:text-xs text-[#00695C] block mt-1 sm:mt-2 font-bold bg-[#00695C]/10 px-1.5 sm:px-2 py-0.5 rounded-full animate-fadeIn">
-                            ✓ Uploaded
-                          </span>
+                          <div className="flex items-center justify-center gap-1.5 mt-1 sm:mt-2">
+                            <span className="text-[9px] sm:text-xs text-[#00695C] font-bold bg-[#00695C]/10 px-1.5 sm:px-2 py-0.5 rounded-full animate-fadeIn">
+                              ✓ Uploaded
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handlePdfDelete('aadhaarCard')}
+                              className="text-red-400 hover:text-red-600 transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         )}
                       </div>
                       <div className="border-2 border-dashed border-gray-300 rounded-xl p-3 sm:p-4 text-center hover:border-[#00695C] transition-all duration-300 hover:bg-[#00695C]/5 group">
@@ -3347,23 +3261,68 @@ const handleToggleStatus = async (property) => {
                             <Upload className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                           </div>
                           <span className="text-[10px] sm:text-xs font-bold">PAN Card</span>
-                          <input 
-                            type="file" 
-                            className="hidden" 
+                          <input
+                            type="file"
+                            className="hidden"
                             accept="image/*,.pdf"
                             onChange={(e) => {
                               const file = e.target.files[0];
                               if (file) {
-                                setDocuments(prev => ({ ...prev, panCard: file }));
-                                showSuccessToast('PAN Card uploaded successfully!');
+                                handlePdfUpload('panCard', file);
                               }
-                            }} 
+                              e.target.value = '';
+                            }}
                           />
                         </label>
                         {documents.panCard && (
-                          <span className="text-[9px] sm:text-xs text-[#00695C] block mt-1 sm:mt-2 font-bold bg-[#00695C]/10 px-1.5 sm:px-2 py-0.5 rounded-full animate-fadeIn">
-                            ✓ Uploaded
-                          </span>
+                          <div className="flex items-center justify-center gap-1.5 mt-1 sm:mt-2">
+                            <span className="text-[9px] sm:text-xs text-[#00695C] font-bold bg-[#00695C]/10 px-1.5 sm:px-2 py-0.5 rounded-full animate-fadeIn">
+                              ✓ Uploaded
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handlePdfDelete('panCard')}
+                              className="text-red-400 hover:text-red-600 transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="border-2 border-dashed border-gray-300 rounded-xl p-3 sm:p-4 text-center hover:border-[#00695C] transition-all duration-300 hover:bg-[#00695C]/5 group">
+                        <label className="block text-[10px] sm:text-xs font-medium text-gray-600 cursor-pointer">
+                          <div className="bg-gradient-to-r from-[#00695C] to-[#26A69A] p-1.5 sm:p-2 rounded-xl w-8 h-8 sm:w-10 sm:h-10 mx-auto mb-1.5 sm:mb-2 group-hover:scale-110 transition-transform duration-300">
+                            <Upload className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                          </div>
+                          <span className="text-[10px] sm:text-xs font-bold">GST Certificate</span>
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept="image/*,.pdf"
+                            onChange={(e) => {
+                              const file = e.target.files[0];
+                              if (file) {
+                                handlePdfUpload('gstCertificate', file);
+                              }
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                        {documents.gstCertificate && (
+                          <div className="flex items-center justify-center gap-1.5 mt-1 sm:mt-2">
+                            <span className="text-[9px] sm:text-xs text-[#00695C] font-bold bg-[#00695C]/10 px-1.5 sm:px-2 py-0.5 rounded-full animate-fadeIn">
+                              ✓ Uploaded
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handlePdfDelete('gstCertificate')}
+                              className="text-red-400 hover:text-red-600 transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -3449,8 +3408,8 @@ const handleToggleStatus = async (property) => {
               </div>
             </div>
             <div className="px-4 sm:px-6 md:px-8 py-3 sm:py-4 md:py-5 bg-white border-t-2 border-gray-100 flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 flex-shrink-0">
-              <button 
-                onClick={() => setShowEditModal(false)} 
+              <button
+                onClick={() => { isEditingRef.current = false; setShowEditModal(false); }}
                 className="px-4 sm:px-6 md:px-8 py-2 sm:py-3 rounded-2xl border-2 border-gray-300 text-gray-700 text-xs sm:text-sm font-bold hover:bg-gray-100 transition-all duration-300 hover:scale-105 w-full sm:w-auto"
               >
                 Cancel
@@ -3578,7 +3537,7 @@ const handleToggleStatus = async (property) => {
               </div>
             </div>
             <button
-              onClick={() => setShowEditModal(true)}
+              onClick={() => { isEditingRef.current = true; setShowEditModal(true); }}
               className="relative flex items-center gap-1.5 sm:gap-2 px-4 sm:px-5 md:px-6 py-2 sm:py-2.5 md:py-3 bg-gradient-to-r from-[#00695C] to-[#26A69A] hover:from-[#005A4F] hover:to-[#1B9E8E] text-white rounded-xl sm:rounded-2xl font-bold transition-all duration-300 shadow-lg hover:shadow-2xl w-full sm:w-auto justify-center transform hover:scale-105 hover:-translate-y-1 group text-xs sm:text-sm overflow-hidden"
             >
               <span className="absolute top-0 left-[-100%] w-full h-full bg-gradient-to-r from-transparent via-white/25 to-transparent group-hover:left-full transition-all duration-700 ease-out" />
@@ -3750,6 +3709,16 @@ const handleToggleStatus = async (property) => {
             </div>
             
             <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto flex-wrap">
+              <button
+                onClick={handleRefreshProperties}
+                disabled={isRefreshing}
+                className="p-1.5 sm:p-2 rounded-lg border-2 border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-[#00695C] hover:text-[#00695C] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label="Refresh properties"
+                title="Refresh properties"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              </button>
+
               <div className="relative flex-1 sm:flex-initial min-w-[100px] sm:min-w-[120px]">
                 <input
                   type="text"

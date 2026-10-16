@@ -449,7 +449,7 @@ const OfficeSpaceFilter = ({ activeTab = 'Buy', onFilterChange, onClose, onTabCh
   };
 
   const applyFilters = () => {
-    const filtersToSend = { ...filters, purpose: currentTab };
+    const filtersToSend = { ...filters, purpose: currentTab, propertyType: 'Office Space' };
     if (onFilterChange) onFilterChange(filtersToSend);
     if (onClose) onClose();
   };

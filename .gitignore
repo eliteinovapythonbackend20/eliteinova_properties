@@ -22,6 +22,12 @@ dist/
 pages1/
 assets1/
 
+/Eliteinova_Properties_Hub-main/docs
+/realestate/docs
+/realestate/tests
+/realestate/scripts
+/realestate/tools
+
 
 # ==============================================================================
 # Environment variables & secrets

@@ -6,14 +6,22 @@ from fastapi import status as http_status
 from pydantic import ValidationError
 
 from app.api.dependencies import require_admin, get_admin_dashboard_service
-from app.core.response_utils import strip_none_values
 from app.schemas.admin_dashboard_schemas import AdminPropertyListParams, AdminPropertyStatusUpdate, AdminPropertyUpdate
+from app.schemas.admin_property_card import (
+    AdminPropertyCard,
+    AdminPropertyDeleteResult,
+    AdminPropertyListResponse,
+    AdminPropertyStats,
+    AdminPropertyStatsResponse,
+    AdminPropertyStatusResult,
+)
+from app.schemas.common_response import SuccessResponse
 from app.services.admin_dashboard_service import AdminDashboardService
 
 router = APIRouter()
 
 
-@router.get("/properties")
+@router.get("/properties", response_model=AdminPropertyListResponse, response_model_exclude_none=True)
 async def admin_list_properties(
     page: int = 1,
     limit: int = 20,
@@ -56,10 +64,10 @@ async def admin_list_properties(
         created_from=params.created_from,
         created_to=params.created_to,
     )
-    return strip_none_values({"success": True, **result})
+    return AdminPropertyListResponse.model_validate(result)
 
 
-@router.get("/properties/stats")
+@router.get("/properties/stats", response_model=AdminPropertyStatsResponse, response_model_exclude_none=True)
 async def admin_property_stats(
     posted_by: Optional[str] = Query(None, description="OWNER, AGENT, BUILDER, or PROPERTY_MANAGEMENT"),
     property_category: Optional[str] = Query(None, description="INDIVIDUAL, APARTMENT, COMMERCIAL, LAND_PLOT, or HOSTEL - when set, also returns a byType breakdown for that category's Overview page"),
@@ -78,10 +86,10 @@ async def admin_property_stats(
         created_from=created_from,
         created_to=created_to,
     )
-    return strip_none_values({"success": True, "data": stats})
+    return AdminPropertyStatsResponse(data=AdminPropertyStats.model_validate(stats))
 
 
-@router.patch("/properties/{property_id}/status")
+@router.patch("/properties/{property_id}/status", response_model=SuccessResponse[AdminPropertyStatusResult], response_model_exclude_none=True)
 async def admin_update_property_status(
     property_id: str,
     body: AdminPropertyStatusUpdate,
@@ -89,10 +97,12 @@ async def admin_update_property_status(
     service: AdminDashboardService = Depends(get_admin_dashboard_service),
 ):
     data = await service.update_property_status(property_id, body.status)
-    return strip_none_values({"success": True, "data": data, "message": "Status updated successfully"})
+    return SuccessResponse[AdminPropertyStatusResult](
+        data=AdminPropertyStatusResult.model_validate(data), message="Status updated successfully"
+    )
 
 
-@router.patch("/properties/{property_id}")
+@router.patch("/properties/{property_id}", response_model=SuccessResponse[AdminPropertyCard], response_model_exclude_none=True)
 async def admin_update_property(
     property_id: str,
     body: AdminPropertyUpdate,
@@ -103,14 +113,18 @@ async def admin_update_property(
     if not fields:
         raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="No fields to update")
     data = await service.update_property(property_id, fields)
-    return strip_none_values({"success": True, "data": data, "message": "Property updated successfully"})
+    return SuccessResponse[AdminPropertyCard](
+        data=AdminPropertyCard.model_validate(data), message="Property updated successfully"
+    )
 
 
-@router.delete("/properties/{property_id}")
+@router.delete("/properties/{property_id}", response_model=SuccessResponse[AdminPropertyDeleteResult], response_model_exclude_none=True)
 async def admin_delete_property(
     property_id: str,
     current_user: Dict[str, Any] = Depends(require_admin),
     service: AdminDashboardService = Depends(get_admin_dashboard_service),
 ):
     data = await service.delete_property(property_id)
-    return strip_none_values({"success": True, "data": data, "message": "Property deleted successfully"})
+    return SuccessResponse[AdminPropertyDeleteResult](
+        data=AdminPropertyDeleteResult.model_validate(data), message="Property deleted successfully"
+    )

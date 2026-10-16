@@ -9,7 +9,10 @@ import {
   CheckSquare, PenTool, Globe, Facebook, Instagram, Linkedin, Youtube, 
   BriefcaseBusiness, Building2, Factory, Store, ShieldCheck, Warehouse
 } from "lucide-react";
-import { createProperty } from "../../../../services/propertyService";
+import { createProperty, reuseVerifiedResources } from "../../../../services/propertyService";
+import useReusableResources from "../../../../hooks/useReusableResources";
+import ReuseOrUploadPrompt from "../../shared/ReuseOrUploadPrompt";
+import { buildPrefillValues } from "../../../../config/contactPrefillMap";
 
 // ==================== VALIDATION HELPER FUNCTIONS ====================
 
@@ -192,6 +195,26 @@ export default function SellBuilderComForm({ isOpen, onClose }) {
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
 
+  // "Is this listing for yourself, or for someone else?" - asked once, instead
+  // of a per-field "use existing?" toggle. null = not asked/answered yet.
+  const [reuseChoice, setReuseChoice] = useState(null);
+  const { isDocumentVerified, isMediaVerified, profile, hasUsableProfile } = useReusableResources("builder");
+  const hasVerifiedReusables = isDocumentVerified("aadhaar_card") || isDocumentVerified("pan_card")
+    || isDocumentVerified("company_registration") || isDocumentVerified("gst_certificate")
+    || isDocumentVerified("company_pan_card") || isMediaVerified("company_logo")
+    || isDocumentVerified("company_profile_brochure") || isDocumentVerified("authorized_signatory_id")
+    || isDocumentVerified("office_address_proof");
+  const reusingAadhaar = reuseChoice === "self" && isDocumentVerified("aadhaar_card");
+  const reusingPan = reuseChoice === "self" && isDocumentVerified("pan_card");                          
+  const prefillAppliedRef = useRef(false);
+  const reusingCompanyRegCert = reuseChoice === "self" && isDocumentVerified("company_registration");
+  const reusingGstCert = reuseChoice === "self" && isDocumentVerified("gst_certificate");
+  const reusingCompanyPanCard = reuseChoice === "self" && isDocumentVerified("company_pan_card");
+  const reusingCompanyLogo = reuseChoice === "self" && isMediaVerified("company_logo");
+  const reusingCompanyBrochure = reuseChoice === "self" && isDocumentVerified("company_profile_brochure");
+  const reusingAuthIdProof = reuseChoice === "self" && isDocumentVerified("authorized_signatory_id");
+  const reusingOfficeAddressProof = reuseChoice === "self" && isDocumentVerified("office_address_proof");
+
   const [formData, setFormData] = useState({
     // Company Details (Step 0)
     companyName: "", companyRegNumber: "", reraNumber: "", gstNumber: "", yearsOfExperience: "", companyWebsite: "", companyLogo: null, companyProfile: "",
@@ -251,6 +274,21 @@ export default function SellBuilderComForm({ isOpen, onClose }) {
   const [signaturePoints, setSignaturePoints] = useState([]);
   const [allSignaturePoints, setAllSignaturePoints] = useState([]);
   const [activeCanvas, setActiveCanvas] = useState(null);
+  // "It's me" prefill - see SellAgentComForm.jsx's identical effect for the
+  // full rationale (fills only still-blank mapped fields, once per "self"
+  // episode, safe against the profile/choice race).
+  useEffect(() => {
+    if (reuseChoice !== "self") {
+      prefillAppliedRef.current = false;
+      return;
+    }
+    if (!profile || prefillAppliedRef.current) return;
+    const prefill = buildPrefillValues(profile, "builder", formData);
+    if (Object.keys(prefill).length > 0) {
+      setFormData(prev => ({ ...prev, ...prefill }));
+    }
+    prefillAppliedRef.current = true;
+  }, [reuseChoice, profile]);
 
   const updateForm = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -385,15 +423,15 @@ export default function SellBuilderComForm({ isOpen, onClose }) {
           newErrors.panNumber = "Please enter a valid 10-character PAN number";
           isValid = false;
         }
-        if (!formData.aadhaarCard) {
+        if (!formData.aadhaarCard && !reusingAadhaar) {
           newErrors.aadhaarCard = "Aadhaar card upload is required";
           isValid = false;
         }
-        if (!formData.panCard) {
+        if (!formData.panCard && !reusingPan) {
           newErrors.panCard = "PAN card upload is required";
           isValid = false;
         }
-        if (!formData.companyRegCert) {
+        if (!formData.companyRegCert && !reusingCompanyRegCert) {
           newErrors.companyRegCert = "Company registration certificate is required";
           isValid = false;
         }
@@ -480,15 +518,15 @@ export default function SellBuilderComForm({ isOpen, onClose }) {
         break;
 
       case 8: // Documents
-        if (!formData.companyLogoDoc) {
+        if (!formData.companyLogoDoc && !reusingCompanyLogo) {
           newErrors.companyLogoDoc = "Company logo is required";
           isValid = false;
         }
-        if (!formData.authIdProof) {
+        if (!formData.authIdProof && !reusingAuthIdProof) {
           newErrors.authIdProof = "Authorized signatory ID proof is required";
           isValid = false;
         }
-        if (!formData.officeAddressProof) {
+        if (!formData.officeAddressProof && !reusingOfficeAddressProof) {
           newErrors.officeAddressProof = "Office address proof is required";
           isValid = false;
         }
@@ -778,6 +816,17 @@ export default function SellBuilderComForm({ isOpen, onClose }) {
     }
     try{
       const response = await createProperty(formData);
+      if (reuseChoice === "self" && response?.id) {
+        try {
+          const reuseResult = await reuseVerifiedResources(response.id);
+          const skipped = [...(reuseResult?.data?.skippedDocuments || []), ...(reuseResult?.data?.skippedMedia || [])];
+          if (skipped.length) {
+            console.warn("Listing created, but some verified items could not be attached:", skipped);
+          }
+        } catch (reuseError) {
+          console.error("Listing created, but reusing verified details failed: ", reuseError);
+        }
+      }
       onClose();
     }
     catch(error){
@@ -831,6 +880,18 @@ export default function SellBuilderComForm({ isOpen, onClose }) {
               formData={formData}
               errors={errors}
               updateForm={updateForm}
+              reuseChoice={reuseChoice}
+              setReuseChoice={setReuseChoice}
+              hasVerifiedReusables={hasVerifiedReusables}
+              reusingAadhaar={reusingAadhaar}
+              reusingPan={reusingPan}
+              reusingCompanyRegCert={reusingCompanyRegCert}
+              reusingGstCert={reusingGstCert}
+              reusingCompanyPanCard={reusingCompanyPanCard}
+              reusingCompanyLogo={reusingCompanyLogo}
+              reusingCompanyBrochure={reusingCompanyBrochure}
+              reusingAuthIdProof={reusingAuthIdProof}
+              reusingOfficeAddressProof={reusingOfficeAddressProof}
               imagePreviews={imagePreviews}
               handleImageUpload={handleImageUpload}
               removeImage={removeImage}
@@ -945,6 +1006,18 @@ export default function SellBuilderComForm({ isOpen, onClose }) {
               formData={formData}
               errors={errors}
               updateForm={updateForm}
+              reuseChoice={reuseChoice}
+              setReuseChoice={setReuseChoice}
+              hasVerifiedReusables={hasVerifiedReusables}
+              reusingAadhaar={reusingAadhaar}
+              reusingPan={reusingPan}
+              reusingCompanyRegCert={reusingCompanyRegCert}
+              reusingGstCert={reusingGstCert}
+              reusingCompanyPanCard={reusingCompanyPanCard}
+              reusingCompanyLogo={reusingCompanyLogo}
+              reusingCompanyBrochure={reusingCompanyBrochure}
+              reusingAuthIdProof={reusingAuthIdProof}
+              reusingOfficeAddressProof={reusingOfficeAddressProof}
               imagePreviews={imagePreviews}
               handleImageUpload={handleImageUpload}
               removeImage={removeImage}
@@ -1023,8 +1096,11 @@ export default function SellBuilderComForm({ isOpen, onClose }) {
 }
 
 // MOBILE CONTENT - Sell Builder Commercial
-function MobContentSellBuilderCom({ 
-  step, inp, errorBorder, formData, errors, updateForm, 
+function MobContentSellBuilderCom({
+  step, inp, errorBorder, formData, errors, updateForm,
+  reuseChoice, setReuseChoice, hasVerifiedReusables,
+  reusingAadhaar, reusingPan, reusingCompanyRegCert, reusingGstCert, reusingCompanyPanCard,
+  reusingCompanyLogo, reusingCompanyBrochure, reusingAuthIdProof, reusingOfficeAddressProof,
   imagePreviews, handleImageUpload, removeImage,
   handleVideoUpload, videoPreview, removeVideo,
   handleDocumentUpload,
@@ -1135,6 +1211,9 @@ function MobContentSellBuilderCom({
   // STEP 0: Company Details
   if (step === 0) return (
     <>
+      {hasVerifiedReusables && reuseChoice === null && (
+        <ReuseOrUploadPrompt onChoice={setReuseChoice} />
+      )}
       <Field label="Builder / Company Name" required error={errors.companyName}>
         <input className={`${inp} ${errors.companyName ? errorBorder : ''}`} placeholder="Enter company name" value={formData.companyName} onChange={handleCompanyNameChange("companyName")} />
       </Field>
@@ -1265,53 +1344,77 @@ function MobContentSellBuilderCom({
         <input className={`${inp} ${errors.panNumber ? errorBorder : ''}`} placeholder="Enter 10-character PAN number" value={formData.panNumber} onChange={handlePanChange("panNumber")} />
       </Field>
 
-      <Field label="Upload Aadhaar Card" required error={errors.aadhaarCard}>
-        <div className={`border-2 border-dashed ${errors.aadhaarCard ? 'border-red-500' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
-          <input type="file" accept=".pdf" className="hidden" id="m-authaadhaar-sell-com" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
-          <label htmlFor="m-authaadhaar-sell-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Aadhaar</span>
-            <span className="text-[9px] text-gray-400">PDF (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.aadhaarCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.aadhaarCard.name}</p>}
-      </Field>
+      {reusingAadhaar ? (
+        <Field label="Aadhaar Card">
+          <p className="text-[10px] text-green-600">✓ Using your verified Aadhaar on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload Aadhaar Card" required error={errors.aadhaarCard}>
+          <div className={`border-2 border-dashed ${errors.aadhaarCard ? 'border-red-500' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
+            <input type="file" accept=".pdf" className="hidden" id="m-authaadhaar-sell-com" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
+            <label htmlFor="m-authaadhaar-sell-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Aadhaar</span>
+              <span className="text-[9px] text-gray-400">PDF (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.aadhaarCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.aadhaarCard.name}</p>}
+        </Field>
+      )}
 
-      <Field label="Upload PAN Card" required error={errors.panCard}>
-        <div className={`border-2 border-dashed ${errors.panCard ? 'border-red-500' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
-          <input type="file" accept=".pdf" className="hidden" id="m-authpan-sell-com" onChange={(e) => handleDocumentUpload("panCard", e)} />
-          <label htmlFor="m-authpan-sell-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload PAN</span>
-            <span className="text-[9px] text-gray-400">PDF (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.panCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.panCard.name}</p>}
-      </Field>
+      {reusingPan ? (
+        <Field label="PAN Card">
+          <p className="text-[10px] text-green-600">✓ Using your verified PAN on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload PAN Card" required error={errors.panCard}>
+          <div className={`border-2 border-dashed ${errors.panCard ? 'border-red-500' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
+            <input type="file" accept=".pdf" className="hidden" id="m-authpan-sell-com" onChange={(e) => handleDocumentUpload("panCard", e)} />
+            <label htmlFor="m-authpan-sell-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload PAN</span>
+              <span className="text-[9px] text-gray-400">PDF (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.panCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.panCard.name}</p>}
+        </Field>
+      )}
 
-      <Field label="Upload Company Registration Certificate" required error={errors.companyRegCert}>
-        <div className={`border-2 border-dashed ${errors.companyRegCert ? 'border-red-500' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
-          <input type="file" accept=".pdf" className="hidden" id="m-companyreg-sell-com" onChange={(e) => handleDocumentUpload("companyRegCert", e)} />
-          <label htmlFor="m-companyreg-sell-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Registration</span>
-            <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
-          </label>
-        </div>
-        {formData.companyRegCert && <p className="text-[10px] text-green-600 mt-1">✓ {formData.companyRegCert.name}</p>}
-      </Field>
+      {reusingCompanyRegCert ? (
+        <Field label="Company Registration Certificate">
+          <p className="text-[10px] text-green-600">✓ Using your verified company registration certificate on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload Company Registration Certificate" required error={errors.companyRegCert}>
+          <div className={`border-2 border-dashed ${errors.companyRegCert ? 'border-red-500' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
+            <input type="file" accept=".pdf" className="hidden" id="m-companyreg-sell-com" onChange={(e) => handleDocumentUpload("companyRegCert", e)} />
+            <label htmlFor="m-companyreg-sell-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Registration</span>
+              <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
+            </label>
+          </div>
+          {formData.companyRegCert && <p className="text-[10px] text-green-600 mt-1">✓ {formData.companyRegCert.name}</p>}
+        </Field>
+      )}
 
-      <Field label="Upload GST Certificate (Optional)">
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="m-gstcert-sell-com" onChange={(e) => handleDocumentUpload("gstCert", e)} />
-          <label htmlFor="m-gstcert-sell-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload GST</span>
-            <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
-          </label>
-        </div>
-        {formData.gstCert && <p className="text-[10px] text-green-600 mt-1">✓ {formData.gstCert.name}</p>}
-      </Field>
+      {reusingGstCert ? (
+        <Field label="GST Certificate">
+          <p className="text-[10px] text-green-600">✓ Using your verified GST certificate on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload GST Certificate (Optional)">
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="m-gstcert-sell-com" onChange={(e) => handleDocumentUpload("gstCert", e)} />
+            <label htmlFor="m-gstcert-sell-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload GST</span>
+              <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
+            </label>
+          </div>
+          {formData.gstCert && <p className="text-[10px] text-green-600 mt-1">✓ {formData.gstCert.name}</p>}
+        </Field>
+      )}
 
       <Field label="Upload RERA Certificate" required error={errors.reraCert}>
         <div className={`border-2 border-dashed ${errors.reraCert ? 'border-red-500' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
@@ -1325,17 +1428,23 @@ function MobContentSellBuilderCom({
         {formData.reraCert && <p className="text-[10px] text-green-600 mt-1">✓ {formData.reraCert.name}</p>}
       </Field>
 
-      <Field label="Upload Company PAN Card (Optional)">
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="m-companypan-sell-com" onChange={(e) => handleDocumentUpload("companyPanCard", e)} />
-          <label htmlFor="m-companypan-sell-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Company PAN</span>
-            <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
-          </label>
-        </div>
-        {formData.companyPanCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.companyPanCard.name}</p>}
-      </Field>
+      {reusingCompanyPanCard ? (
+        <Field label="Company PAN Card">
+          <p className="text-[10px] text-green-600">✓ Using your verified company PAN card on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload Company PAN Card (Optional)">
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="m-companypan-sell-com" onChange={(e) => handleDocumentUpload("companyPanCard", e)} />
+            <label htmlFor="m-companypan-sell-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Company PAN</span>
+              <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
+            </label>
+          </div>
+          {formData.companyPanCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.companyPanCard.name}</p>}
+        </Field>
+      )}
     </>
   );
 
@@ -1623,57 +1732,69 @@ function MobContentSellBuilderCom({
       </div>
       <p className="text-[9px] text-gray-400 mb-2">All documents must be in PDF format (Max 5MB each)</p>
 
-      <Field label="Company Logo" required hint="JPG, PNG max 2MB" error={errors.companyLogoDoc}>
-        <div className={`border-2 border-dashed ${errors.companyLogoDoc ? 'border-red-500' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
-          <input type="file" accept="image/*" className="hidden" id="m-comp-logo-sell-com" onChange={(e) => {
-            const file = e.target.files[0];
-            if (file) {
-              if (file.size > 2 * 1024 * 1024) {
-                alert("Company logo must be less than 2MB");
-                return;
+      {reusingCompanyLogo ? (
+        <Field label="Company Logo">
+          <p className="text-[10px] text-green-600">✓ Using your verified company logo on file</p>
+        </Field>
+      ) : (
+        <Field label="Company Logo" required hint="JPG, PNG max 2MB" error={errors.companyLogoDoc}>
+          <div className={`border-2 border-dashed ${errors.companyLogoDoc ? 'border-red-500' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
+            <input type="file" accept="image/*" className="hidden" id="m-comp-logo-sell-com" onChange={(e) => {
+              const file = e.target.files[0];
+              if (file) {
+                if (file.size > 2 * 1024 * 1024) {
+                  alert("Company logo must be less than 2MB");
+                  return;
+                }
+                updateForm("companyLogoDoc", file);
+                if (errors.companyLogoDoc) {
+                  setErrors(prev => ({ ...prev, companyLogoDoc: null }));
+                }
               }
-              updateForm("companyLogoDoc", file);
-              if (errors.companyLogoDoc) {
-                setErrors(prev => ({ ...prev, companyLogoDoc: null }));
-              }
-            }
-          }} />
-          <label htmlFor="m-comp-logo-sell-com" className="cursor-pointer flex flex-col items-center">
-            <ImagePlus className="w-5 h-5 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Logo</span>
-            <span className="text-[9px] text-gray-400">JPG/PNG (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.companyLogoDoc && (
-          <div className="mt-2 relative inline-block">
-            <img 
-              src={URL.createObjectURL(formData.companyLogoDoc)} 
-              alt="Company Logo" 
-              className="w-16 h-16 object-cover rounded-lg border-2 border-[#00695C]"
-            />
-            <button 
-              onClick={() => {
-                updateForm("companyLogoDoc", null);
-              }} 
-              className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-red-500 text-white rounded-full text-[9px] flex items-center justify-center hover:bg-red-600"
-            >
-              ✕
-            </button>
+            }} />
+            <label htmlFor="m-comp-logo-sell-com" className="cursor-pointer flex flex-col items-center">
+              <ImagePlus className="w-5 h-5 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Logo</span>
+              <span className="text-[9px] text-gray-400">JPG/PNG (Max 2MB)</span>
+            </label>
           </div>
-        )}
-      </Field>
+          {formData.companyLogoDoc && (
+            <div className="mt-2 relative inline-block">
+              <img
+                src={URL.createObjectURL(formData.companyLogoDoc)}
+                alt="Company Logo"
+                className="w-16 h-16 object-cover rounded-lg border-2 border-[#00695C]"
+              />
+              <button
+                onClick={() => {
+                  updateForm("companyLogoDoc", null);
+                }}
+                className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-red-500 text-white rounded-full text-[9px] flex items-center justify-center hover:bg-red-600"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </Field>
+      )}
 
-      <Field label="Company Profile Brochure (PDF)">
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="m-comp-brochure-sell-com" onChange={(e) => handleDocumentUpload("companyBrochure", e)} />
-          <label htmlFor="m-comp-brochure-sell-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-5 h-5 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Brochure</span>
-            <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
-          </label>
-        </div>
-        {formData.companyBrochure && <p className="text-[10px] text-green-600 mt-1">✓ {formData.companyBrochure.name}</p>}
-      </Field>
+      {reusingCompanyBrochure ? (
+        <Field label="Company Profile Brochure">
+          <p className="text-[10px] text-green-600">✓ Using your verified company profile brochure on file</p>
+        </Field>
+      ) : (
+        <Field label="Company Profile Brochure (PDF)">
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="m-comp-brochure-sell-com" onChange={(e) => handleDocumentUpload("companyBrochure", e)} />
+            <label htmlFor="m-comp-brochure-sell-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-5 h-5 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Brochure</span>
+              <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
+            </label>
+          </div>
+          {formData.companyBrochure && <p className="text-[10px] text-green-600 mt-1">✓ {formData.companyBrochure.name}</p>}
+        </Field>
+      )}
 
       <Field label="Project Brochure(s)">
         <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
@@ -1696,29 +1817,41 @@ function MobContentSellBuilderCom({
         )}
       </Field>
 
-      <Field label="Authorized Signatory ID Proof" required error={errors.authIdProof}>
-        <div className={`border-2 border-dashed ${errors.authIdProof ? 'border-red-500' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
-          <input type="file" accept=".pdf" className="hidden" id="m-auth-id-sell-com" onChange={(e) => handleDocumentUpload("authIdProof", e)} />
-          <label htmlFor="m-auth-id-sell-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-5 h-5 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload ID Proof</span>
-            <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
-          </label>
-        </div>
-        {formData.authIdProof && <p className="text-[10px] text-green-600 mt-1">✓ {formData.authIdProof.name}</p>}
-      </Field>
+      {reusingAuthIdProof ? (
+        <Field label="Authorized Signatory ID Proof">
+          <p className="text-[10px] text-green-600">✓ Using your verified authorized signatory ID proof on file</p>
+        </Field>
+      ) : (
+        <Field label="Authorized Signatory ID Proof" required error={errors.authIdProof}>
+          <div className={`border-2 border-dashed ${errors.authIdProof ? 'border-red-500' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
+            <input type="file" accept=".pdf" className="hidden" id="m-auth-id-sell-com" onChange={(e) => handleDocumentUpload("authIdProof", e)} />
+            <label htmlFor="m-auth-id-sell-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-5 h-5 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload ID Proof</span>
+              <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
+            </label>
+          </div>
+          {formData.authIdProof && <p className="text-[10px] text-green-600 mt-1">✓ {formData.authIdProof.name}</p>}
+        </Field>
+      )}
 
-      <Field label="Office Address Proof" required error={errors.officeAddressProof}>
-        <div className={`border-2 border-dashed ${errors.officeAddressProof ? 'border-red-500' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
-          <input type="file" accept=".pdf" className="hidden" id="m-office-proof-sell-com" onChange={(e) => handleDocumentUpload("officeAddressProof", e)} />
-          <label htmlFor="m-office-proof-sell-com" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-5 h-5 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Address Proof</span>
-            <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
-          </label>
-        </div>
-        {formData.officeAddressProof && <p className="text-[10px] text-green-600 mt-1">✓ {formData.officeAddressProof.name}</p>}
-      </Field>
+      {reusingOfficeAddressProof ? (
+        <Field label="Office Address Proof">
+          <p className="text-[10px] text-green-600">✓ Using your verified office address proof on file</p>
+        </Field>
+      ) : (
+        <Field label="Office Address Proof" required error={errors.officeAddressProof}>
+          <div className={`border-2 border-dashed ${errors.officeAddressProof ? 'border-red-500' : 'border-teal-300'} rounded-xl p-2.5 text-center hover:bg-green-50`}>
+            <input type="file" accept=".pdf" className="hidden" id="m-office-proof-sell-com" onChange={(e) => handleDocumentUpload("officeAddressProof", e)} />
+            <label htmlFor="m-office-proof-sell-com" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-5 h-5 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Address Proof</span>
+              <span className="text-[9px] text-gray-400">PDF (Max 5MB)</span>
+            </label>
+          </div>
+          {formData.officeAddressProof && <p className="text-[10px] text-green-600 mt-1">✓ {formData.officeAddressProof.name}</p>}
+        </Field>
+      )}
 
       {/* Property Documents - Sell specific */}
       <div className="flex items-center gap-1.5 mt-3 mb-2 pb-1.5 border-b-2 border-green-50">
@@ -1965,8 +2098,11 @@ function MobContentSellBuilderCom({
 }
 
 // DESKTOP CONTENT - Sell Builder Commercial
-function DtContentSellBuilderCom({ 
-  step, inp, errorBorder, formData, errors, updateForm, 
+function DtContentSellBuilderCom({
+  step, inp, errorBorder, formData, errors, updateForm,
+  reuseChoice, setReuseChoice, hasVerifiedReusables,
+  reusingAadhaar, reusingPan, reusingCompanyRegCert, reusingGstCert, reusingCompanyPanCard,
+  reusingCompanyLogo, reusingCompanyBrochure, reusingAuthIdProof, reusingOfficeAddressProof,
   imagePreviews, handleImageUpload, removeImage,
   handleVideoUpload, videoPreview, removeVideo,
   handleDocumentUpload,
@@ -2077,6 +2213,9 @@ function DtContentSellBuilderCom({
   // STEP 0: Company Details (Desktop)
   if (step === 0) return (
     <>
+      {hasVerifiedReusables && reuseChoice === null && (
+        <ReuseOrUploadPrompt onChoice={setReuseChoice} />
+      )}
       <FieldDt label="Builder / Company Name" required error={errors.companyName}>
         <input className={`${inp} ${errors.companyName ? errorBorder : ''}`} placeholder="Enter company name" value={formData.companyName} onChange={handleCompanyNameChange("companyName")} />
       </FieldDt>

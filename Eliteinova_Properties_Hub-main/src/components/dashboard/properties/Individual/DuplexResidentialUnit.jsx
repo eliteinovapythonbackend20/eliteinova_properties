@@ -23,10 +23,9 @@ const DUPLEX_TYPE = {
   border: 'border-emerald-200',
   label: 'Duplex Residential Unit (Individual)',
   // The real property_type value the posting forms write to the DB (see
-  // e.g. Forms/Owner/Individual/IndSellForm.jsx). Note this differs from
-  // useNavigation.js's houseTypes entry ("Duplex Unit") - that list has
-  // drifted from what the forms actually submit; the posting form is the
-  // authoritative source for what's really stored.
+  // e.g. Forms/Owner/Individual/IndSellForm.jsx) - matches
+  // useNavigation.js's houseTypes entry and DuplexResidentialFilter's
+  // fixed propertyType value.
   filterValue: 'Duplex Residential Unit'
 };
 

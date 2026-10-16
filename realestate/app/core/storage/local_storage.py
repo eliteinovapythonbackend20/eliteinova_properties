@@ -1,11 +1,18 @@
 
-import os
-from pathlib import Path
-from typing import Optional, Union
-from fastapi import UploadFile
 import io
-from app.core.storage.base import StorageProvider
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple, Union
+
+from fastapi import HTTPException, UploadFile, status
+from jose import ExpiredSignatureError, JWTError, jwt
+
 from app.core.config import settings
+from app.core.storage.base import StorageProvider
+
+STREAM_TOKEN_TYPE = "doc_stream"
+STREAM_PATH = "/api/v1/documents/stream"
 
 class LocalStorage(StorageProvider):
     """Local filesystem storage implementation for development.
@@ -24,14 +31,21 @@ class LocalStorage(StorageProvider):
         self.base_path.mkdir(parents=True, exist_ok=True)
         print(f"LocalStorage initialized at: {self.base_path.absolute()}")
 
-    def _get_file_path(self, destination_path: str) -> Path:
+    @classmethod
+    def relative_key(cls, destination_path: str) -> str:
         # Accepts either the bare relative disk path or the full URL this
-        # class itself returns from upload_file() - strip the URL part down
-        # to the relative path either way before resolving it on disk.
-        relative = destination_path
-        if self.URL_PREFIX in relative:
-            relative = relative.split(self.URL_PREFIX, 1)[1]
-        return self.base_path / relative
+        # class itself returns from upload_file().
+        if cls.URL_PREFIX in destination_path:
+            return destination_path.split(cls.URL_PREFIX, 1)[1]
+        return destination_path
+
+    def _get_file_path(self, destination_path: str) -> Path:
+        relative = self.relative_key(destination_path)
+        full = (self.base_path / relative).resolve()
+        # Refuse anything that resolves outside the storage root (e.g. "../").
+        if self.base_path.resolve() not in full.parents and full != self.base_path.resolve():
+            raise ValueError("path escapes the storage root")
+        return full
     
     async def upload_file(
         self,
@@ -88,14 +102,50 @@ class LocalStorage(StorageProvider):
         except Exception:
             pass
     
-    async def generate_signed_url(self, file_path: str, expiration: int = 3600) -> str:
-        """For local storage, just return the path"""
-        return file_path
+    async def generate_signed_url(self, file_path: str, expiration: int = 3600, **claims: Any) -> str:
+        """Return a short-lived URL to this app's authorised stream endpoint.
+
+        The URL carries a signed token (HMAC via SECRET_KEY) that names the file
+        and expires after `expiration` seconds. Serving is done by the stream
+        route, never by a static mount. `claims` (e.g. actor id, asset id) are
+        embedded for audit and are not secret.
+        """
+        now = datetime.now(timezone.utc)
+        payload = {
+            "typ": STREAM_TOKEN_TYPE,
+            "key": self.relative_key(file_path),
+            "iat": now,
+            "exp": now + timedelta(seconds=expiration),
+            "jti": uuid.uuid4().hex,
+            **claims,
+        }
+        token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+        return f"{settings.BACKEND_BASE_URL.rstrip('/')}{STREAM_PATH}?token={token}"
+
+    @staticmethod
+    def read_stream_token(token: str) -> Tuple[str, Dict[str, Any]]:
+        """Validate a stream token. Returns (storage key, claims) or raises 401."""
+        try:
+            claims = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        except ExpiredSignatureError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="This link has expired")
+        except JWTError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid link")
+        if claims.get("typ") != STREAM_TOKEN_TYPE or not claims.get("key"):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid link")
+        return claims["key"], claims
+
+    def path_for_key(self, key: str) -> Optional[Path]:
+        """Resolved on-disk path for a storage key, or None if it is not a file."""
+        try:
+            full = self._get_file_path(key)
+        except ValueError:
+            return None
+        return full if full.is_file() else None
     
     async def file_exists(self, file_path: str) -> bool:
         """Check if a file exists in local storage"""
         try:
-            full_path = self._get_file_path(file_path)
-            return full_path.exists()
+            return self._get_file_path(file_path).exists()
         except Exception:
             return False

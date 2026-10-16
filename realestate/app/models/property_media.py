@@ -28,7 +28,14 @@ class PropertyMedia(Base):
     
     is_primary = Column(Boolean, default=False)
     order = Column(Integer, default=0)
-    
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
+    # Phase 2 foundation. Links this row to its physical object in file_assets,
+    # the same way user_documents/property_documents do. Property media is
+    # always property-specific - this is never a USER_MEDIA reference and is
+    # never shared across properties; each row gets its own, distinct asset.
+    # Existing rows get this backfilled by migration; new rows get it on upload.
+    file_asset_id = Column(Integer, ForeignKey("file_assets.id", ondelete="RESTRICT"), nullable=True, index=True)
+
     property = relationship("BaseProperty", back_populates="media")

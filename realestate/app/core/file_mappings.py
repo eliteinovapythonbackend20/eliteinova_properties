@@ -400,7 +400,10 @@ PROPERTY_VIDEO_FIELDS = [
     if mapping.get('category') == 'video'
 ]
 
-# Vendor profile image to DB column mapping (for vendor tables)
+# Historical: these raw columns are gone (see contact_person_media / ck_contact_person_media_type -
+# app.services.contact_person_media_service is where this now goes). Kept only because
+# file_extraction_service still carries a 'db_column' label in its per-file metadata;
+# nothing writes to a column from it any more.
 VENDOR_PROFILE_IMAGE_TO_DB_COLUMN = {
     'profilePhoto': 'profile_photo_url',
     'passportPhoto': 'profile_photo_url',

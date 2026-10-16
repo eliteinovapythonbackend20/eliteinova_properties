@@ -22,11 +22,14 @@ class _RoleProfileExtra(BaseModel):
 
 
 class AgentProfileExtra(_RoleProfileExtra):
-    # Profile photo/logo are role-specific: an Agent's "easy navigation" photo
-    # and agency logo live in this blob, not a column shared with the other
-    # three roles, so switching roles never shows another role's image.
-    profile_photo_url: Optional[str] = Field(None, alias="profilePhotoUrl")
-    company_logo_url: Optional[str] = Field(None, alias="companyLogoUrl")
+    # No file location of any kind lives in this blob - it is metadata only.
+    # The Agent's profile photo and agency logo are USER_MEDIA, reached through
+    # app.services.user_media_service, never through this JSONB blob.
+    # Agent's own edit form has a Date of Birth field (same as Owner's) - without
+    # this, it had nowhere to land: not a VendorProfile column, not in this
+    # schema, so it was silently dropped by update_vendor_profile's hasattr
+    # check on every save.
+    date_of_birth: Optional[str] = Field(None, alias="dateOfBirth")
     rera_registration_number: Optional[str] = Field(None, alias="reraRegistrationNumber")
     gst_number: Optional[str] = Field(None, alias="gstNumber")
     years_of_experience: Optional[int] = Field(None, alias="yearsOfExperience")
@@ -50,14 +53,21 @@ class AgentProfileExtra(_RoleProfileExtra):
 
 
 class BuilderProfileExtra(_RoleProfileExtra):
-    profile_photo_url: Optional[str] = Field(None, alias="profilePhotoUrl")
-    company_logo_url: Optional[str] = Field(None, alias="companyLogoUrl")
+    # No file location of any kind lives in this blob - it is metadata only.
+    # The Builder's profile photo and company logo are USER_MEDIA, reached
+    # through app.services.user_media_service, never through this JSONB blob.
     company_reg_number: Optional[str] = Field(None, alias="companyRegNumber")
     rera_number: Optional[str] = Field(None, alias="reraNumber")
     gst_number: Optional[str] = Field(None, alias="gstNumber")
     years_of_experience: Optional[int] = Field(None, alias="yearsOfExperience")
     company_profile: Optional[str] = Field(None, alias="companyProfile")
     designation: Optional[str] = Field(None, alias="authDesignation")
+    # The company/business website - distinct from the shared VendorProfile.website
+    # column (that one is the vendor's own personal/social link, see
+    # VendorProfileUpdate.website). Both used to be validated into that single
+    # shared column via an alias, so saving either one silently overwrote the
+    # other; this gives the company site its own storage.
+    company_website: Optional[str] = Field(None, alias="companyWebsite")
     # Office address - role-specific, not the shared personal address
     # columns (those stay free for an owner's home address).
     office_address: Optional[str] = Field(None, alias="officeAddress")
@@ -89,14 +99,21 @@ class BuilderProfileExtra(_RoleProfileExtra):
 
 
 class PropertyManagementProfileExtra(_RoleProfileExtra):
-    profile_photo_url: Optional[str] = Field(None, alias="profilePhotoUrl")
-    company_logo_url: Optional[str] = Field(None, alias="companyLogoUrl")
+    # No file location of any kind lives in this blob - it is metadata only.
+    # The PM's profile photo and company logo are USER_MEDIA, reached through
+    # app.services.user_media_service, never through this JSONB blob.
     business_reg_number: Optional[str] = Field(None, alias="businessRegNumber")
     rera_number: Optional[str] = Field(None, alias="reraNumber")
     gst_number: Optional[str] = Field(None, alias="gstNumber")
     years_of_experience: Optional[int] = Field(None, alias="yearsOfExperience")
     company_description: Optional[str] = Field(None, alias="companyDescription")
     designation: Optional[str] = Field(None, alias="authDesignation")
+    # The company/business website - distinct from the shared VendorProfile.website
+    # column (that one is the vendor's own personal/social link, see
+    # VendorProfileUpdate.website). Both used to be validated into that single
+    # shared column via an alias, so saving either one silently overwrote the
+    # other; this gives the company site its own storage.
+    company_website: Optional[str] = Field(None, alias="companyWebsite")
     # Office address - role-specific, not the shared personal address
     # columns (those stay free for an owner's home address).
     office_address: Optional[str] = Field(None, alias="officeAddress")
@@ -119,9 +136,10 @@ class PropertyManagementProfileExtra(_RoleProfileExtra):
 
 class OwnerProfileExtra(_RoleProfileExtra):
     # Owner-only fields with no shared VendorProfile column of their own
-    # (unlike gender/address/bank details, which every role shares). Owners
-    # aren't a company, so there's no logo counterpart here.
-    profile_photo_url: Optional[str] = Field(None, alias="profilePhotoUrl")
+    # (unlike gender/address/bank details, which every role shares). No file
+    # location of any kind lives in this blob - it is metadata only. The
+    # Owner's profile photo is USER_MEDIA, reached through
+    # app.services.user_media_service, never through this JSONB blob.
     date_of_birth: Optional[str] = Field(None, alias="dateOfBirth")
     additional_note: Optional[str] = Field(None, alias="additionalNotes")
 

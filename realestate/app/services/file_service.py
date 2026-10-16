@@ -1,5 +1,13 @@
 import uuid
 from typing import Optional, List, Dict, Any
+from app.core.storage.paths import (
+    contact_person_document_key,
+    contact_person_media_key,
+    user_media_key,
+    property_document_key,
+    property_media_key,
+    user_document_key,
+)
 from fastapi import UploadFile, HTTPException, status
 from app.core.storage_factory import StorageFactory
 from app.core.file_processor import FileProcessor
@@ -119,14 +127,6 @@ class FileService:
     ) -> str:
         return f"{user_id}/{property_id}/{file_type}/{filename}"
     
-    def _get_vendor_storage_path(
-        self,
-        user_id: str,
-        file_type: str,
-        filename: str
-    ) -> str:
-        return f"vendor/{user_id}/{file_type}/{filename}"
-    
     def _generate_image_filename(
         self,
         field_name: str,
@@ -169,29 +169,31 @@ class FileService:
         return f"{doc_type}_{idx:02d}_{unique_id}.pdf"
     
     
-    async def upload_vendor_profile_image(
+    # field_name (frontend/profile-form name) -> contact-person media type.
+    CONTACT_PERSON_MEDIA_TYPE_BY_FIELD = {
+        'profilePhoto': 'profile_photo',
+        'passportPhoto': 'profile_photo',
+        'agencyLogo': 'agency_logo',
+        'companyLogo': 'company_logo',
+    }
+
+    async def upload_contact_person_media(
         self,
         file: UploadFile,
-        user_id: str,
-        field_name: str
+        property_id: str,
+        field_name: str,
     ) -> Dict[str, Any]:
-        image_type_mapping = {
-            'profilePhoto': 'profile',
-            'passportPhoto': 'profile',
-            'agencyLogo': 'agency',
-            'companyLogo': 'company',
-        }
-        
-        image_type = image_type_mapping.get(field_name, 'profile')
-
+        """A contact person's photo/logo submitted with this property's form -
+        never the uploader's own reusable USER_MEDIA (see
+        profile_service.upload_vendor_profile_photo/upload_vendor_logo for that).
+        Public, like any other media - linked to property_id through the
+        database (app.services.contact_person_media_service), never inferred
+        from this path."""
+        media_type = self.CONTACT_PERSON_MEDIA_TYPE_BY_FIELD.get(field_name, 'profile_photo')
         unique_id = str(uuid.uuid4())[:8]
-        filename = f"{image_type}_{unique_id}.webp"
+        filename = f"{media_type}_{unique_id}.webp"
 
-        file_path = self._get_vendor_storage_path(
-            user_id=user_id,
-            file_type='profile_images',
-            filename=filename
-        )
+        file_path = contact_person_media_key(property_id, media_type, extension='webp')
 
         await self._validate_upload(file, 'image')
 
@@ -200,7 +202,7 @@ class FileService:
                 file,
                 quality=85
             )
-            
+
             stored_path = await self.public_storage.upload_file(
                 file=compressed_file,
                 destination_path=file_path,
@@ -219,32 +221,35 @@ class FileService:
                 'file_size_kb': compression_metadata.get('compressed_size_kb', 0),
                 'width': compression_metadata.get('width'),
                 'height': compression_metadata.get('height'),
-                'image_type': image_type,
+                'media_type': media_type,
                 'field_name': field_name,
                 'is_compressed': True
             }
 
         except Exception as e:
-            print(f"Vendor profile image upload failed for {file.filename}: {str(e)}")
+            print(f"Contact-person media upload failed for {file.filename}: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to upload vendor profile image: {str(e)}"
+                detail=f"Failed to upload contact-person media: {str(e)}"
             )
     
     async def upload_vendor_document(
         self,
         file: UploadFile,
         user_id: str,
-        document_type: str
+        document_type: str,
+        property_id: Optional[str] = None
     ) -> Dict[str, Any]:
+        """Store a private document. Without property_id it is the user's own document
+        (users/{uid}/documents/...). With property_id it is a contact person's document for
+        that property (properties/{pid}/contact-person/documents/...), never the uploader's."""
         unique_id = str(uuid.uuid4())[:8]
         filename = f"{document_type}_{unique_id}.pdf"
-        
-        file_path = self._get_vendor_storage_path(
-            user_id=user_id,
-            file_type='documents',
-            filename=filename
-        )
+
+        if property_id:
+            file_path = contact_person_document_key(property_id, document_type)
+        else:
+            file_path = user_document_key(user_id, document_type)
 
         await self._validate_upload(file, 'document')
 
@@ -377,14 +382,19 @@ class FileService:
                 is_primary=is_primary,
                 order=order
             )
-            
-            file_path = self._get_storage_path(
-                user_id=user_id,
-                property_id=property_id,
-                file_type='images',
-                filename=filename
-            )
-            
+
+            # The vendor's own reusable photo/logo (property_id == "profile", not a real property)
+            # is USER_MEDIA. Everything else (cover image, gallery, project images) is PROPERTY_MEDIA.
+            reusable_media_type = {
+                "profilePhoto": "profile_photo", "passportPhoto": "profile_photo",
+                "agencyLogo": "agency_logo", "companyLogo": "company_logo",
+            }.get(field_name)
+            extension = filename.rsplit('.', 1)[-1]
+            if property_id == "profile" and reusable_media_type:
+                file_path = user_media_key(user_id, reusable_media_type, extension)
+            else:
+                file_path = property_media_key(property_id, 'property_images', extension)
+
             stored_path = await self.public_storage.upload_file(
                 file=compressed_file,
                 destination_path=file_path,
@@ -409,6 +419,7 @@ class FileService:
                 'height': compression_metadata.get('height'),
                 'field_name': field_name,
                 'image_type': image_type,
+                'media_type': reusable_media_type,  # set only for the vendor's own reusable photo/logo
                 'is_primary': is_primary,
                 'order': order,
                 'is_compressed': True
@@ -504,12 +515,7 @@ class FileService:
             
             filename = self._generate_video_filename(file.filename)
             
-            file_path = self._get_storage_path(
-                user_id=user_id,
-                property_id=property_id,
-                file_type='videos',
-                filename=filename
-            )
+            file_path = property_media_key(property_id, 'property_video', filename.rsplit('.', 1)[-1])
             
             stored_path = await self.public_storage.upload_file(
                 file=compressed_file,
@@ -542,12 +548,7 @@ class FileService:
                 file_size_kb = len(content) // 1024
                 
                 filename = self._generate_video_filename(file.filename)
-                file_path = self._get_storage_path(
-                    user_id=user_id,
-                    property_id=property_id,
-                    file_type='videos',
-                    filename=filename
-                )
+                file_path = property_media_key(property_id, 'property_video', filename.rsplit('.', 1)[-1])
                 
                 file.file.seek(0)
                 
@@ -579,13 +580,24 @@ class FileService:
         file: UploadFile,
         user_id: str,
         property_id: str,
-        idx: int = 0
+        idx: int = 0,
+        doc_type: str = None
     ) -> Dict[str, Any]:
         await self._validate_upload(file, 'document')
 
         try:
-            doc_type = getattr(file, 'doc_type', None)
-            
+            # The caller almost always already knows the exact document type
+            # (it resolved it before ever calling this method) - prefer that
+            # over guessing. `getattr(file, 'doc_type', None)` is dead code
+            # (nothing in this codebase ever sets that attribute) but is kept
+            # as a middle fallback in case something upstream still relies on
+            # it. Filename-sniffing is the last resort, and silently falls
+            # back to "other_supporting_document" for any filename it doesn't
+            # recognize (e.g. a phone camera's "IMG_1234.pdf") - that wrong
+            # doc_type then becomes part of the storage path, so a lookup by
+            # the real doc_type (e.g. "aadhaar_card") never finds the file.
+            if not doc_type:
+                doc_type = getattr(file, 'doc_type', None)
             if not doc_type:
                 doc_type = self._get_document_type(file.filename)
             
@@ -602,12 +614,7 @@ class FileService:
                     idx=idx
                 )
                 
-                file_path = self._get_storage_path(
-                    user_id=user_id,
-                    property_id=property_id,
-                    file_type='documents',
-                    filename=filename
-                )
+                file_path = (user_document_key(user_id, doc_type) if property_id == 'profile' else property_document_key(property_id, doc_type))
                 
                 stored_path = await self.private_storage.upload_file(
                     file=compressed_file,
@@ -637,12 +644,7 @@ class FileService:
                     idx=idx
                 )
                 
-                file_path = self._get_storage_path(
-                    user_id=user_id,
-                    property_id=property_id,
-                    file_type='documents',
-                    filename=filename
-                )
+                file_path = (user_document_key(user_id, doc_type) if property_id == 'profile' else property_document_key(property_id, doc_type))
                 
                 stored_path = await self.private_storage.upload_file(
                     file=file,

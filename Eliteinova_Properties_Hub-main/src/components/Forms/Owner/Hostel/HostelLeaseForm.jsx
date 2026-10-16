@@ -10,7 +10,10 @@ import {
   Home as HomeIcon, CheckSquare, PenTool, Shield as ShieldIcon,
   AlarmClock, Sparkles, BedDouble, Sofa, Wind, Droplet
 } from "lucide-react";
-import { createProperty } from "../../../../services/propertyService";
+import { createProperty, reuseVerifiedResources } from "../../../../services/propertyService";
+import useReusableResources from "../../../../hooks/useReusableResources";
+import ReuseOrUploadPrompt from "../../shared/ReuseOrUploadPrompt";
+import { buildPrefillValues } from "../../../../config/contactPrefillMap";
 
 const steps = ["Owner Details", "Identity Verification", "Property Details", "Pricing & Amenities", "Media Upload", "Legal Documents", "Bank Details", "Communication & Declaration"];
 const subtitles = [
@@ -88,6 +91,17 @@ const mealOptions = ["2 Meals/Day", "3 Meals/Day", "Custom/Optional"];
 
 export default function HostelLeaseForm({ isOpen, onClose }) {
   const [step, setStep] = useState(0);
+
+  // "Is this listing for yourself, or for someone else?" - asked once, instead
+  // of a per-field "use existing?" toggle. null = not asked/answered yet.
+  const [reuseChoice, setReuseChoice] = useState(null);
+  const { isDocumentVerified, isMediaVerified, profile, hasUsableProfile } = useReusableResources("owner");
+  const hasVerifiedReusables = isDocumentVerified("aadhaar_card") || isDocumentVerified("pan_card")
+    || isMediaVerified("profile_photo");
+  const reusingAadhaar = reuseChoice === "self" && isDocumentVerified("aadhaar_card");
+  const reusingPan = reuseChoice === "self" && isDocumentVerified("pan_card");                          
+  const prefillAppliedRef = useRef(false);
+  const reusingPassportPhoto = reuseChoice === "self" && isMediaVerified("profile_photo");
   const [errors, setErrors] = useState({});
 
   const [formData, setFormData] = useState({
@@ -142,6 +156,21 @@ export default function HostelLeaseForm({ isOpen, onClose }) {
   const [signaturePoints, setSignaturePoints] = useState([]);
   const [allSignaturePoints, setAllSignaturePoints] = useState([]);
   const [activeCanvas, setActiveCanvas] = useState(null);
+  // "It's me" prefill - see SellAgentComForm.jsx's identical effect for the
+  // full rationale (fills only still-blank mapped fields, once per "self"
+  // episode, safe against the profile/choice race).
+  useEffect(() => {
+    if (reuseChoice !== "self") {
+      prefillAppliedRef.current = false;
+      return;
+    }
+    if (!profile || prefillAppliedRef.current) return;
+    const prefill = buildPrefillValues(profile, "owner", formData);
+    if (Object.keys(prefill).length > 0) {
+      setFormData(prev => ({ ...prev, ...prefill }));
+    }
+    prefillAppliedRef.current = true;
+  }, [reuseChoice, profile]);
 
   // Validation helper functions
   const isOnlyLetters = (value) => /^[A-Za-z\s]+$/.test(value);
@@ -416,8 +445,8 @@ export default function HostelLeaseForm({ isOpen, onClose }) {
     if (s === 1) {
       if (!formData.aadhaarNumber || formData.aadhaarNumber.length !== 12) e.aadhaarNumber = "Aadhaar number must be exactly 12 digits";
       if (!formData.aadhaarNumber.match(/^[0-9]{12}$/)) e.aadhaarNumber = "Aadhaar number must contain only numbers";
-      if (!formData.aadhaarCard) e.aadhaarCard = "Aadhaar card upload is required";
-      if (!formData.passportPhoto) e.passportPhoto = "Passport-size photo is required";
+      if (!formData.aadhaarCard && !reusingAadhaar) e.aadhaarCard = "Aadhaar card upload is required";
+      if (!formData.passportPhoto && !reusingPassportPhoto) e.passportPhoto = "Passport-size photo is required";
       if (!formData.addressLine1.trim()) e.addressLine1 = "Address Line 1 is required";
       if (!formData.ownerCity.trim()) e.ownerCity = "City is required";
       else if (!isOnlyLetters(formData.ownerCity)) e.ownerCity = "City should contain only letters and spaces";
@@ -504,6 +533,17 @@ export default function HostelLeaseForm({ isOpen, onClose }) {
       }
       try{
         const response = await createProperty(formData);
+        if (reuseChoice === "self" && response?.id) {
+          try {
+            const reuseResult = await reuseVerifiedResources(response.id);
+            const skipped = [...(reuseResult?.data?.skippedDocuments || []), ...(reuseResult?.data?.skippedMedia || [])];
+            if (skipped.length) {
+              console.warn("Listing created, but some verified items could not be attached:", skipped);
+            }
+          } catch (reuseError) {
+            console.error("Listing created, but reusing verified details failed: ", reuseError);
+          }
+        }
         onClose();
       }
       catch(error){
@@ -556,6 +596,12 @@ export default function HostelLeaseForm({ isOpen, onClose }) {
               inp={inMob}
               formData={formData}
               updateForm={updateForm}
+              reuseChoice={reuseChoice}
+              setReuseChoice={setReuseChoice}
+              hasVerifiedReusables={hasVerifiedReusables}
+              reusingAadhaar={reusingAadhaar}
+              reusingPan={reusingPan}
+              reusingPassportPhoto={reusingPassportPhoto}
               handleAlphaFieldChange={handleAlphaFieldChange}
               handleNumericFieldChange={handleNumericFieldChange}
               handlePinCodeChange={handlePinCodeChange}
@@ -680,6 +726,12 @@ export default function HostelLeaseForm({ isOpen, onClose }) {
               inp={inDt}
               formData={formData}
               updateForm={updateForm}
+              reuseChoice={reuseChoice}
+              setReuseChoice={setReuseChoice}
+              hasVerifiedReusables={hasVerifiedReusables}
+              reusingAadhaar={reusingAadhaar}
+              reusingPan={reusingPan}
+              reusingPassportPhoto={reusingPassportPhoto}
               handleAlphaFieldChange={handleAlphaFieldChange}
               handleNumericFieldChange={handleNumericFieldChange}
               handlePinCodeChange={handlePinCodeChange}
@@ -770,7 +822,7 @@ export default function HostelLeaseForm({ isOpen, onClose }) {
 }
 
 // MOBILE CONTENT - HOSTEL LEASE
-function MobContentLease({ step, inp, formData, updateForm, handleAlphaFieldChange, handleNumericFieldChange, handlePinCodeChange, imagePreviews, handleImageUpload, removeImage, handleVideoUpload, videoPreview, removeVideo, handleDocumentUpload, handlePassportUpload, toggleAmenity, availableAmenities, customAmenitiesList, addCustomAmenity, removeCustomAmenity, hostelTypeOptions, roomTypeOptions, bathroomOptions, furnishingOptions, sharingOptions, yesNoOptions, leaseDurationOptions, occupancyTypeOptions, paymentFrequencyOptions, foodTypeOptions, mealOptions, bankOptions, handleCoverImageUpload, handleFloorPlanUpload, coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, toggleContactMethod, toggleRoomType, toggleSharingType, startDrawing, draw, stopDrawing, clearSignature, signaturePoints, allSignaturePoints, setAllSignaturePoints, errors }) {
+function MobContentLease({ step, inp, formData, updateForm, reuseChoice, setReuseChoice, hasVerifiedReusables, reusingAadhaar, reusingPan, reusingPassportPhoto, handleAlphaFieldChange, handleNumericFieldChange, handlePinCodeChange, imagePreviews, handleImageUpload, removeImage, handleVideoUpload, videoPreview, removeVideo, handleDocumentUpload, handlePassportUpload, toggleAmenity, availableAmenities, customAmenitiesList, addCustomAmenity, removeCustomAmenity, hostelTypeOptions, roomTypeOptions, bathroomOptions, furnishingOptions, sharingOptions, yesNoOptions, leaseDurationOptions, occupancyTypeOptions, paymentFrequencyOptions, foodTypeOptions, mealOptions, bankOptions, handleCoverImageUpload, handleFloorPlanUpload, coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, toggleContactMethod, toggleRoomType, toggleSharingType, startDrawing, draw, stopDrawing, clearSignature, signaturePoints, allSignaturePoints, setAllSignaturePoints, errors }) {
   const ta = `${inp} resize-y`;
   const signatureCanvasRef = useRef(null);
 
@@ -819,6 +871,9 @@ function MobContentLease({ step, inp, formData, updateForm, handleAlphaFieldChan
   // STEP 0: Owner Details
   if (step === 0) return (
     <>
+      {hasVerifiedReusables && reuseChoice === null && (
+        <ReuseOrUploadPrompt onChoice={setReuseChoice} />
+      )}
       <Field label="Full Name" required error={errors.ownerName}>
         <input className={inp} placeholder="Enter your full name" value={formData.ownerName} onChange={(e) => handleAlphaFieldChange("ownerName", e.target.value)} />
       </Field>
@@ -854,39 +909,57 @@ function MobContentLease({ step, inp, formData, updateForm, handleAlphaFieldChan
       <Field label="PAN Number">
         <input className={inp} placeholder="Enter 10-character PAN number" value={formData.panNumber} onChange={(e) => updateForm("panNumber", e.target.value.toUpperCase())} />
       </Field>
-      <Field label="Upload Aadhaar Card" required error={errors.aadhaarCard}>
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="m-aadhaar-lease" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
-          <label htmlFor="m-aadhaar-lease" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Aadhaar</span>
-            <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.aadhaarCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.aadhaarCard.name}</p>}
-      </Field>
-      <Field label="Upload PAN Card (Optional)">
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="m-pan-lease" onChange={(e) => handleDocumentUpload("panCard", e)} />
-          <label htmlFor="m-pan-lease" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload PAN</span>
-            <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.panCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.panCard.name}</p>}
-      </Field>
-      <Field label="Upload Passport-size Photo" required error={errors.passportPhoto}>
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
-          <input type="file" accept=".jpg,.jpeg,.png" className="hidden" id="m-passport-lease" onChange={(e) => handlePassportUpload("passportPhoto", e)} />
-          <label htmlFor="m-passport-lease" className="cursor-pointer flex flex-col items-center">
-            <User className="w-6 h-6 text-[#00695C]" />
-            <span className="text-[10px] font-semibold text-[#00695C]">Upload Photo</span>
-            <span className="text-[9px] text-gray-400">JPG, JPEG, PNG (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.passportPhoto && <p className="text-[10px] text-green-600 mt-1">✓ {formData.passportPhoto.name}</p>}
-      </Field>
+      {reusingAadhaar ? (
+        <Field label="Aadhaar Card">
+          <p className="text-[10px] text-green-600">✓ Using your verified Aadhaar on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload Aadhaar Card" required error={errors.aadhaarCard}>
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="m-aadhaar-lease" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
+            <label htmlFor="m-aadhaar-lease" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Aadhaar</span>
+              <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.aadhaarCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.aadhaarCard.name}</p>}
+        </Field>
+      )}
+      {reusingPan ? (
+        <Field label="PAN Card">
+          <p className="text-[10px] text-green-600">✓ Using your verified PAN on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload PAN Card (Optional)">
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="m-pan-lease" onChange={(e) => handleDocumentUpload("panCard", e)} />
+            <label htmlFor="m-pan-lease" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload PAN</span>
+              <span className="text-[9px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.panCard && <p className="text-[10px] text-green-600 mt-1">✓ {formData.panCard.name}</p>}
+        </Field>
+      )}
+      {reusingPassportPhoto ? (
+        <Field label="Passport-size Photo">
+          <p className="text-[10px] text-green-600">✓ Using your verified profile photo on file</p>
+        </Field>
+      ) : (
+        <Field label="Upload Passport-size Photo" required error={errors.passportPhoto}>
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-2.5 text-center hover:bg-green-50">
+            <input type="file" accept=".jpg,.jpeg,.png" className="hidden" id="m-passport-lease" onChange={(e) => handlePassportUpload("passportPhoto", e)} />
+            <label htmlFor="m-passport-lease" className="cursor-pointer flex flex-col items-center">
+              <User className="w-6 h-6 text-[#00695C]" />
+              <span className="text-[10px] font-semibold text-[#00695C]">Upload Photo</span>
+              <span className="text-[9px] text-gray-400">JPG, JPEG, PNG (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.passportPhoto && <p className="text-[10px] text-green-600 mt-1">✓ {formData.passportPhoto.name}</p>}
+        </Field>
+      )}
 
       <div className="flex items-center gap-1.5 mt-3 mb-2 pb-1.5 border-b-2 border-green-50">
         <div className="w-1 h-3 bg-[#00695C] rounded" />
@@ -1549,7 +1622,7 @@ function MobContentLease({ step, inp, formData, updateForm, handleAlphaFieldChan
 }
 
 // DESKTOP CONTENT - HOSTEL LEASE
-function DtContentLease({ step, inp, formData, updateForm, handleAlphaFieldChange, handleNumericFieldChange, handlePinCodeChange, imagePreviews, handleImageUpload, removeImage, handleVideoUpload, videoPreview, removeVideo, handleDocumentUpload, handlePassportUpload, toggleAmenity, availableAmenities, customAmenitiesList, addCustomAmenity, removeCustomAmenity, hostelTypeOptions, roomTypeOptions, bathroomOptions, furnishingOptions, sharingOptions, yesNoOptions, leaseDurationOptions, occupancyTypeOptions, paymentFrequencyOptions, foodTypeOptions, mealOptions, bankOptions, handleCoverImageUpload, handleFloorPlanUpload, coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, toggleContactMethod, toggleRoomType, toggleSharingType, startDrawing, draw, stopDrawing, clearSignature, signaturePoints, allSignaturePoints, setAllSignaturePoints, errors }) {
+function DtContentLease({ step, inp, formData, updateForm, reuseChoice, setReuseChoice, hasVerifiedReusables, reusingAadhaar, reusingPan, reusingPassportPhoto, handleAlphaFieldChange, handleNumericFieldChange, handlePinCodeChange, imagePreviews, handleImageUpload, removeImage, handleVideoUpload, videoPreview, removeVideo, handleDocumentUpload, handlePassportUpload, toggleAmenity, availableAmenities, customAmenitiesList, addCustomAmenity, removeCustomAmenity, hostelTypeOptions, roomTypeOptions, bathroomOptions, furnishingOptions, sharingOptions, yesNoOptions, leaseDurationOptions, occupancyTypeOptions, paymentFrequencyOptions, foodTypeOptions, mealOptions, bankOptions, handleCoverImageUpload, handleFloorPlanUpload, coverPreview, floorPlanPreview, removeCoverImage, removeFloorPlan, toggleContactMethod, toggleRoomType, toggleSharingType, startDrawing, draw, stopDrawing, clearSignature, signaturePoints, allSignaturePoints, setAllSignaturePoints, errors }) {
   const ta = `${inp} resize-y`;
   const signatureCanvasRef = useRef(null);
 
@@ -1598,6 +1671,9 @@ function DtContentLease({ step, inp, formData, updateForm, handleAlphaFieldChang
   // STEP 0: Owner Details (Desktop)
   if (step === 0) return (
     <>
+      {hasVerifiedReusables && reuseChoice === null && (
+        <ReuseOrUploadPrompt onChoice={setReuseChoice} />
+      )}
       <FieldDt label="Full Name" required error={errors.ownerName}>
         <input className={inp} placeholder="Enter your full name" value={formData.ownerName} onChange={(e) => handleAlphaFieldChange("ownerName", e.target.value)} />
       </FieldDt>
@@ -1633,39 +1709,57 @@ function DtContentLease({ step, inp, formData, updateForm, handleAlphaFieldChang
       <FieldDt label="PAN Number">
         <input className={inp} placeholder="Enter 10-character PAN number" value={formData.panNumber} onChange={(e) => updateForm("panNumber", e.target.value.toUpperCase())} />
       </FieldDt>
-      <FieldDt label="Upload Aadhaar Card" required error={errors.aadhaarCard}>
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="dt-aadhaar" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
-          <label htmlFor="dt-aadhaar" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Aadhaar Card</span>
-            <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.aadhaarCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.aadhaarCard.name}</p>}
-      </FieldDt>
-      <FieldDt label="Upload PAN Card (Optional)">
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
-          <input type="file" accept=".pdf" className="hidden" id="dt-pan" onChange={(e) => handleDocumentUpload("panCard", e)} />
-          <label htmlFor="dt-pan" className="cursor-pointer flex flex-col items-center">
-            <FileText className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload PAN Card</span>
-            <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.panCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.panCard.name}</p>}
-      </FieldDt>
-      <FieldDt label="Upload Passport-size Photo" required error={errors.passportPhoto}>
-        <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
-          <input type="file" accept=".jpg,.jpeg,.png" className="hidden" id="dt-passport" onChange={(e) => handlePassportUpload("passportPhoto", e)} />
-          <label htmlFor="dt-passport" className="cursor-pointer flex flex-col items-center">
-            <User className="w-7 h-7 text-[#00695C]" />
-            <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Photo</span>
-            <span className="text-[11px] text-gray-400">JPG, JPEG, PNG (Max 2MB)</span>
-          </label>
-        </div>
-        {formData.passportPhoto && <p className="text-[13px] text-green-600 mt-2">✓ {formData.passportPhoto.name}</p>}
-      </FieldDt>
+      {reusingAadhaar ? (
+        <FieldDt label="Aadhaar Card">
+          <p className="text-[13px] text-green-600">✓ Using your verified Aadhaar on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Upload Aadhaar Card" required error={errors.aadhaarCard}>
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="dt-aadhaar" onChange={(e) => handleDocumentUpload("aadhaarCard", e)} />
+            <label htmlFor="dt-aadhaar" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Aadhaar Card</span>
+              <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.aadhaarCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.aadhaarCard.name}</p>}
+        </FieldDt>
+      )}
+      {reusingPan ? (
+        <FieldDt label="PAN Card">
+          <p className="text-[13px] text-green-600">✓ Using your verified PAN on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Upload PAN Card (Optional)">
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
+            <input type="file" accept=".pdf" className="hidden" id="dt-pan" onChange={(e) => handleDocumentUpload("panCard", e)} />
+            <label htmlFor="dt-pan" className="cursor-pointer flex flex-col items-center">
+              <FileText className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload PAN Card</span>
+              <span className="text-[11px] text-gray-400">PDF only (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.panCard && <p className="text-[13px] text-green-600 mt-2">✓ {formData.panCard.name}</p>}
+        </FieldDt>
+      )}
+      {reusingPassportPhoto ? (
+        <FieldDt label="Passport-size Photo">
+          <p className="text-[13px] text-green-600">✓ Using your verified profile photo on file</p>
+        </FieldDt>
+      ) : (
+        <FieldDt label="Upload Passport-size Photo" required error={errors.passportPhoto}>
+          <div className="border-2 border-dashed border-teal-300 rounded-xl p-3 text-center hover:bg-green-50">
+            <input type="file" accept=".jpg,.jpeg,.png" className="hidden" id="dt-passport" onChange={(e) => handlePassportUpload("passportPhoto", e)} />
+            <label htmlFor="dt-passport" className="cursor-pointer flex flex-col items-center">
+              <User className="w-7 h-7 text-[#00695C]" />
+              <span className="text-[12px] font-semibold text-[#00695C] mt-1">Upload Photo</span>
+              <span className="text-[11px] text-gray-400">JPG, JPEG, PNG (Max 2MB)</span>
+            </label>
+          </div>
+          {formData.passportPhoto && <p className="text-[13px] text-green-600 mt-2">✓ {formData.passportPhoto.name}</p>}
+        </FieldDt>
+      )}
 
       <div className="flex items-center gap-2 mt-4 mb-3 pb-2 border-b-2 border-green-50">
         <div className="w-1 h-4 bg-[#00695C] rounded" />

@@ -28,26 +28,8 @@ class EmailSendError(EmailServiceError):
         self.original_exception = original_exception
 
 
-# Shared base template for simple transactional "action button" emails
-_ACTION_EMAIL_TEMPLATE = """
-<html>
-    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>{{ heading }}</h2>
-        <p>Hello {{ user_name }},</p>
-        <p>{{ intro_text }}</p>
-        <p>
-            <a href="{{ action_url }}" style="display: inline-block; padding: 10px 20px; background-color: {{ button_color }}; color: white; text-decoration: none; border-radius: 5px;">
-                {{ button_text }}
-            </a>
-        </p>
-        <p>This link will expire in {{ expire_hours }} hours.</p>
-        <p>{{ footer_text }}</p>
-        <hr>
-        <p style="color: #666; font-size: 12px;">This is an automated message, please do not reply.</p>
-    </body>
-</html>
-"""
-
+# Plain-text companion for the "action button" emails (app/templates/email/
+# action_email.html is the HTML side - see _send_action_email).
 _ACTION_EMAIL_TEXT_TEMPLATE = """{{ heading }}
 Hello {{ user_name }},
 {{ intro_text }}
@@ -260,7 +242,6 @@ class EmailService:
         intro_text: str,
         action_url: str,
         button_text: str,
-        button_color: str,
         expire_hours: int,
         footer_text: str,
     ) -> bool:
@@ -270,12 +251,11 @@ class EmailService:
             "intro_text": intro_text,
             "action_url": action_url,
             "button_text": button_text,
-            "button_color": button_color,
             "expire_hours": expire_hours,
             "footer_text": footer_text,
         }
 
-        html_content = self._jinja_env.from_string(_ACTION_EMAIL_TEMPLATE).render(**context)
+        html_content = self._render_template("action_email", context)
         text_content = self._jinja_env.from_string(_ACTION_EMAIL_TEXT_TEMPLATE).render(**context)
         print(f"i am going to call the email")
         return await self.send_email(
@@ -307,9 +287,37 @@ class EmailService:
             intro_text="We received a request to reset your password. Click the link below to reset it:",
             action_url=reset_link,
             button_text="Reset Password",
-            button_color="#007bff",
             expire_hours=settings.RESET_TOKEN_EXPIRE_HOURS,
             footer_text="If you didn't request this, please ignore this email.",
+        )
+
+    async def send_password_reset_otp_email(
+        self,
+        email: str,
+        otp: str,
+        user_name: str,
+        expire_minutes: int,
+    ) -> bool:
+        """Forgot-password OTP email, rendered from the Jinja file template
+        (app/templates/email/password_reset_otp.html) rather than an inline
+        Python string like the link-based emails above."""
+        text_content = (
+            f"Hello {user_name},\n\n"
+            f"Your password reset code is: {otp}\n"
+            f"This code expires in {expire_minutes} minutes.\n\n"
+            "Don't share this code with anyone. If you didn't request a password "
+            "reset, you can safely ignore this email."
+        )
+        return await self.send_template_email(
+            to_email=email,
+            subject="Your Password Reset Code",
+            template_name="password_reset_otp",
+            template_data={
+                "user_name": user_name,
+                "otp": otp,
+                "expire_minutes": expire_minutes,
+            },
+            text_content=text_content,
         )
 
     async def send_verification_email(
@@ -329,7 +337,6 @@ class EmailService:
             intro_text="Please click the link below to verify your email address:",
             action_url=verify_link,
             button_text="Verify Email",
-            button_color="#28a745",
             expire_hours=settings.VERIFICATION_TOKEN_EXPIRE_HOURS,
             footer_text="If you didn't create an account, please ignore this email.",
         )
